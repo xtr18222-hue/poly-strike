@@ -18,4 +18,8 @@ Read this file before resuming; update verified changes and blockers. Never stor
 - Offline service-worker reload, direct file:// launch and actual pointer lock passed.
 - Actual framebuffer color variation verified; 10-second render sample measured 59.7 FPS on this machine; natural bot pathfinding and attacks verified.
 - Red/black geometric weapon finishes implemented. User image references could not be visually analyzed; no exact-match claim.
-- Independent precommit review pending. Deployment not yet created.
+- Independent precommit review passed: no blocking logic/security findings. Nonblocking: unused economy API; manual SW version bumps required; core buy-phase damage is guarded by the game controller.
+- Deployed: https://xtr18222-hue.github.io/poly-strike/ . Public repo: https://github.com/xtr18222-hue/poly-strike . Initial game commit f6fdaa5 on main.
+- GitHub Pages reports built and HTTP 200. Full gameplay and offline/pointer-lock suites passed against the live URL with zero observed page errors.
+- No deployment blockers. Exact visual reference matching was not verified.
+- Repository-local git identity uses authenticated account GitHub noreply address; no global git config modified.
