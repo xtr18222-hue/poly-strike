@@ -7,10 +7,14 @@ with sync_playwright() as p:
  host=b.new_page(service_workers='block');guest=b.new_page(service_workers='block')
  for page in [host,guest]:
   page.on('pageerror',lambda e:errors.append(str(e)));page.goto(BASE+'?test=1');page.wait_for_function('window.Game');page.locator('#fallback').check();page.locator('#onlineButton').click()
+ for page,name in [(host,'Host XTR'),(guest,'Guest XTR')]:page.locator('#username').evaluate('(e,n)=>{e.value=n;e.dispatchEvent(new Event("change"))}',name)
  host.locator('#hostRoom').click();host.wait_for_function("document.querySelector('#netStatus').textContent.includes('waiting')",timeout=40000)
  code=host.locator('#roomCode').inner_text();guest.locator('#roomInput').fill(code);guest.locator('#joinRoom').click()
  for page in [host,guest]:page.wait_for_function('Game.state().online',timeout=40000)
  for page in [host,guest]:page.locator('#resume').click()
+ host.wait_for_timeout(500)
+ for page in [host,guest]:
+  page.keyboard.down('Tab');page.wait_for_timeout(200);assert 'Host XTR' in page.locator('#scoreboard').inner_text() and 'Guest XTR' in page.locator('#scoreboard').inner_text();page.keyboard.up('Tab')
  host.evaluate('Game.test.online.fixture()');host.wait_for_timeout(400)
  assert host.evaluate('Game.state().phase')=='live';assert guest.evaluate('Game.state().phase')=='live'
  host.mouse.click(600,400);host.wait_for_timeout(300)

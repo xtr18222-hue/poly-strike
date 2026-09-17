@@ -6,7 +6,7 @@ window.PolyOnline = {
   function adopt(s){
    if(!s||!['buy','live','end','matchover'].includes(s.phase)||!Array.isArray(s.players)||s.players.length!==2||!Array.isArray(s.score)||s.score.length!==2)return;
    if(!['round','buyClock','roundClock','endClock','time'].every(k=>Number.isFinite(s[k]))||!s.score.every(n=>Number.isInteger(n)&&n>=0&&n<=5)||!Array.isArray(s.events)||s.events.length>12||!s.events.every(e=>e&&[0,1].includes(e.player)&&Number.isSafeInteger(e.seq)&&Object.hasOwn(C.WEAPONS,e.weapon)))return;
-   if(!s.players.every(p=>p&&['x','y','z','yaw','pitch','hp'].every(k=>Number.isFinite(p[k]))&&p.ammo&&Object.keys(C.WEAPONS).every(k=>p.ammo[k]&&Number.isFinite(p.ammo[k].mag)&&Number.isFinite(p.ammo[k].reserve))))return;
+   if(!s.players.every(p=>p&&['x','y','z','yaw','pitch','hp'].every(k=>Number.isFinite(p[k]))&&(p.name===undefined||typeof p.name==='string'&&p.name.length<=20)&&p.ammo&&Object.keys(C.WEAPONS).every(k=>p.ammo[k]&&Number.isFinite(p.ammo[k].mag)&&Number.isFinite(p.ammo[k].reserve))))return;
    current=s;emit('snapshot',{state:s,id:localId});
   }
   net=PolyNet.create({

@@ -15,6 +15,12 @@ Online: host selects a map, clicks Play Online → Create Room, then shares the 
 
 Internet is required for online play. Vendored PeerJS uses its public signaling service plus WebRTC/STUN; no custom backend is required. Availability is not guaranteed. Restrictive NAT/firewalls may require TURN, which is not bundled. Try another network if a room times out. Room codes are not authentication; share privately. WebRTC exposes peer IP addresses to the other player. No accounts or analytics.
 
+## Polish update
+
+Custom usernames (20 characters) persist locally and appear for both online players. Made by XTR is shown on the menu. Tab displays Name / Kills / Deaths / Score; score is 100 per kill plus 250 per round won. Bot stats persist within the match. Radar shows all living opponents. Headshots ring a metallic ding; headshot and knife eliminations appear amber. Red directional arcs point toward the attacker.
+
+F performs eased airborne AK/Deagle inspections, a slower top-to-bottom AWP sweep, or one of two butterfly flips. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+
 ## Controls
 
 - WASD: move; Shift: sprint

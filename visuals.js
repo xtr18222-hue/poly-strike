@@ -40,6 +40,16 @@
     return m;
   }
 
+  // Octagonal cross-section: crisp machined bevels, one inexpensive prism.
+  function bevelBox(THREE, material, w, h, d, x, y, z) {
+    const b=Math.min(w,h)*.18, shape=new THREE.Shape();
+    const points=[[-w/2+b,-h/2],[w/2-b,-h/2],[w/2,-h/2+b],[w/2,h/2-b],[w/2-b,h/2],[-w/2+b,h/2],[-w/2,h/2-b],[-w/2,-h/2+b]];
+    points.forEach((p,i)=>i?shape.lineTo(...p):shape.moveTo(...p));shape.closePath();
+    const geometry=new THREE.ExtrudeGeometry(shape,{depth:d,steps:1,bevelEnabled:false});
+    geometry.translate(0,0,-d/2);geometry.type='BevelledBoxGeometry';
+    const mesh=new THREE.Mesh(geometry,material);mesh.position.set(x,y,z);return mesh;
+  }
+
   function cyl(THREE, material, rTop, rBot, h, seg, x, y, z) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, h, seg), material);
     m.position.set(x, y, z);
@@ -193,6 +203,32 @@
         }
       }
     }
+    if(!performance){
+      const decor=make('decor',theme==='desert'?0x82705b:0x596569);
+      decor.polygonOffset=true;decor.polygonOffsetFactor=-1;decor.polygonOffsetUnits=-1;
+      // Cargo sits on existing roofs/crates: no new collision footprint.
+      for(const s of map.solids){
+        if(s.kind==='crate'){
+          const r=Math.min(.32,s.w*.15,s.d*.15),x=s.x-s.w*.22,z=s.z;
+          const barrel=cyl(THREE,decor,r,r,.85,10,x,s.h+.425,z);root.add(barrel);objects.push(barrel);
+          for(const y of [.12,.7]){
+            const hoop=cyl(THREE,trimMat,r*1.04,r*1.04,.055,10,x,s.h+y,z);root.add(hoop);objects.push(hoop);
+          }
+          add(decor,Math.min(.8,s.w*.3),.6,Math.min(.8,s.d*.3),s.x+s.w*.22,s.h+.3,s.z);
+          for(const side of [-1,1])add(decor,s.w*.9,.045,.035,s.x,s.h*.72,s.z+side*(s.d/2-.02));
+        }else if(s.kind==='wall'){
+          // Thin inset masonry courses stay on the solid surface.
+          for(const y of [.28,.65])add(decor,s.w,.045,s.d,s.x,s.h*y,s.z);
+        }
+      }
+      const cloudMat=make('cloud',0xe5e6df);
+      // Twelve/eighteen low-poly ellipsoids, one static opaque draw, no updates.
+      for(let i=0;i<(high?6:4);i++)for(let j=0;j<3;j++){
+        const cloud=new THREE.Mesh(new THREE.SphereGeometry(1,6,3),cloudMat);
+        cloud.position.set((i%2?1:-1)*(hx+20+j*3),22+i*2,-hz+12+i*13);
+        cloud.scale.set(5+j,1.1+j*.25,2.5);root.add(cloud);objects.push(cloud);
+      }
+    }
     root.updateMatrixWorld(true);
     const stats=Object.assign(mergeStatic(THREE,objects,root,new Set(hitMeshes)),{theme,preset,colliders:hitMeshes.length});
     const floor=root.getObjectByName('batch-floor');if(floor)floor.name='arena-floor';
@@ -238,7 +274,8 @@
       legs.add(thigh);
       const shin = tagMesh(box(THREE, mClothD, 0.16, 0.44, 0.18, side * 0.13, -0.68, 0.01), id, 'legs');
       legs.add(shin);
-      const boot = tagMesh(box(THREE, mBoot, 0.18, 0.14, 0.3, side * 0.13, -0.92, 0.05), id, 'legs');
+      const boot = tagMesh(bevelBox(THREE, mBoot, 0.18, 0.14, 0.3, side * 0.13, -0.92, 0.05), id, 'legs');
+      boot.name=side<0?'boot-left':'boot-right';
       legs.add(boot);
     }
     const hips = tagMesh(box(THREE, mClothD, 0.42, 0.16, 0.26, 0, 0.02, 0), id, 'legs');
@@ -248,7 +285,7 @@
     // torso (body)
     const torso = tagMesh(box(THREE, mCloth, 0.5, 0.6, 0.3, 0, 1.28, 0), id, 'body');
     root.add(torso);
-    const vest = tagMesh(box(THREE, mVest, 0.46, 0.4, 0.34, 0, 1.3, 0.02), id, 'body');
+    const vest = tagMesh(bevelBox(THREE, mVest, 0.46, 0.4, 0.34, 0, 1.3, 0.02), id, 'body');
     vest.name = 'plate-carrier';
     // Narrow waist with broad armored shoulders, without extra draw calls.
     const vp = vest.geometry.attributes.position;
@@ -292,7 +329,8 @@
     head.add(skull);
     const face = tagMesh(box(THREE, mSkin, 0.2, 0.1, 0.06, 0, 0.08, 0.13), id, 'head');
     head.add(face);
-    const visor = tagMesh(box(THREE, mVisor, 0.28, 0.05, 0.29, 0, 0.2, 0), id, 'head');
+    const visor = tagMesh(bevelBox(THREE, mVisor, 0.28, 0.065, 0.29, 0, 0.2, 0), id, 'head');
+    visor.name='visor';
     head.add(visor);
     const helmet = tagMesh(new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 4, 0, Math.PI*2, 0, Math.PI/2), mClothD), id, 'head');
     helmet.name = 'helmet-shell'; helmet.position.y = 0.23; helmet.scale.set(1, .75, 1.05);
@@ -305,6 +343,7 @@
   // Gloves: dark teal-gray glove with cuff, palm + fingers + thumb.
   function buildGlove(THREE, get) {
     const g = new THREE.Group();
+    g.name = 'glove-hand';
     const mGlove = get(THREE, 'glove', { color: 0x37474f });
     const mCuff = get(THREE, 'cuff', { color: 0x52636c });   // slate cloth cuff
     g.add(box(THREE, mGlove, 0.075, 0.035, 0.1, 0, 0, 0));                 // palm
@@ -525,25 +564,29 @@
     const mGold = get(THREE, 'dgAcc', { color: 0x969fa7, metalness: .85, roughness: .3 });                 // blue accents
 
     // frame + slide
-    g.add(box(THREE, mFrame, 0.032, 0.045, 0.2, 0, -0.012, -0.03));
+    g.add(bevelBox(THREE, mFrame, 0.034, 0.045, 0.2, 0, -0.012, -0.03));
     const slide = new THREE.Group();
     slide.position.set(0, 0.018, 0);
-    slide.add(box(THREE, mSlide, 0.036, 0.036, 0.24, 0, 0, -0.05));
-    // deagle triangular barrel top
-    slide.add(box(THREE, mSlide, 0.026, 0.018, 0.14, 0, 0.024, -0.1));
+    slide.add(bevelBox(THREE, mSlide, 0.038, 0.042, 0.24, 0, 0, -0.05));
+    // Fixed barrel shelf stays anchored while the slide cycles.
+    const barrel=bevelBox(THREE,mSlide,.029,.028,.15,0,.03,-.105);
+    barrel.name='deagle-barrel';barrel.geometry.userData={part:'barrel',noseZ:-.18};g.add(barrel);
+    const bore=new THREE.Mesh(new THREE.CircleGeometry(.008,12),mSteel);
+    bore.name='barrel-bore';bore.rotation.y=Math.PI;bore.position.set(0,.03,-.1801);g.add(bore);
     slide.add(box(THREE, mGold, 0.038, 0.006, 0.2, 0, -0.017, -0.05));      // slide serration line
     // sights on slide
-    const fs = box(THREE, mGold, 0.007, 0.012, 0.01, 0, 0.04, -0.155);
+    const fs = bevelBox(THREE, mSteel, 0.007, 0.012, 0.01, 0, 0.04, -0.155);
     fs.userData.sight = 'front';
     slide.add(fs);
-    const rs = box(THREE, mGold, 0.02, 0.01, 0.01, 0, 0.039, 0.06);
+    const rs = bevelBox(THREE, mSteel, 0.02, 0.01, 0.01, 0, 0.039, 0.06);
     rs.userData.sight = 'rear';
     slide.add(rs);
     g.add(slide);
 
     // grip (raked back) + mag inside (pivot for reload)
-    const grip = box(THREE, mGrip, 0.034, 0.1, 0.05, 0, -0.07, 0.06);
-    grip.rotation.x = 0.18;
+    const grip = bevelBox(THREE, mGrip, 0.031, 0.105, 0.05, 0, -0.07, 0.06);
+    grip.rotation.x = 0.32;grip.name='deagle-grip';
+    grip.geometry.userData={part:'grip',width:.031,rake:.32};
     g.add(grip);
     const mag = new THREE.Group();
     mag.position.set(0, -0.06, 0.055);
@@ -589,16 +632,16 @@
     // blade: flat stock tapering to a spear point, pivot at origin
     const blade = new THREE.Group();
     blade.position.set(0, 0, 0);
-    const stock = box(THREE, mBlade, 0.03, 0.006, 0.15, 0, 0, -0.085);
-    blade.add(stock);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.0155, 0.05, 4), mBlade);
-    tip.rotation.x = -Math.PI / 2;                                          // point down -Z
-    tip.geometry.rotateY(Math.PI / 4);                                     // preserve -Z pointing axis
-    tip.scale.set(1, 1, 0.2);                                               // flatten like a blade point
-    tip.position.set(0, 0, -0.185);
-    blade.add(tip);
-    blade.add(box(THREE, mEdge, 0.006, 0.008, 0.14, 0.013, -0.001, -0.09)); // sharpened edge
-    blade.add(box(THREE, mBlue, 0.012, 0.008, 0.02, 0, 0.006, -0.005));     // blue spine accent
+    // Single continuous spear profile, with a shallow central bevel ridge.
+    const outline=[[-.013,-.015],[-.015,-.14],[0,-.21],[.015,-.14],[.013,-.015]];
+    const vertices=[];
+    for(const side of [-1,1])for(let i=0;i<outline.length;i++){
+      const a=outline[i],b=outline[(i+1)%outline.length];
+      const tri=[[0,side*.003,-.09],[a[0],0,a[1]],[b[0],0,b[1]]];
+      if(side>0)tri.reverse();tri.forEach(v=>vertices.push(...v));
+    }
+    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
+    const stock=new THREE.Mesh(geometry,mBlade);stock.name='knife-blade';blade.add(stock);
     // pivot pins
     blade.add(cyl(THREE, mTeal, 0.006, 0.006, 0.036, 8, 0, 0, 0));
     blade.children[blade.children.length - 1].rotation.z = Math.PI / 2;
@@ -613,6 +656,7 @@
     handleA.children[handleA.children.length - 1].rotation.z = Math.PI / 2;
     handleA.add(cyl(THREE, mBlue, 0.005, 0.005, 0.02, 8, 0, 0, 0.14));
     handleA.children[handleA.children.length - 1].rotation.z = Math.PI / 2;
+    const channelA=bevelBox(THREE,mEdge,.017,.003,.105,0,.006,.089);channelA.name='handle-channel';handleA.add(channelA);
     g.add(handleA);
 
     const handleB = new THREE.Group();
@@ -623,6 +667,7 @@
     handleB.children[handleB.children.length - 1].rotation.z = Math.PI / 2;
     handleB.add(cyl(THREE, mTeal, 0.005, 0.005, 0.02, 8, 0, 0, 0.14));
     handleB.children[handleB.children.length - 1].rotation.z = Math.PI / 2;
+    const channelB=bevelBox(THREE,mEdge,.017,.003,.105,0,.006,.089);channelB.name='handle-channel';handleB.add(channelB);
     g.add(handleB);
 
     // grip hand wraps the lower handle
@@ -643,6 +688,8 @@
     const builder = Object.prototype.hasOwnProperty.call(WEAPON_BUILDERS, key) && WEAPON_BUILDERS[key];
     if (!builder) throw new Error('buildWeapon: unknown weapon "' + key + '"');
     const g = builder(THREE, matCache());
+    // References only: the controller owns independent hand-layer attachment.
+    g.userData.hands = g.children.filter(o => o.name === 'glove-hand');
     g.userData.key = key;
     g.userData.skin = 'Natural';
     // Pistol and knife have compact real-world proportions; enlarge just

@@ -14,6 +14,9 @@ window.PolyAudio = (() => {
     if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
   } catch (_) {} }
   function sound(type) { if (!ctx || muted || ctx.state !== 'running') return; try {
+    if(type==='headshot'){
+      const now=ctx.currentTime;[2190,3470,5210].forEach((hz,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.2/(i+1),now);g.gain.exponentialRampToValueAtTime(.0001,now+.24-i*.035);o.connect(g);g.connect(master);o.start(now);o.stop(now+.25);o.onended=()=>{o.disconnect();g.disconnect();};});return;
+    }
     const gun = ['ak47','awp','deagle','enemy'].includes(type);
     const duration = type==='awp' ? .5 : gun ? .2 : .08;
     const now=ctx.currentTime, src=ctx.createBufferSource(), filter=ctx.createBiquadFilter(), gain=ctx.createGain();

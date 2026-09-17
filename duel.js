@@ -4,14 +4,14 @@
  function create(map,C){
   map=map||C.MAP;
   const spawns=[map.spawnPlayer,map.opponent||map.spawnOpponent||map.spawnBots[0]];
-  function player(s,id){return {id,x:s.x,y:1.7,z:s.z,yaw:id?Math.PI:0,pitch:0,hp:100,alive:true,weapon:'ak47',ammo:Object.fromEntries(Object.entries(C.WEAPONS).map(([k,w])=>[k,{mag:w.mag,reserve:w.reserve}])),reload:0,reloadKey:null,kills:0,deaths:0};}
+  function player(s,id){return {id,name:'Operator '+(id+1),x:s.x,y:1.7,z:s.z,yaw:id?Math.PI:0,pitch:0,hp:100,alive:true,weapon:'ak47',ammo:Object.fromEntries(Object.entries(C.WEAPONS).map(([k,w])=>[k,{mag:w.mag,reserve:w.reserve}])),reload:0,reloadKey:null,kills:0,deaths:0};}
   const state={mapId:map.id||'sandline',phase:'buy',round:1,score:[0,0],buyClock:5,roundClock:90,endClock:0,time:0,lastWinner:null,matchWinner:null,players:spawns.map(player),events:[]};
   function step(dt){
    if(!finite(dt)||dt<=0)return;dt=Math.min(dt,.25);state.time+=dt;
    for(const p of state.players)if(p.reload>0){p.reload=Math.max(0,p.reload-dt);if(p.reload<1e-8){const a=p.ammo[p.reloadKey],w=C.WEAPONS[p.reloadKey],n=Math.min(w.mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;p.reload=0;p.reloadKey=null;}}
    if(state.phase==='buy'){state.buyClock=Math.max(0,state.buyClock-dt);if(state.buyClock<1e-8)state.phase='live';}
    else if(state.phase==='live'){state.roundClock=Math.max(0,state.roundClock-dt);if(state.roundClock<1e-8){const [a,b]=state.players;finish(a.hp===b.hp?null:a.hp>b.hp?0:1);}}
-   else if(state.phase==='end'){state.endClock=Math.max(0,state.endClock-dt);if(state.endClock<1e-8){if(state.score.some(s=>s>=5)){state.phase='matchover';state.matchWinner=state.score[0]>=5?0:1;}else{state.phase='buy';state.round++;state.buyClock=5;state.roundClock=90;state.lastWinner=null;state.players=spawns.map((s,id)=>({...player(s,id),kills:state.players[id].kills,deaths:state.players[id].deaths}));nextFire.fill(0);movement.forEach(m=>{m.at=state.time;m.budget=1;m.vertical=1;});}}}
+   else if(state.phase==='end'){state.endClock=Math.max(0,state.endClock-dt);if(state.endClock<1e-8){if(state.score.some(s=>s>=5)){state.phase='matchover';state.matchWinner=state.score[0]>=5?0:1;}else{state.phase='buy';state.round++;state.buyClock=5;state.roundClock=90;state.lastWinner=null;state.players=spawns.map((s,id)=>({...player(s,id),name:state.players[id].name,kills:state.players[id].kills,deaths:state.players[id].deaths}));nextFire.fill(0);movement.forEach(m=>{m.at=state.time;m.budget=1;m.vertical=1;});}}}
   }
   function finish(winner){if(state.phase!=='live')return;state.phase='end';state.endClock=4;state.lastWinner=winner;if(winner!==null)state.score[winner]++;}
   function reload(id,key){if((id!==0&&id!==1)||!Object.hasOwn(C.WEAPONS,key)||!['buy','live'].includes(state.phase))return false;const p=state.players[id],w=C.WEAPONS[key],a=p.ammo[key];if(!p.alive||p.reload>0||!w.mag||a.mag>=w.mag||a.reserve<=0)return false;p.reload=w.reloadTime;p.reloadKey=key;return true;}
@@ -50,6 +50,7 @@
    const clamped=C.collideCircle(s,.4,map.solids,map.bounds);
    if(Math.hypot(clamped.x-s.x,clamped.z-s.z)>.001||!C.segmentClear(p,s,expanded))return false;
    m.budget-=dist;m.vertical-=dy;for(const k of ['x','y','z','yaw','pitch'])p[k]=s[k];
+   if(typeof s.name==='string')p.name=s.name.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,20)||'Operator';
    if(typeof s.weapon==='string'&&Object.hasOwn(C.WEAPONS,s.weapon))p.weapon=s.weapon;
    return true;
   }

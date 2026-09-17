@@ -44,7 +44,7 @@
       mag: 7, reserve: 35, damage: 53, headMult: 4, legMult: 0.75,
       fireInterval: 0.25, reloadTime: 1.05,
       spreadBase: 0.011, spreadScoped: 0.0065, zoomFov: null, ads: true,
-      price: 700, killAward: 300, falloff: 0.005, recoil: 1.4,
+      price: 700, killAward: 300, falloff: 0, recoil: 1.4,
     },
     knife: {
       key: 'knife', name: 'Butterfly Knife', slot: 'melee', auto: true,
@@ -257,7 +257,7 @@
         id: i,
         pos: { x: sp.x, z: sp.z },
         node: nearestNav(sp),
-        hp: 100, alive: true, shots: 0,
+        hp: 100, alive: true, shots: 0, kills: 0, deaths: 0,
         cool: 0.6 + rng() * 0.8,
         speed: 3.9 + rng() * 0.6,
         name: 'BOT Phoenix ' + (i + 1),
@@ -332,7 +332,7 @@
       b.hp -= dmg;
       let killed = false;
       if (b.hp <= 0 && b.alive) {
-        b.alive = false; killed = true;
+        b.alive = false; b.deaths++; killed = true;
         this.kills++;
         if (part === 'head') this.headshots++;
         this.money = Math.min(ECON.max, this.money + w.killAward);
@@ -342,7 +342,9 @@
       return { dmg, killed };
     };
 
-    m.enemyShot = function (dmg) {
+    m.enemyShot = function (dmg, botId = null) {
+      if(this.hp<=0)return {dmg:0};
+      this.lastAttacker=botId;
       let hpLost;
       if (this.armor > 0) {
         const absorbed = Math.min(this.armor, dmg * (2 / 3));
@@ -352,7 +354,7 @@
         hpLost = dmg;
       }
       this.hp = Math.max(0, this.hp - hpLost);
-      if (this.hp <= 0 && this.phase === 'live') this.endRound('enemy');
+      if (this.hp <= 0 && this.phase === 'live') { this.deaths++; if(this.bots[botId])this.bots[botId].kills++; this.endRound('enemy'); }
       return { dmg: hpLost };
     };
 
@@ -411,7 +413,7 @@
               b.shots++;
               b.cool = 0.45 + rng() * 0.8;
               const dmg = 7 + Math.floor(rng() * 9);
-              this.enemyShot(dmg);
+              this.enemyShot(dmg, b.id);
             }
           } else {
             b.cool = Math.min(b.cool + dt * 0.5, 1.4);

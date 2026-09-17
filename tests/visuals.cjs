@@ -149,6 +149,24 @@ test('buildArena: merged environment budget, presets and disposal', function () 
   }
 });
 
+test('arena: merged cargo details and clouds never add playable obstacles', function () {
+  for(const id of ['desert','industrial','urban'])for(const preset of ['performance','medium','high']) {
+    const C=CORE.forMap(id),scene=new THREE.Scene(),a=PolyVisual.buildArena(THREE,scene,C,preset);
+    const decor=a.root.getObjectByName('batch-decor'),cloud=a.root.getObjectByName('batch-cloud');
+    if(preset==='performance'){assert.ok(!decor&&!cloud);a.dispose();continue;}
+    assert.ok(decor&&cloud,'one merged batch each for cargo details and clouds');
+    assert.equal(decor.material.polygonOffset,true,'flush wall accents avoid z-fighting');
+    assert.ok(decor.material.polygonOffsetFactor<0);
+    const p=decor.geometry.attributes.position;
+    for(let i=0;i<p.count;i++)assert.ok(C.MAP.solids.some(s=>Math.abs(p.getX(i)-s.x)<=s.w/2+.001&&Math.abs(p.getZ(i)-s.z)<=s.d/2+.001),'detail stays inside solid footprint');
+    const cp=cloud.geometry.attributes.position;assert.ok(cp.count/3<=600,'lightweight clouds');
+    for(let i=0;i<cp.count;i++)assert.ok(Math.abs(cp.getX(i))>C.MAP.bounds.hx||Math.abs(cp.getZ(i))>C.MAP.bounds.hz,'clouds outside bounds');
+    for(let i=0;i<5;i++)scene.add(PolyVisual.buildBot(THREE,i));
+    for(const key of PolyVisual.WEAPON_KEYS){const w=PolyVisual.buildWeapon(THREE,key);scene.add(w);assert.ok(allMeshes(scene).filter(m=>m.visible).length<180);scene.remove(w);}
+    a.dispose();
+  }
+});
+
 test('arena: copied source disposal never releases live raycast geometry', function () {
   const original=THREE.BufferGeometry.prototype.dispose, disposed=new Set();
   THREE.BufferGeometry.prototype.dispose=function(){disposed.add(this);original.call(this);};
@@ -239,6 +257,17 @@ test('buildBot: group with botId, tagged head/body/legs meshes, legs pivot', fun
   }
 });
 
+test('bots: chamfered armor, boots and visor keep the original draw budget', function () {
+  const bot=PolyVisual.buildBot(THREE,1);
+  for(const name of ['plate-carrier','boot-left','boot-right','visor']) {
+    const m=bot.getObjectByName(name);assert.ok(m,name);
+    const n=m.geometry.attributes.normal;let angled=false;
+    for(let i=0;i<n.count;i++)if(Math.abs(n.getX(i))>.1&&Math.abs(n.getY(i))>.1)angled=true;
+    assert.ok(angled,name+' has bevel normals');
+  }
+  assert.ok(allMeshes(bot).length<=24);
+});
+
 test('buildBot: two bots are independent groups', function () {
   const a = PolyVisual.buildBot(THREE, 1);
   const b = PolyVisual.buildBot(THREE, 1);
@@ -326,6 +355,19 @@ test('buildWeapon knife: ~0.5m butterfly, pivoted handles + blade', function () 
   assertFinite(w, 'knife');
 });
 
+test('knife: continuous tapered blade and machined handle channels', function () {
+  const w=PolyVisual.buildWeapon(THREE,'knife'),blade=w.userData.blade;
+  const steel=blade.getObjectByName('knife-blade');assert.ok(steel);
+  const p=steel.geometry.attributes.position;
+  const tip=[],heel=[];for(let i=0;i<p.count;i++){if(p.getZ(i)<-.2)tip.push(Math.abs(p.getX(i)));if(p.getZ(i)>-.04)heel.push(Math.abs(p.getX(i)));}
+  assert.ok(tip.length&&heel.length&&Math.max(...tip)<Math.max(...heel));
+  const n=steel.geometry.attributes.normal;
+  for(let i=0;i<p.count;i++)if(Math.abs(p.getY(i))>.002)assert.ok(p.getY(i)*n.getY(i)>0,'blade faces outward');
+  assert.ok(!allMeshes(blade).some(m=>m.geometry.type==='ConeGeometry'));
+  for(const h of [w.userData.handleA,w.userData.handleB])assert.ok(h.getObjectByName('handle-channel'));
+  assert.ok(allMeshes(w).length<=20);assertFinite(w,'clean knife');
+});
+
 test('weapons: all four keys build and are distinct', function () {
   const keys = ['ak47', 'awp', 'deagle', 'knife'];
   const built = keys.map(function (k) { return PolyVisual.buildWeapon(THREE, k); });
@@ -357,6 +399,54 @@ test('weapons: iron sights exist on the long guns', function () {
     const sights = [];
     w.traverse(function (o) { if (o.userData && o.userData.sight) sights.push(o.userData.sight); });
     assert.ok(sights.includes('front') && sights.includes('rear'), key + ': front + rear sights tagged');
+  }
+});
+
+test('weapons: exposed glove groups can be detached for independent spins', function () {
+  for(const key of PolyVisual.WEAPON_KEYS) {
+    const w=PolyVisual.buildWeapon(THREE,key), hands=w.userData.hands;
+    assert.ok(Array.isArray(hands),key+' exposes hands');
+    assert.equal(hands.length,key==='knife'?1:2);
+    const scene=new THREE.Scene();scene.add(w);w.position.set(.32,-.3,-.65);
+    scene.updateMatrixWorld(true);
+    const positions=hands.map(h=>{assert.equal(h.parent,w);assert.ok(h.isGroup);return h.getWorldPosition(new THREE.Vector3());});
+    hands.forEach(h=>scene.attach(h));w.rotation.set(1,2,3);scene.updateMatrixWorld(true);
+    hands.forEach((h,i)=>assert.ok(h.getWorldPosition(new THREE.Vector3()).distanceTo(positions[i])<1e-9));
+  }
+});
+
+test('deagle: beveled slab slide, barrel shelf, raked grip, sight posts', function () {
+  for (const preset of ['performance', 'medium', 'high']) {
+    const w = PolyVisual.buildWeapon(THREE, 'deagle', preset);
+    const bb = new THREE.Box3().setFromObject(w);
+    const bevels = [];
+    w.traverse(o => { if (o.isMesh && o.geometry.type === 'BevelledBoxGeometry') bevels.push(o.geometry); });
+    assert.ok(bevels.length >= 6, preset + ': bevelled prisms on slide/frame/grip/sights (got ' + bevels.length + ')');
+    // grip: bevelled and raked back, clearly narrower than the old 0.034 slab
+    const grip = bevels.find(b => b.userData.part === 'grip');
+    assert.ok(grip, 'grip is a bevelled prism');
+    assert.ok(grip.userData.width < 0.032, 'grip slimmer: ' + grip.userData.width.toFixed(4));
+    assert.ok(Math.abs(grip.userData.rake - 0.32) < 1e-9, 'grip rake 0.32 rad');
+    // barrel shelf under the slide, barrel nose flush with slide front
+    const barrel = bevels.find(b => b.userData.part === 'barrel');
+    assert.ok(barrel, 'hexagonal barrel under the slide');
+    assert.ok(Math.abs(w.userData.muzzle.position.z-(-.18*1.4))<1e-9,'original muzzle anchor preserved');
+    assert.ok(Math.abs(w.userData.muzzle.position.y-.03*1.4)<1e-9,'original bore height preserved');
+    const barrelBounds=new THREE.Box3().setFromObject(w.getObjectByName('deagle-barrel'));
+    assert.ok(Math.abs(barrelBounds.min.z-w.userData.muzzle.position.z)<.002,'barrel reaches muzzle');
+    const normals=w.userData.bolt.children[0].geometry.attributes.normal;
+    assert.ok(Array.from({length:normals.count},(_,i)=>Math.abs(normals.getX(i))>.1&&Math.abs(normals.getY(i))>.1).some(Boolean),'real chamfer normals');
+    // slide must still be its own group (bolt-recoil pivot) with a bevelled slab
+    assert.ok(w.userData.bolt && w.userData.bolt.isGroup && w.userData.bolt.type === 'Group');
+    assert.ok(w.userData.bolt.children.some(c => c.geometry && c.geometry.type === 'BevelledBoxGeometry'));
+    // sight posts stay tiny bevelled nubs tagged front/rear
+    const sights = [];
+    w.traverse(o => { if (o.userData && o.userData.sight) sights.push(o.userData.sight); });
+    assert.ok(sights.includes('front') && sights.includes('rear'), 'front + rear sight posts');
+    assert.ok(bb.max.z-bb.min.z<.65,'compact pistol envelope');
+    const sightMeshes = [];
+    w.traverse(o => { if (o.isMesh && o.userData.sight) sightMeshes.push(o.geometry); });
+    assert.ok(sightMeshes.length === 2 && sightMeshes.every(g => g.type === 'BevelledBoxGeometry'), 'two bevelled sight nubs');
   }
 });
 
