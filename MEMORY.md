@@ -1,25 +1,31 @@
 # POLY-STRIKE project memory
 
-Original offline-capable Three.js tactical FPS, not affiliated with Valve.
-Location: C:/Users/xtr18/Projects/poly-strike.
-Target: new public xtr18222-hue/poly-strike repo, main/root GitHub Pages.
-Read this file before resuming; update verified changes and blockers. Never store secrets.
+Location: C:/Users/xtr18/Projects/poly-strike. Read before resuming; never store secrets.
+Repo: https://github.com/xtr18222-hue/poly-strike
+Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 
-## Decisions
-- Vendored Three.js r149 classic script for file:// and no CDN runtime dependency.
-- Exactly AK-47, AWP, Desert Eagle, Butterfly Knife. All available each round; no economy gating in the UI.
-- Five enemy bots; first to five rounds; 90-second elimination rounds. Procedural map, models and Web Audio.
-- Deterministic UMD core, separate renderer/controller; tests with Node and Playwright Edge.
-- Mouse/keyboard desktop-first. Pointer lock and a fallback drag-look mode.
+## Architecture and decisions
+- Original procedural tactical FPS, not affiliated with Valve. Vanilla JS, vendored Three.js r149 and PeerJS 1.5.5 (MIT). No runtime CDN; offline file:// and SW caching.
+- Exactly AK-47, AWP, Deagle, Butterfly Knife; all unlocked. Natural wood/steel, olive, silver, chrome colors replace red skins.
+- maps.js registry: desert/Sandline, industrial/Foundry, urban/Crosswalk. core.js forMap returns cached collision/nav context; nav BFS reused across bots.
+- visual factories return arena root/stats/dispose; merged material batches, hidden live raycast colliders retained. Performance basic materials, no textures/decorative effects, max 307200 render pixels. No postprocessing/shadow maps.
+- settings.js persisted high/medium/performance budgets. game.js controller/HUD; net.js transport; duel.js host authority; online.js adapter. Network 20Hz, public PeerJS signaling/STUN, no TURN; restrictive NAT may fail. Codes not authentication; casual host trusted, no ranked anti-cheat.
+- Offline five bots, 90 seconds, first5 rounds. Online 1v1 first5, higher HP wins timeout, equal draws. Online menus do not freeze match; no host migration.
+- Shift sprint, C/Ctrl while sprinting slides; right-click AK/Deagle ADS + AWP scope. Faster reloads, exactly two alternating knife inspect variants.
+- Desktop keyboard/mouse, pointer lock or drag fallback. Test mutations only ?test=1.
 
-## Progress
-- Toolchain verified: Node v24, Python 3.11, uv, portable gh authenticated.
-- Core and procedural visual tests: 36 passing, including 30 seeded bot traces. Edge gameplay covers movement/collision, jump/crouch, all four weapons, reload, scope/raycast, knife flips/hits, pause, scoreboard and win/loss/restart. Zero observed page errors.
-- Offline service-worker reload, direct file:// launch and actual pointer lock passed.
-- Actual framebuffer color variation verified; 10-second render sample measured 59.7 FPS on this machine; natural bot pathfinding and attacks verified.
-- Red/black geometric weapon finishes implemented. User image references could not be visually analyzed; no exact-match claim.
-- Independent precommit review passed: no blocking logic/security findings. Nonblocking: unused economy API; manual SW version bumps required; core buy-phase damage is guarded by the game controller.
-- Deployed: https://xtr18222-hue.github.io/poly-strike/ . Public repo: https://github.com/xtr18222-hue/poly-strike . Initial game commit f6fdaa5 on main.
-- GitHub Pages reports built and HTTP 200. Full gameplay and offline/pointer-lock suites passed against the live URL with zero observed page errors.
-- No deployment blockers. Exact visual reference matching was not verified.
-- Repository-local git identity uses authenticated account GitHub noreply address; no global git config modified.
+## Verified upgrade progress
+- 62 Node tests pass, including 30 full-round seeded bot traces per map, collision/nav connectivity, model/material/batching/disposal, duel authority and packet/lifecycle validation.
+- Upgrade UI/maps/presets/ADS/slide/knife/AK/reload browser suite passed with zero console/page errors.
+- Real two-browser public PeerJS/WebRTC transport and integrated game passed host/join, damage both ways, movement, victory/defeat, disconnect.
+- Offline cached reload, direct file:// and actual pointer lock passed. Original gameplay, integrated online, offline and pointer-lock suites passed again after final visual batching.
+- Performance on this Windows Edge machine at1280x800: desert60.13, industrial60.21, urban60.18 FPS; p95 17.0–17.1ms; total draws157/157/110; framebuffer307038 pixels; reported JS heap10.7–14.0MB (NOT total process memory or 1GB-hardware certification).
+- Screenshot visual assessment unavailable (vision model lacks support); numeric renderer/geometry tests are real. No universal60FPS/1GB claim.
+- Independent review passed with no security/logic findings; final regressions passed. Upgrade ready to commit/push. Previous live initial commit f6fdaa5.
+
+## Toolchain/deploy
+- Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
+- Portable gh: C:/Users/xtr18/AppData/Local/gh-portable/bin/gh.exe authenticated xtr18222-hue. Local git noreply identity configured.
+- Server localhost18957; TEST_URL overrides browser suite roots (trailing slash).
+- Bump sw.js CACHE every runtime deployment; current poly-strike-v2-field-operations. Reload after activation for previous cached clients.
+- Ignore performance screenshots/results artifacts. Keep tests and licenses committed.

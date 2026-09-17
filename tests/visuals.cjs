@@ -116,13 +116,73 @@ test('buildArena: arena raycaster actually hits the mid building + perimeter', f
   assert.ok(hits[0].point.z <= -37, 'perimeter hit beyond playfield edge (z=' + hits[0].point.z.toFixed(2) + ')');
 });
 
-test('buildArena: decor budget under 400 environment meshes; scene populated', function () {
-  const scene = new THREE.Scene();
-  PolyVisual.buildArena(THREE, scene, CORE);
-  const meshes = allMeshes(scene);
-  assert.ok(meshes.length < 400, 'environment mesh count < 400 (got ' + meshes.length + ')');
-  assert.ok(meshes.length > 100, 'scene is actually decorated (got ' + meshes.length + ')');
-  assert.ok(scene.children.length > 20, 'scene has many top-level objects');
+test('buildArena: merged environment budget, presets and disposal', function () {
+  for (const theme of ['desert','industrial','urban']) {
+    const counts=[];
+    for (const preset of ['performance','medium','high']) {
+      const scene=new THREE.Scene(), map=JSON.parse(JSON.stringify(CORE.MAP)); map.theme=theme;
+      const before=JSON.stringify(map), res=PolyVisual.buildArena(THREE,scene,{MAP:map},preset);
+      const meshes=allMeshes(scene).filter(m=>m.visible);
+      assert.ok(meshes.length<40, 'environment <40 draws');
+      assert.equal(res.stats.drawCalls,meshes.length);
+      counts.push(res.stats.triangles);
+      for(const m of meshes) {
+        assert.ok(preset==='performance'?m.material.isMeshBasicMaterial:m.material.isMeshLambertMaterial);
+        assert.equal(m.material.map,null);
+      }
+      for(const m of res.hitMeshes) {
+        assert.equal(m.visible,false);
+        const s=m.userData.solid, b=new THREE.Box3().setFromObject(m);
+        assert.ok(Math.abs(b.max.y-s.h)<1e-5);
+        assert.ok(Math.abs(b.min.x-(s.x-s.w/2))<1e-5);
+        assert.ok(Math.abs(b.max.z-(s.z+s.d/2))<1e-5);
+        const ray=new THREE.Raycaster(new THREE.Vector3(s.x,50,s.z),new THREE.Vector3(0,-1,0));
+        assert.ok(ray.intersectObject(m,false).length);
+      }
+      assert.equal(JSON.stringify(map),before);
+      assertFinite(scene,theme+'/'+preset);
+      const resources=new Set(); allMeshes(res.root).forEach(m=>{resources.add(m.geometry);resources.add(m.material);});
+      let disposals=0; resources.forEach(r=>r.addEventListener('dispose',()=>disposals++));
+      res.dispose();res.dispose();assert.equal(disposals,resources.size);assert.equal(res.root.parent,null);
+    }
+    assert.ok(counts[0]<counts[1]&&counts[1]<counts[2]);
+  }
+});
+
+test('arena: copied source disposal never releases live raycast geometry', function () {
+  const original=THREE.BufferGeometry.prototype.dispose, disposed=new Set();
+  THREE.BufferGeometry.prototype.dispose=function(){disposed.add(this);original.call(this);};
+  let arena;
+  try {arena=PolyVisual.buildArena(THREE,new THREE.Scene(),CORE,'medium');}
+  finally {THREE.BufferGeometry.prototype.dispose=original;}
+  assert.ok(disposed.size>30);
+  for(const mesh of arena.hitMeshes)assert.ok(!disposed.has(mesh.geometry));
+  arena.dispose();
+});
+
+test('arena: actual map contexts retain every collider and fit total scene budget', function () {
+  for(const id of ['desert','industrial','urban']) {
+    const C=CORE.forMap(id),scene=new THREE.Scene(),arena=PolyVisual.buildArena(THREE,scene,C,'performance');
+    assert.equal(arena.hitMeshes.length,C.MAP.solids.length+4);
+    for(let i=0;i<5;i++)scene.add(PolyVisual.buildBot(THREE,i));
+    scene.add(PolyVisual.buildWeapon(THREE,'awp'));
+    assert.ok(allMeshes(scene).filter(m=>m.visible).length<180);
+    arena.dispose();
+  }
+});
+
+test('weapons: no crimson overlays', function () {
+  for (const key of PolyVisual.WEAPON_KEYS) {
+    const meshes=allMeshes(PolyVisual.buildWeapon(THREE,key));
+    assert.ok(!meshes.some(m=>m.name==='skin-inlay'));
+    assert.ok(!meshes.some(m=>[0xc51632,0xff3851,0xb01426].includes(m.material.color.getHex())));
+  }
+});
+
+test('bots: faceted helmet and plated silhouette', function () {
+  const bot=PolyVisual.buildBot(THREE,3);
+  assert.ok(bot.getObjectByName('helmet-shell'));
+  assert.ok(bot.getObjectByName('plate-carrier'));
 });
 
 test('buildArena: all geometry finite, no DOM needed (canvas fallback)', function () {
@@ -133,28 +193,10 @@ test('buildArena: all geometry finite, no DOM needed (canvas fallback)', functio
   assert.ok(res.hitMeshes.every(function (m) { return m.isMesh; }), 'all hitMeshes are Meshes');
 });
 
-test('buildArena: floor sits below y=0, site signs exist near A and B', function () {
-  const scene = new THREE.Scene();
-  PolyVisual.buildArena(THREE, scene, CORE);
-  // floor slab top must be at y<=0 so entities stand on it
-  let floorTop = Infinity;
-  scene.traverse(function (o) {
-    if (o.isMesh && o.geometry && o.geometry.type === 'BoxGeometry' &&
-      o.position.y === -0.25 && Math.abs(o.scale.x - 1) < 0.01) {
-      floorTop = Math.min(floorTop, o.position.y + 0.25);
-    }
-  });
-  assert.ok(floorTop <= 0.001, 'floor top at y<=0 (got ' + floorTop + ')');
-  // signs: planes with teal/blue materials near site A/B centers
-  const sites = [];
-  scene.traverse(function (o) {
-    if (o.isMesh && o.geometry && o.geometry.type === 'PlaneGeometry' &&
-      o.parent && Math.abs(o.parent.position.y - 6.2) < 0.01) {
-      sites.push({ x: o.parent.position.x, z: o.parent.position.z });
-    }
-  });
-  assert.ok(sites.some(function (p) { return Math.hypot(p.x - 24, p.z + 19.6) < 0.01; }), 'A sign near (24,-19.6)');
-  assert.ok(sites.some(function (p) { return Math.hypot(p.x + 24, p.z - 19.6) < 0.01; }), 'B sign near (-24,19.6)');
+test('buildArena: merged floor below zero and geometric site markers', function () {
+  const scene=new THREE.Scene(),res=PolyVisual.buildArena(THREE,scene,CORE);
+  assert.ok(new THREE.Box3().setFromObject(res.root.getObjectByName('arena-floor')).max.y<=.001);
+  for(const letter of ['A','B'])assert.ok(res.root.getObjectByName('site-'+letter));
 });
 
 /* ----------------------------------------------------------------- BOT -- */
@@ -323,43 +365,19 @@ test('weapons: glove hands present with cuff accents', function () {
     const w = PolyVisual.buildWeapon(THREE, key);
     const gloveMeshes = allMeshes(w).filter(function (m) {
       return m.material && m.material.color &&
-        (m.material.color.getHex() === 0x37474f || m.material.color.getHex() === 0xb01426);
+        (m.material.color.getHex() === 0x37474f || m.material.color.getHex() === 0x52636c);
     });
     assert.ok(gloveMeshes.length >= 4, key + ': gloves w/ teal cuffs present');
   }
 });
 
-test('arena: canvas painters execute, generate A/B signs and square pads', function () {
-  const previous = global.document;
-  const labels = [], rectangles = [];
-  const gradient = { addColorStop() {} };
-  global.document = { createElement(tag) {
-    assert.equal(tag, 'canvas');
-    return { width: 0, height: 0, getContext() {
-      return {
-        createLinearGradient() { return gradient; },
-        createRadialGradient() { return gradient; },
-        fillRect() {}, clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, setLineDash() {},
-        strokeRect(x, y, w, h) { rectangles.push([x, y, w, h]); },
-        fillText(text) { labels.push(text); },
-      };
-    } };
-  } };
-  try {
-    const scene = new THREE.Scene();
-    PolyVisual.buildArena(THREE, scene, CORE);
-    assert.ok(scene.background.isTexture, 'canvas sky background');
-    assert.deepEqual(labels.sort(), ['A', 'A', 'B', 'B']);
-    for (const r of rectangles.slice(0, 2)) assert.ok(Math.abs(r[2] - r[3]) < 1e-6, 'site pad stays square');
-    const planes = allMeshes(scene).filter(m => m.geometry.type === 'PlaneGeometry');
-    assert.equal(planes.length, 3, 'paint overlay plus two site signs');
-    assert.ok(planes.every(m => m.material.map && m.material.map.isCanvasTexture));
-    assert.ok(allMeshes(scene).length < 400);
-    assertFinite(scene, 'canvas arena');
-  } finally {
-    if (previous === undefined) delete global.document;
-    else global.document = previous;
-  }
+test('arena: no DOM or texture allocation in any preset', function () {
+  const previous=global.document;let calls=0;
+  global.document={createElement(){calls++;throw new Error('no canvas');}};
+  try { for(const preset of ['performance','medium','high']) {
+    const scene=new THREE.Scene(),res=PolyVisual.buildArena(THREE,scene,CORE,preset);
+    assert.ok(scene.background.isColor);assert.equal(calls,0);res.dispose();
+  } } finally { if(previous===undefined)delete global.document;else global.document=previous; }
 });
 
 test('arena: rectangular bounds produce correct perimeter ray hits', function () {
@@ -374,13 +392,12 @@ test('arena: rectangular bounds produce correct perimeter ray hits', function ()
   }
 });
 
-test('weapons: red-black finish and geometric skin details on every model', function () {
-  for (const key of ['ak47', 'awp', 'deagle', 'knife']) {
-    const w = PolyVisual.buildWeapon(THREE, key);
-    const meshes = allMeshes(w);
-    assert.ok(meshes.some(m => m.material.color.getHex() === 0xc51632), key + ': crimson finish');
-    assert.ok(meshes.some(m => m.material.color.getHex() === 0x17191f), key + ': graphite finish');
-    assert.ok(meshes.filter(m => m.name === 'skin-inlay').length >= 6, key + ': procedural inlays');
+test('weapons: wood, olive, silver and chrome materials', function () {
+  const expected={ak47:['akWood',0x8a5a2b],awp:['awpBody',0x3d4a3f],deagle:['dgSlide',0xc4cbd1],knife:['kfBlade',0xd3e0ec]};
+  for(const [key,[name,color]] of Object.entries(expected)) {
+    const material=allMeshes(PolyVisual.buildWeapon(THREE,key)).find(m=>m.material.name===name).material;
+    assert.equal(material.color.getHex(),color);
+    if(key==='knife'||key==='deagle')assert.ok(material.metalness>=.8&&material.roughness<=.35);
   }
 });
 

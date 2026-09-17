@@ -28,6 +28,7 @@
     return function get(THREE, key, params) {
       if (cache[key]) return cache[key];
       const m = new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.72, metalness: /Steel|Slide|Blade|Edge|Ring|metal/i.test(key) ? 0.65 : 0.08 }, params));
+      m.name = key;
       cache[key] = m;
       return m;
     };
@@ -82,323 +83,130 @@
   }
 
   /* ================================================================ ARENA == */
-  function buildArena(THREE, scene, C) {
-    const get = matCache();
-    const map = (C && C.MAP) || (typeof POLY_CORE !== 'undefined' && POLY_CORE.MAP);
+  // Copy world-space attributes into one non-indexed draw per material.
+  // Keep collider source geometry alive: those invisible meshes still raycast.
+  function mergeStatic(THREE, objects, root, preserve) {
+    const buckets = new Map();
+    for (const mesh of objects) {
+      mesh.updateWorldMatrix(true, false);
+      const copy = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      copy.applyMatrix4(mesh.matrixWorld);
+      if (!buckets.has(mesh.material)) buckets.set(mesh.material, []);
+      buckets.get(mesh.material).push(copy);
+      if (!preserve.has(mesh)) { mesh.geometry.dispose(); mesh.removeFromParent(); }
+      else mesh.visible = false;
+    }
+    let triangles = 0;
+    for (const [material, copies] of buckets) {
+      const geometry = new THREE.BufferGeometry();
+      for (const name of ['position', 'normal']) {
+        const size = copies.reduce((n, g) => n + g.attributes[name].array.length, 0);
+        const data = new Float32Array(size); let offset = 0;
+        for (const g of copies) { data.set(g.attributes[name].array, offset); offset += g.attributes[name].array.length; }
+        geometry.setAttribute(name, new THREE.BufferAttribute(data, 3));
+      }
+      copies.forEach(g => g.dispose());
+      geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+      triangles += geometry.attributes.position.count / 3;
+      const mesh = new THREE.Mesh(geometry, material); mesh.name = 'batch-' + material.name;
+      root.add(mesh);
+    }
+    return { drawCalls: buckets.size, triangles, sourceMeshes: objects.length };
+  }
+
+  function buildArena(THREE, scene, C, preset = 'medium') {
+    const map = C && C.MAP;
     if (!map || !Array.isArray(map.solids)) throw new Error('buildArena: C.MAP.solids missing');
-    const hx = (map.bounds && map.bounds.hx) || 38;
-    const hz = (map.bounds && map.bounds.hz) || 38;
-
-    const hitMeshes = [];
-
-    // ---- materials -------------------------------------------------------
-    const mSand = get(THREE, 'sand', { color: 0xdcb98a });           // sandstone
-    const mSandDark = get(THREE, 'sandD', { color: 0xb8946a });
-    const mFloor = get(THREE, 'floor', { color: 0xd2b183 });
-    const mFloorAlt = get(THREE, 'floorAlt', { color: 0xc9a877 });
-    const mTeal = get(THREE, 'teal', { color: 0x2fa8a0 });
-    const mBlue = get(THREE, 'blue', { color: 0x2b6fb8 });
-    const mMetal = get(THREE, 'metal', { color: 0x5a6a72 });
-    const mWood = get(THREE, 'wood', { color: 0x8a5a33 });
-    const mWoodDark = get(THREE, 'woodD', { color: 0x6b4324 });
-    const mDark = get(THREE, 'dark', { color: 0x2e2822 });
-    const mDune = get(THREE, 'dune', { color: 0xcfab7c });
-    const mRock = get(THREE, 'rock', { color: 0x9c8768 });
-
-    // ---- sky + fog -------------------------------------------------------
-    const skyTex = canvasTex(THREE, 512, 512, function (ctx, w, h) {
-      const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, '#7fb4d8');
-      g.addColorStop(0.55, '#d8c9a8');
-      g.addColorStop(1, '#e8d2a4');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
-      // sun glow
-      const sg = ctx.createRadialGradient(w * 0.72, h * 0.3, 8, w * 0.72, h * 0.3, 120);
-      sg.addColorStop(0, 'rgba(255,250,230,0.95)');
-      sg.addColorStop(0.25, 'rgba(255,240,200,0.55)');
-      sg.addColorStop(1, 'rgba(255,240,200,0)');
-      ctx.fillStyle = sg; ctx.fillRect(0, 0, w, h);
-      // distant haze bands
-      ctx.fillStyle = 'rgba(226,200,158,0.5)';
-      ctx.fillRect(0, h * 0.62, w, h * 0.06);
-      ctx.fillStyle = 'rgba(218,188,142,0.5)';
-      ctx.fillRect(0, h * 0.7, w, h * 0.08);
-    });
-    try {
-      if (skyTex) {
-        scene.background = skyTex;
-      } else {
-        scene.background = new THREE.Color(0xd8c9a8); // flat fallback (no DOM canvas in tests)
-      }
-      if (THREE.Fog) scene.fog = new THREE.Fog(0xe2cda2, 55, 165);
-    } catch (e) { /* background/fog are cosmetic */ }
-
-    // ---- lights only if the scene has none -------------------------------
-    let hasLight = false;
-    scene.traverse(function (o) { if (o.isLight) hasLight = true; });
-    if (!hasLight) {
-      scene.add(new THREE.HemisphereLight(0xfff3dc, 0xb99a6d, 0.95));
-      const sun = new THREE.DirectionalLight(0xffe9c4, 1.05);
-      sun.position.set(34, 55, 18);
-      scene.add(sun);
-    }
-
-    // ---- ground ----------------------------------------------------------
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, 0.5, hz * 2), mFloor);
-    floor.position.set(0, -0.25, 0);
-    floor.receiveShadow = false;
-    scene.add(floor);
-    // sand patches for variation
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const px = Math.cos(a * 2.3) * (10 + (i % 3) * 9);
-      const pz = Math.sin(a * 1.7) * (10 + ((i + 2) % 3) * 9);
-      const patch = new THREE.Mesh(new THREE.BoxGeometry(7 + (i % 3) * 3, 0.06, 5 + (i % 2) * 3), mFloorAlt);
-      patch.position.set(px, -0.025, pz);
-      patch.rotation.y = a;
-      scene.add(patch);
-    }
-
-    // ---- painted floor: lane markings + site pads (canvas, 1 draw) -------
-    const marksTex = canvasTex(THREE, 1024, 1024, function (ctx, w, h) {
-      const W2C = function (x, z) { return [(x + hx) / (hx * 2) * w, (z + hz) / (hz * 2) * h]; };
-      ctx.clearRect(0, 0, w, h);
-      ctx.lineCap = 'round';
-      // mid dashed line (spawn to mid doors)
-      ctx.strokeStyle = 'rgba(47,168,160,0.85)'; ctx.lineWidth = 7; ctx.setLineDash([26, 20]);
-      ctx.beginPath();
-      let p = W2C(0, 36), q = W2C(0, 6);
-      ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
-      // lanes to A (NE) and B (SW)
-      ctx.strokeStyle = 'rgba(43,111,184,0.8)'; ctx.lineWidth = 6;
-      p = W2C(4, 2); q = W2C(22, -18);
-      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
-      p = W2C(-4, 2); q = W2C(-22, 18);
-      ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
-      ctx.setLineDash([]);
-      // site pads: translucent rectangles around A and B sites
-      const pad = function (cx, cz, wWorld, dWorld, col) {
-        const a = W2C(cx - wWorld / 2, cz - dWorld / 2), b = W2C(cx + wWorld / 2, cz + dWorld / 2);
-        ctx.fillStyle = col;
-        ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
-        ctx.strokeStyle = col; ctx.lineWidth = 10;
-        ctx.strokeRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
-      };
-      pad(24, -24, 14, 14, 'rgba(47,168,160,0.30)');
-      pad(-24, 24, 14, 14, 'rgba(43,111,184,0.30)');
-      // stenciled letters on the pads
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = 'bold 150px monospace';
-      ctx.fillStyle = 'rgba(20,60,60,0.65)';
-      p = W2C(29, -29); ctx.fillText('A', p[0], p[1]);
-      p = W2C(-29, 29); ctx.fillText('B', p[0], p[1]);
-    });
-    if (marksTex) {
-      const marks = new THREE.Mesh(new THREE.PlaneGeometry(hx * 2, hz * 2), new THREE.MeshBasicMaterial({
-        map: marksTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2,
-      }));
-      marks.rotation.x = -Math.PI / 2;
-      marks.position.y = 0.012;
-      marks.renderOrder = 1;
-      scene.add(marks);
-    } else {
-      // flat-color fallback: dashed lane strips (still cheap)
-      const dash = function (x, z, len, across, m) {
-        for (let i = 0; i < 8; i++) {
-          const d = new THREE.Mesh(new THREE.BoxGeometry(across, 0.02, len / 16), m);
-          d.position.set(x + (across ? 0 : 0), 0.02, z - len / 2 + (i * 2 + 1) * (len / 16));
-          scene.add(d);
-        }
-      };
-      dash(0, 21, 28, 0.22, mTeal);
-      for (let i = 0; i < 8; i++) {
-        const d = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 1.4), mBlue);
-        d.position.set(4 + i * 2.4, 0.02, 2 - i * 2.4); scene.add(d);
-        const e = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.02, 1.4), mBlue);
-        e.position.set(-4 - i * 2.4, 0.02, 2 + i * 2.4); scene.add(e);
-      }
-    }
-
-    // ---- solids: buildings, walls, crates (raycast colliders) ------------
-    const windowMat = get(THREE, 'win', { color: 0x1d2a30 });
-
-    function buildBuilding(s) {
-      const g = new THREE.Group();
-      // main mass = collider
-      const body = box(THREE, mSand, s.w, s.h, s.d, s.x, s.h / 2, s.z);
-      body.userData.solid = { x: s.x, z: s.z, w: s.w, d: s.d, h: s.h, kind: s.kind };
-      g.add(body); hitMeshes.push(body);
-      // skirt + roof slab
-      g.add(box(THREE, mSandDark, s.w + 0.5, 0.7, s.d + 0.5, s.x, 0.35, s.z));
-      g.add(box(THREE, mSandDark, s.w + 0.6, 0.35, s.d + 0.4, s.x, s.h + 0.1, s.z));
-      // parapet trims
-      const pw = s.w / 2, pd = s.d / 2;
-      g.add(box(THREE, mTeal, s.w + 0.3, 0.14, 0.14, s.x, s.h + 0.32, s.z - pd));
-      g.add(box(THREE, mTeal, s.w + 0.3, 0.14, 0.14, s.x, s.h + 0.32, s.z + pd));
-      g.add(box(THREE, mTeal, 0.14, 0.14, s.d + 0.3, s.x - pw, s.h + 0.32, s.z));
-      g.add(box(THREE, mTeal, 0.14, 0.14, s.d + 0.14, s.x + pw, s.h + 0.32, s.z));
-      // windows on the ±z faces (two rows)
-      const rows = s.h > 4 ? 2 : 1;
-      const cols = Math.max(2, Math.floor(s.w / 3));
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const wx = s.x - s.w / 2 + (c + 0.5) * (s.w / cols);
-          const wy = s.h > 4 ? (r === 0 ? s.h * 0.32 : s.h * 0.7) : s.h * 0.45;
-          const frame = box(THREE, mBlue, 1.1, 1.3, 0.12, wx, wy, s.z - pd - 0.02);
-          g.add(frame);
-          g.add(box(THREE, windowMat, 0.9, 1.1, 0.1, wx, wy, s.z - pd - 0.1));
-          const frame2 = box(THREE, mBlue, 1.1, 1.3, 0.12, wx, wy, s.z + pd + 0.02);
-          g.add(frame2);
-          g.add(box(THREE, windowMat, 0.9, 1.1, 0.1, wx, wy, s.z + pd + 0.1));
-        }
-      }
-      // awning over one face + roof box (AC unit)
-      g.add(box(THREE, mTeal, s.w * 0.55, 0.12, 1.1, s.x, s.h * 0.62, s.z + pd + 0.55));
-      g.add(box(THREE, mMetal, 1.4, 0.7, 1.2, s.x + s.w * 0.22, s.h + 0.6, s.z));
-      g.add(cyl(THREE, mMetal, 0.03, 0.03, 2.2, 6, s.x - s.w * 0.3, s.h + 1.4, s.z));
-      scene.add(g);
-      return g;
-    }
-
-    function buildWall(s) {
-      const g = new THREE.Group();
-      const along = s.w >= s.d; // long axis
-      const body = along
-        ? box(THREE, mSand, s.w, s.h, s.d, s.x, s.h / 2, s.z)
-        : box(THREE, mSand, s.w, s.h, s.d, s.x, s.h / 2, s.z);
-      body.userData.solid = { x: s.x, z: s.z, w: s.w, d: s.d, h: s.h, kind: s.kind };
-      g.add(body); hitMeshes.push(body);
-      // teal cap line + dark base
-      if (along) {
-        g.add(box(THREE, mTeal, s.w + 0.2, 0.12, s.d + 0.2, s.x, s.h + 0.06, s.z));
-        g.add(box(THREE, mSandDark, s.w, 0.5, s.d + 0.12, s.x, 0.25, s.z));
-      } else {
-        g.add(box(THREE, mTeal, s.w + 0.2, 0.12, s.d + 0.2, s.x, s.h + 0.06, s.z));
-        g.add(box(THREE, mSandDark, s.w + 0.12, 0.5, s.d, s.x, 0.25, s.z));
-      }
-      scene.add(g);
-      return g;
-    }
-
-    function buildCrate(s) {
-      const g = new THREE.Group();
-      const body = box(THREE, mWood, s.w, s.h, s.d, s.x, s.h / 2, s.z);
-      body.userData.solid = { x: s.x, z: s.z, w: s.w, d: s.d, h: s.h, kind: s.kind };
-      g.add(body); hitMeshes.push(body);
-      // lid line + corner brackets + blue band
-      g.add(box(THREE, mWoodDark, s.w + 0.06, 0.1, s.d + 0.06, s.x, s.h - 0.12, s.z));
-      g.add(box(THREE, mBlue, s.w + 0.04, 0.22, s.d + 0.04, s.x, s.h * 0.55, s.z));
-      for (const [ox, oz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        g.add(box(THREE, mWoodDark, 0.16, s.h + 0.05, 0.16, s.x + ox * (s.w / 2 - 0.1), s.h / 2, s.z + oz * (s.d / 2 - 0.1)));
-      }
-      scene.add(g);
-      return g;
-    }
-
-    for (const s of map.solids) {
-      if (s.kind === 'building') buildBuilding(s);
-      else if (s.kind === 'crate') buildCrate(s);
-      else buildWall(s);
-    }
-
-    // ---- perimeter walls + corner towers (colliders) ----------------------
-    const wallH = 5, wallT = 1.5, wallLen = hx * 2 + wallT * 2;
-    const perims = [
-      { x: 0, z: hz + wallT / 2, w: wallLen, d: wallT },
-      { x: 0, z: -hz - wallT / 2, w: wallLen, d: wallT },
-      { x: hx + wallT / 2, z: 0, w: wallT, d: hz * 2 },
-      { x: -hx - wallT / 2, z: 0, w: wallT, d: hz * 2 },
-    ];
-    for (const s of perims) {
-      const body = box(THREE, mSandDark, s.w, wallH, s.d, s.x, wallH / 2, s.z);
-      body.userData.solid = { x: s.x, z: s.z, w: s.w, d: s.d, h: wallH, kind: 'perimeter' };
-      scene.add(body); hitMeshes.push(body);
-      const along = s.w > s.d;
-      scene.add(box(THREE, mTeal, along ? s.w : 0.3, 0.16, along ? 0.3 : s.d, s.x, wallH + 0.08, s.z));
-      scene.add(box(THREE, mSand, along ? s.w : 0.5, 0.6, along ? 0.5 : s.d, s.x, wallH + 0.4, s.z));
-    }
-    for (const [tx, tz] of [[hx + 2, hz + 2], [-hx - 2, hz + 2], [hx + 2, -hz - 2], [-hx - 2, -hz - 2]]) {
-      scene.add(box(THREE, mSand, 3.2, wallH + 2.2, 3.2, tx, (wallH + 2.2) / 2, tz));
-      scene.add(box(THREE, mSandDark, 3.8, 0.5, 3.8, tx, wallH + 2.4, tz));
-      scene.add(cyl(THREE, mTeal, 0.05, 0.05, 2.4, 6, tx, wallH + 3.8, tz)); // antenna
-    }
-
-    // ---- site A/B canvas signs (no external assets) -----------------------
-    const siteSign = function (letter, x, z, ry) {
-      const g = new THREE.Group();
-      const tex = canvasTex(THREE, 256, 192, function (ctx, w, h) {
-        ctx.fillStyle = '#123c3c'; ctx.fillRect(0, 0, w, h);
-        ctx.strokeStyle = '#2fa8a0'; ctx.lineWidth = 14; ctx.strokeRect(10, 10, w - 20, h - 20);
-        ctx.fillStyle = '#e8d9b0';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.font = 'bold 150px monospace';
-        ctx.fillText(letter, w / 2, h / 2 + 8);
-      });
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.7), new THREE.MeshBasicMaterial({
-        map: tex || null, color: tex ? 0xffffff : (letter === 'A' ? 0x2fa8a0 : 0x2b6fb8), side: THREE.DoubleSide,
-      }));
-      plane.position.y = 2.4;
-      g.add(plane);
-      g.add(box(THREE, mMetal, 0.14, 2.6, 0.14, -1.4, 1.3, 0));
-      g.add(box(THREE, mMetal, 0.14, 2.6, 0.14, 1.4, 1.3, 0));
-      g.add(box(THREE, mDark, 4.2, 0.22, 0.3, 0, 3.85, 0));
-      g.position.set(x, 6.2, z);
-      g.rotation.y = ry;
-      scene.add(g);
-      return g;
+    if (!['performance', 'medium', 'high'].includes(preset)) preset = 'medium';
+    const performance = preset === 'performance', high = preset === 'high';
+    const theme = ['desert', 'industrial', 'urban'].includes(map.theme) ? map.theme : 'desert';
+    const palette = {
+      desert: [0xd2b183,0xdcb98a,0xb8946a,0x8a5a33,0x2f8a86,0x395875,0xd8c9a8],
+      industrial: [0x647076,0x9aa6a8,0x495860,0x426c73,0xe4b24e,0x34434c,0xa6b9bf],
+      urban: [0x666d76,0xa5a6ad,0x727883,0x71716b,0xacc6d4,0x435c70,0xbac7d5]
+    }[theme];
+    const root = new THREE.Group(); root.name = 'arena-' + theme; scene.add(root);
+    const hitMeshes = [], objects = [], materials = [];
+    const make = (name,color) => {
+      const m = new (performance ? THREE.MeshBasicMaterial : THREE.MeshLambertMaterial)({color});
+      m.name=name; materials.push(m); return m;
     };
-    siteSign('A', 24, -19.6, 0);       // faces spawn (plane default faces +z)
-    siteSign('B', -24, 19.6, Math.PI); // faces spawn from B side
-
-    // ---- atmosphere: barrels, ruins, rocks, dunes -------------------------
-    function barrel(x, z, m) {
-      const g = new THREE.Group();
-      g.add(cyl(THREE, m, 0.5, 0.5, 1.2, 12, 0, 0.6, 0));
-      g.add(cyl(THREE, mMetal, 0.54, 0.54, 0.12, 12, 0, 0.25, 0));
-      g.add(cyl(THREE, mMetal, 0.54, 0.54, 0.12, 12, 0, 0.95, 0));
-      g.position.set(x, 2, z); // on existing crate lids
-      scene.add(g);
+    const floorMat=make('floor',palette[0]), wallMat=make('wall',palette[1]), trimMat=make('trim',palette[2]);
+    const cargoMat=make('cargo',palette[3]), accent=make('accent',palette[4]), dark=make('window',palette[5]);
+    const siteA=make('site-a',0x3c9b92), siteB=make('site-b',0x557db9);
+    const hx=map.bounds && map.bounds.hx || 38, hz=map.bounds && map.bounds.hz || 38;
+    const previousBackground=scene.background, previousFog=scene.fog;
+    const background=new THREE.Color(palette[6]), fog=new THREE.Fog(palette[6],performance?48:65,high?175:125);
+    scene.background=background; scene.fog=fog;
+    let hasLight=false; scene.traverse(o=>{if(o.isLight)hasLight=true;});
+    if(!hasLight&&!performance){
+      root.add(new THREE.HemisphereLight(0xf0f5ff,0x6b6251,1.2));
+      const sun=new THREE.DirectionalLight(0xfff0d8,1.1);sun.position.set(25,45,15);root.add(sun);
     }
-    // All ground-level props stay inside core solid footprints; decorative
-    // geometry must never introduce unregistered movement blockers.
-    barrel(13, -28, mTeal); barrel(31, -12, mBlue);
-    barrel(-13, 28, mTeal); barrel(-31, 12, mBlue);
-
-    // broken colonnade near mid (desert ruin vibe)
-    function ruin(x, z, rot) {
-      const g = new THREE.Group();
-      for (let i = 0; i < 3; i++) {
-        const h = 1.6 + (i % 2) * 0.9;
-        g.add(cyl(THREE, mSandDark, 0.35, 0.42, h, 10, -1.2 + i * 1.2, h / 2, 0));
-        g.add(box(THREE, mSand, 0.9, 0.25, 0.9, -1.2 + i * 1.2, h + 0.12, 0));
+    function add(material,w,h,d,x,y,z){const m=box(THREE,material,w,h,d,x,y,z);root.add(m);objects.push(m);return m;}
+    add(floorMat,hx*2,.5,hz*2,0,-.25,0);
+    function solid(s){
+      const m=add(s.kind==='crate'?cargoMat:s.kind==='perimeter'?trimMat:wallMat,s.w,s.h,s.d,s.x,s.h/2,s.z);
+      m.userData.solid={x:s.x,z:s.z,w:s.w,d:s.d,h:s.h,kind:s.kind};hitMeshes.push(m);
+      if(performance)return;
+      // Caps stay within the registered footprint; no decorative blockers in lanes.
+      add(accent,s.w,.08,s.d,s.x,s.h-.04,s.z);
+      if(s.kind==='building'){
+        const rows=high?Math.max(2,Math.floor(s.h/2.6)):1, cols=Math.max(1,Math.floor(s.w/3));
+        for(let row=0;row<rows;row++)for(let col=0;col<cols;col++)for(const side of [-1,1]){
+          add(dark,Math.min(1.1,s.w/cols*.5),.85,.025,s.x-s.w/2+(col+.5)*s.w/cols,(row+1)*s.h/(rows+1),s.z+side*(s.d/2+.015));
+        }
+        add(trimMat,s.w,.28,s.d,s.x,s.h+.14,s.z);
+        if(high){add(dark,Math.min(1.5,s.w*.4),.7,Math.min(1.2,s.d*.4),s.x,s.h+.63,s.z);}
+      }else if(s.kind==='crate'){
+        for(const side of [-1,1])add(trimMat,s.w,.14,.04,s.x,s.h*.5,s.z+side*(s.d/2+.015));
+        if(high)for(let j=1;j<Math.floor(s.d);j+=2)for(const side of [-1,1])add(trimMat,.03,s.h-.1,.1,s.x+side*(s.w/2+.01),s.h/2,s.z-s.d/2+j);
       }
-      g.add(box(THREE, mTeal, 1.6, 0.18, 0.5, 0, 1.9, 0.9));
-      g.position.set(x, 6.4, z); g.rotation.y = rot;
-      scene.add(g);
     }
-    ruin(-4.0, 0, Math.PI / 2); ruin(4.0, 0, Math.PI / 2);
-
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + 0.4;
-      const r = Math.hypot(hx, hz) + 8 + (i % 3) * 4;
-      const rock = new THREE.Mesh(new THREE.BoxGeometry(1.2 + (i % 2), 0.9, 1.4), mRock);
-      rock.position.set(Math.cos(a) * r, 0.4, Math.sin(a) * r);
-      rock.rotation.y = a;
-      scene.add(rock);
+    map.solids.forEach(solid);
+    const t=1.5;
+    [{x:0,z:hz+t/2,w:2*hx+2*t,d:t},{x:0,z:-hz-t/2,w:2*hx+2*t,d:t},
+      {x:hx+t/2,z:0,w:t,d:2*hz},{x:-hx-t/2,z:0,w:t,d:2*hz}].forEach(s=>solid(Object.assign({h:5,kind:'perimeter'},s)));
+    // Texture-free navigation markings, with simple geometric A/B glyphs.
+    for(const [letter,x,z,material] of [['A',hx*.76,-hz*.76,siteA],['B',-hx*.76,hz*.76,siteB]]){
+      const marker=new THREE.Object3D();marker.name='site-'+letter;marker.position.set(x,.025,z);root.add(marker);
+      for(const side of [-1,1]){
+        add(material,5,.018,.1,x,.014,z+side*2.5);add(material,.1,.018,5,x+side*2.5,.014,z);
+      }
+      // A has two rails and a crossbar; B has a spine and two squared bowls.
+      add(material,.16,.02,1.7,x-.5,.025,z);
+      add(material,.16,.02,1.7,x+.5,.025,z);
+      add(material,1.15,.02,.16,x,.025,z);
+      add(material,1.15,.02,.16,x,.025,z-.8);
+      if(letter==='B')add(material,1.15,.02,.16,x,.025,z+.8);
     }
-
-    // dune ring outside the walls (decorative, not colliders)
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + 0.2;
-      const r = 52 + (i % 3) * 7;
-      const dune = new THREE.Mesh(new THREE.SphereGeometry(10 + (i % 3) * 4, 10, 6), mDune);
-      dune.position.set(Math.cos(a) * r, -4.5, Math.sin(a) * r);
-      dune.scale.y = 0.42;
-      scene.add(dune);
+    if(!performance){
+      for(let i=0;i<10;i++)add(accent,.15,.014,1.2,0,.01,-hz+3+i*(2*hz-6)/10);
+      // Theme silhouettes are outside collision bounds, never in playable lanes.
+      for(let i=0;i<(high?12:6);i++){
+        const angle=i*Math.PI*2/(high?12:6),r=Math.hypot(hx,hz)+12;
+        if(theme==='desert'){
+          const m=new THREE.Mesh(new THREE.SphereGeometry(7+i%3,8,4),trimMat);m.position.set(Math.cos(angle)*r,-2,Math.sin(angle)*r);m.scale.y=.35;root.add(m);objects.push(m);
+        }else{
+          const height=theme==='urban'?12+(i%4)*5:9+(i%3)*4;
+          add(trimMat,theme==='urban'?8:3,height,theme==='urban'?8:3,Math.cos(angle)*r,height/2,Math.sin(angle)*r);
+        }
+      }
     }
-
-    scene.updateMatrixWorld(true); // colliders work even before first render
-    return { hitMeshes: hitMeshes };
+    root.updateMatrixWorld(true);
+    const stats=Object.assign(mergeStatic(THREE,objects,root,new Set(hitMeshes)),{theme,preset,colliders:hitMeshes.length});
+    const floor=root.getObjectByName('batch-floor');if(floor)floor.name='arena-floor';
+    scene.updateMatrixWorld(true);
+    let disposed=false;
+    // Prefer this idempotent teardown to generic traversal: owns batches AND hidden colliders.
+    function dispose(){
+      if(disposed)return;disposed=true;
+      const geometries=new Set();root.traverse(o=>{if(o.geometry)geometries.add(o.geometry);});
+      geometries.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());root.removeFromParent();hitMeshes.length=0;
+      if(scene.background===background)scene.background=previousBackground;
+      if(scene.fog===fog)scene.fog=previousFog;
+    }
+    return {hitMeshes,root,stats,dispose};
   }
 
   /* ================================================================== BOT == */
@@ -413,7 +221,7 @@
     const mTeal = get(THREE, 'bTeal', { color: 0x2fa8a0 });
     const mSkin = get(THREE, 'bSkin', { color: 0xc9986a });
     const mMask = get(THREE, 'bMask', { color: 0x23262b });
-    const mVisor = get(THREE, 'bVisor', { color: 0xd0182e });   // red enemy accent
+    const mVisor = get(THREE, 'bVisor', { color: 0x42606b });   // cool smoked visor
     const mBoot = get(THREE, 'bBoot', { color: 0x2b2620 });
     const mGun = get(THREE, 'bGun', { color: 0x33302c });
 
@@ -441,9 +249,14 @@
     const torso = tagMesh(box(THREE, mCloth, 0.5, 0.6, 0.3, 0, 1.28, 0), id, 'body');
     root.add(torso);
     const vest = tagMesh(box(THREE, mVest, 0.46, 0.4, 0.34, 0, 1.3, 0.02), id, 'body');
+    vest.name = 'plate-carrier';
+    // Narrow waist with broad armored shoulders, without extra draw calls.
+    const vp = vest.geometry.attributes.position;
+    for(let i=0;i<vp.count;i++)if(vp.getY(i)<0)vp.setX(i,vp.getX(i)*.78);
+    vp.needsUpdate=true; vest.geometry.computeVertexNormals();
     root.add(vest);
     const pouch = tagMesh(box(THREE, mVest, 0.3, 0.12, 0.1, 0, 1.06, 0.16), id, 'body');
-    pouch.material = mVisor; // red enemy accent pouch
+    pouch.material = mVisor; // cool fabric pouch
     root.add(pouch);
     const belt = tagMesh(box(THREE, mMask, 0.52, 0.08, 0.32, 0, 0.99, 0), id, 'body');
     root.add(belt);
@@ -467,7 +280,7 @@
     const rifle = new THREE.Group();
     rifle.add(tagMesh(box(THREE, mGun, 0.06, 0.1, 0.62, 0, 0, 0.1), id, 'body'));
     rifle.add(tagMesh(zcyl(THREE, mGun, 0.02, 0.34, 8, 0, 0.01, -0.32), id, 'body'));
-    rifle.add(tagMesh(box(THREE, mVisor, 0.05, 0.16, 0.08, 0, -0.1, 0.08), id, 'body')); // red mag
+    rifle.add(tagMesh(box(THREE, mVisor, 0.05, 0.16, 0.08, 0, -0.1, 0.08), id, 'body')); // dark magazine
     rifle.position.set(0, -0.38, 0.42);
     arms.add(rifle);
 
@@ -481,7 +294,8 @@
     head.add(face);
     const visor = tagMesh(box(THREE, mVisor, 0.28, 0.05, 0.29, 0, 0.2, 0), id, 'head');
     head.add(visor);
-    const helmet = tagMesh(box(THREE, mClothD, 0.3, 0.08, 0.31, 0, 0.28, 0), id, 'head');
+    const helmet = tagMesh(new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 4, 0, Math.PI*2, 0, Math.PI/2), mClothD), id, 'head');
+    helmet.name = 'helmet-shell'; helmet.position.y = 0.23; helmet.scale.set(1, .75, 1.05);
     head.add(helmet);
 
     return root;
@@ -492,7 +306,7 @@
   function buildGlove(THREE, get) {
     const g = new THREE.Group();
     const mGlove = get(THREE, 'glove', { color: 0x37474f });
-    const mCuff = get(THREE, 'cuff', { color: 0xb01426 });   // red loadout cuff
+    const mCuff = get(THREE, 'cuff', { color: 0x52636c });   // slate cloth cuff
     g.add(box(THREE, mGlove, 0.075, 0.035, 0.1, 0, 0, 0));                 // palm
     g.add(box(THREE, mGlove, 0.07, 0.028, 0.045, 0, -0.004, -0.066));      // fingers
     g.add(box(THREE, mGlove, 0.024, 0.026, 0.055, 0.045, 0.002, -0.02));   // thumb
@@ -507,7 +321,7 @@
     const mSteelD = get(THREE, 'akSteelD', { color: 0x24242a });
     const mWood = get(THREE, 'akWood', { color: 0x8a5a2b });
     const mWoodD = get(THREE, 'akWoodD', { color: 0x6e4426 });
-    const mTeal = get(THREE, 'akTeal', { color: 0x2fa8a0 });
+    const mTeal = get(THREE, 'akTeal', { color: 0x484c50, metalness: .75, roughness: .4 });
 
     // receiver
     g.add(box(THREE, mSteel, 0.058, 0.075, 0.3, 0, 0.02, -0.01));
@@ -604,7 +418,7 @@
     const mBodyD = get(THREE, 'awpBodyD', { color: 0x2b352d });
     const mSteel = get(THREE, 'awpSteel', { color: 0x2c2c30 });
     const mRing = get(THREE, 'awpRing', { color: 0x22262a });
-    const mTeal = get(THREE, 'awpTeal', { color: 0x2fa8a0 });
+    const mTeal = get(THREE, 'awpTeal', { color: 0x555f4a });
     const mLens = get(THREE, 'awpLens', { color: 0x0d3038 });               // dark teal glass
 
     // chassis / receiver
@@ -703,12 +517,12 @@
   /* --- Desert Eagle: slab slide, triangular barrel, boxy grip ------------- */
   function buildDeagle(THREE, get) {
     const g = new THREE.Group();
-    const mSlide = get(THREE, 'dgSlide', { color: 0x6f6a5c });              // brushed steel
+    const mSlide = get(THREE, 'dgSlide', { color: 0xc4cbd1, metalness: 0.9, roughness: 0.25 });              // brushed steel
     const mFrame = get(THREE, 'dgFrame', { color: 0x3a3f45 });
     const mGrip = get(THREE, 'dgGrip', { color: 0x23262b });
     const mSteel = get(THREE, 'dgSteel', { color: 0x2a2a2e });
     const mTeal = get(THREE, 'dgTeal', { color: 0x2fa8a0 });
-    const mGold = get(THREE, 'dgAcc', { color: 0x2b6fb8 });                 // blue accents
+    const mGold = get(THREE, 'dgAcc', { color: 0x969fa7, metalness: .85, roughness: .3 });                 // blue accents
 
     // frame + slide
     g.add(box(THREE, mFrame, 0.032, 0.045, 0.2, 0, -0.012, -0.03));
@@ -766,7 +580,7 @@
   /* --- Butterfly knife: pivoted handles A/B + swinging blade -------------- */
   function buildKnife(THREE, get) {
     const g = new THREE.Group();
-    const mBlade = get(THREE, 'kfBlade', { color: 0xc7ccd1 });              // satin steel
+    const mBlade = get(THREE, 'kfBlade', { color: 0xd3e0ec, metalness: 0.95, roughness: 0.16 });              // satin steel
     const mEdge = get(THREE, 'kfEdge', { color: 0xeef2f4 });
     const mHandle = get(THREE, 'kfHandle', { color: 0x23262b });            // black handles
     const mTeal = get(THREE, 'kfTeal', { color: 0x2fa8a0 });
@@ -828,49 +642,9 @@
   function buildWeapon(THREE, key) {
     const builder = Object.prototype.hasOwnProperty.call(WEAPON_BUILDERS, key) && WEAPON_BUILDERS[key];
     if (!builder) throw new Error('buildWeapon: unknown weapon "' + key + '"');
-    const cached = matCache();
-    // Crimson lacquer, graphite hardware and scarlet trim: one local skin
-    // family across the arsenal. Glass and gloves retain their own materials.
-    const redParts = new Set(['akWood', 'awpBody', 'dgSlide', 'kfBlade']);
-    const darkParts = new Set(['akSteel', 'akSteelD', 'akWoodD', 'awpBodyD', 'awpSteel', 'awpRing', 'dgFrame', 'dgGrip', 'dgSteel', 'kfHandle']);
-    const get = function (T, name, params) {
-      const p = Object.assign({}, params);
-      if (redParts.has(name)) p.color = 0xc51632;
-      else if (darkParts.has(name)) p.color = 0x17191f;
-      else if (/^(ak|awp|dg|kf).*(Teal|Blue|Acc)$/.test(name)) p.color = 0xff3851;
-      return cached(T, name, p);
-    };
-    const g = builder(THREE, get);
-    // Raised geometric inlays stay on the moving part, so inspect/reload
-    // animations do not leave the finish floating in space.
-    const ink = cached(THREE, 'skinInk', { color: 0x17191f });
-    const scarlet = cached(THREE, 'skinScarlet', { color: 0xff3851 });
-    const target = key === 'knife' ? g.userData.blade : key === 'deagle' ? g.userData.bolt : g;
-    for (let i = 0; i < 6; i++) {
-      let stripe;
-      if (key === 'knife') {
-        stripe = box(THREE, ink, 0.027, 0.0015, 0.005, 0, 0.0045, -0.03 - i * 0.019);
-        stripe.rotation.y = 0.35;
-      } else {
-        const width = key === 'deagle' ? 0.038 : key === 'awp' ? 0.054 : 0.062;
-        const height = key === 'deagle' ? 0.025 : 0.047;
-        const start = key === 'deagle' ? -0.10 : -0.12;
-        stripe = box(THREE, i % 2 ? ink : scarlet, width, height, 0.006, 0, key === 'ak47' ? 0.02 : 0, start + i * 0.023);
-      }
-      stripe.name = 'skin-inlay';
-      target.add(stripe);
-    }
-    if (key === 'knife') {
-      for (const handle of [g.userData.handleA, g.userData.handleB]) {
-        for (let i = 0; i < 5; i++) {
-          const slot = box(THREE, scarlet, 0.018, 0.012, 0.008, 0, 0, 0.045 + i * 0.021);
-          slot.name = 'handle-inlay';
-          handle.add(slot);
-        }
-      }
-    }
+    const g = builder(THREE, matCache());
     g.userData.key = key;
-    g.userData.skin = 'Crimson / Graphite';
+    g.userData.skin = 'Natural';
     // Pistol and knife have compact real-world proportions; enlarge just
     // these view models for legibility at the fixed view-camera placement.
     const size = key === 'deagle' ? 1.4 : key === 'knife' ? 1.2 : 1;

@@ -8,9 +8,9 @@
  * spray patterns, spread model, economy and the match/round state machine.
  * ==========================================================================*/
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.POLY_CORE = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./maps.js'));
+  else root.POLY_CORE = factory(root.POLY_MAPS);
+})(typeof self !== 'undefined' ? self : this, function (MAPS) {
 
   /* ---------------------------------------------------------------- rng -- */
   function mulberry32(seed) {
@@ -28,22 +28,22 @@
     ak47: {
       key: 'ak47', name: 'AK-47', slot: 'primary', auto: true,
       mag: 30, reserve: 90, damage: 36, headMult: 4, legMult: 0.75,
-      fireInterval: 0.1, reloadTime: 2.4,
-      spreadBase: 0.0065, spreadScoped: 0.0065, zoomFov: null,
+      fireInterval: 0.1, reloadTime: 1.35,
+      spreadBase: 0.0065, spreadScoped: 0.0042, zoomFov: null, ads: true,
       price: 2700, killAward: 300, falloff: 0.004, recoil: 1.0,
     },
     awp: {
       key: 'awp', name: 'AWP', slot: 'primary', auto: false,
       mag: 10, reserve: 30, damage: 115, headMult: 2.5, legMult: 0.75,
-      fireInterval: 1.45, reloadTime: 3.6,
+      fireInterval: 1.45, reloadTime: 1.9,
       spreadBase: 0.05, spreadScoped: 0.0012, zoomFov: 20,
       price: 4750, killAward: 100, falloff: 0.001, recoil: 2.6,
     },
     deagle: {
       key: 'deagle', name: 'Desert Eagle', slot: 'secondary', auto: false,
       mag: 7, reserve: 35, damage: 53, headMult: 4, legMult: 0.75,
-      fireInterval: 0.25, reloadTime: 2.2,
-      spreadBase: 0.011, spreadScoped: 0.011, zoomFov: null,
+      fireInterval: 0.25, reloadTime: 1.05,
+      spreadBase: 0.011, spreadScoped: 0.0065, zoomFov: null, ads: true,
       price: 700, killAward: 300, falloff: 0.005, recoil: 1.4,
     },
     knife: {
@@ -68,6 +68,7 @@
       s = w.spreadBase * (1 + Math.max(0, moveFactor) * 2.5);
       if (crouch) s *= 0.6;
       if (scoped && w.zoomFov) s = w.spreadScoped;
+      else if (scoped && w.ads) s *= w.spreadScoped / w.spreadBase;
     }
     return { yaw: (rng() * 2 - 1) * s, pitch: (rng() * 2 - 1) * s * 0.8 };
   }
@@ -94,55 +95,16 @@
 
   /* ---------------------------------------------------------------- map -- */
   // Top-down: x east, z south. Bounds clamp the arena; solids are AABBs.
-  const MAP = {
-    size: 76,
-    bounds: { hx: 38, hz: 38 },
-    nav: [],
-    spawnPlayer: { x: 0, z: 34 },
-    spawnBots: [
-      { x: 20, z: -16 }, { x: -20, z: 16 }, { x: 0, z: -34 },
-      { x: 32, z: 0 }, { x: -32, z: 0 },
-    ],
-    solids: [
-      // mid building
-      { x: 0, z: 0, w: 10, d: 10, h: 6, kind: 'building' },
-      // long-A style wall (west)
-      { x: -16, z: -16, w: 1, d: 20, h: 3.5, kind: 'wall' },
-      // long-B style wall (east)
-      { x: 16, z: 16, w: 1, d: 20, h: 3.5, kind: 'wall' },
-      // north wall with mid doors (gap at x -8..2)
-      { x: -11, z: -24, w: 6, d: 1, h: 3.5, kind: 'wall' },
-      { x: 4, z: -24, w: 4, d: 1, h: 3.5, kind: 'wall' },
-      // A site: building + crates
-      { x: 24, z: -24, w: 8, d: 8, h: 6, kind: 'building' },
-      { x: 14, z: -28, w: 4, d: 4, h: 2, kind: 'crate' },
-      { x: 30, z: -12, w: 4, d: 4, h: 2, kind: 'crate' },
-      // B site: building + crates
-      { x: -24, z: 24, w: 8, d: 8, h: 6, kind: 'building' },
-      { x: -14, z: 28, w: 4, d: 4, h: 2, kind: 'crate' },
-      { x: -30, z: 12, w: 4, d: 4, h: 2, kind: 'crate' },
-      // south wall with door gap at x -2..2
-      { x: -5, z: 32, w: 6, d: 1, h: 3.5, kind: 'wall' },
-      { x: 5, z: 32, w: 6, d: 1, h: 3.5, kind: 'wall' },
-      // north wall with door gap at x -8..8
-      { x: -11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
-      { x: 11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
-    ],
-  };
-
-  // nav grid: multiples of 4 across the arena, points inside solids dropped.
-  (function buildNavGrid() {
-    const nav = MAP.nav;
+  if (!MAPS) throw new Error('Load maps.js before core.js');
+  const MAP = MAPS.desert;
+  // Navigation uses a 4m grid with clearance for 0.4m-radius actors.
+  for (const map of Object.values(MAPS)) {
     for (let x = -36; x <= 36; x += 4) {
       for (let z = -36; z <= 36; z += 4) {
-        let blocked = false;
-        for (const s of MAP.solids) {
-          if (Math.abs(x - s.x) < s.w / 2 + 0.5 && Math.abs(z - s.z) < s.d / 2 + 0.5) { blocked = true; break; }
-        }
-        if (!blocked) MAP.nav.push({ x, z });
+        if (!map.solids.some(s => Math.abs(x - s.x) < s.w / 2 + 0.5 && Math.abs(z - s.z) < s.d / 2 + 0.5)) map.nav.push({ x, z });
       }
     }
-  })();
+  }
 
   /* ---------------------------------------------------------- collision -- */
   function collideCircle(pos, radius, solids, bounds) {
@@ -215,29 +177,41 @@
   const NAV_LINK_DIST = 6;
   function buildNavGraph(nav, solids) {
     const n = nav.length;
+    const inflated = solids.map(s => ({ ...s, w: s.w + 0.9, d: s.d + 0.9 }));
     const g = new Array(n);
     for (let i = 0; i < n; i++) g[i] = [];
     for (let i = 0; i < n; i++) {
       for (let j = i + 1; j < n; j++) {
         const dx = nav[i].x - nav[j].x, dz = nav[i].z - nav[j].z;
         if (dx * dx + dz * dz > NAV_LINK_DIST * NAV_LINK_DIST) continue;
-        if (segmentClear(nav[i], nav[j], solids.map(s => ({ ...s, w: s.w + 0.9, d: s.d + 0.9 })))) {
+        if (segmentClear(nav[i], nav[j], inflated)) {
           g[i].push(j); g[j].push(i);
         }
       }
     }
     return g;
   }
-  function nearestNav(p) {
+  function nearestNav(p, map = MAP) {
     let best = -1, bd = Infinity;
-    for (let i = 0; i < MAP.nav.length; i++) {
-      const dx = MAP.nav[i].x - p.x, dz = MAP.nav[i].z - p.z;
+    for (let i = 0; i < map.nav.length; i++) {
+      const dx = map.nav[i].x - p.x, dz = map.nav[i].z - p.z;
       const d = dx * dx + dz * dz;
       if (d < bd) { bd = d; best = i; }
     }
     return best;
   }
-  const NAVGRAPH = buildNavGraph(MAP.nav, MAP.solids); // built once
+  const graphCache = new WeakMap();
+  function graphFor(map) {
+    if (!graphCache.has(map)) graphCache.set(map, buildNavGraph(map.nav, map.solids));
+    return graphCache.get(map);
+  }
+  function resolveMap(value = MAP) {
+    if (typeof value === 'string') {
+      if (!Object.prototype.hasOwnProperty.call(MAPS, value)) throw new Error('Unknown map: ' + value);
+      return MAPS[value];
+    }
+    return value.MAP || value;
+  }
 
   /* ------------------------------------------------------------ economy -- */
   const ECON = {
@@ -249,7 +223,12 @@
   const BUY_TIME = 5, ROUND_TIME = 90, END_TIME = 4, WIN_ROUNDS = 5;
   const BOT_COUNT = 5;
 
-  function createMatch() {
+  function createMatch(mapOrContext = MAP) {
+    const MAP = resolveMap(mapOrContext);
+    const NAVGRAPH = graphFor(MAP);
+    const nearestNav = p => api.nearestNav(p, MAP);
+    let cachedPlayerNode = -1, navSearches = 0;
+    const distances = new Array(MAP.nav.length).fill(Infinity);
     const m = {
       phase: 'buy',            // buy | live | end | matchover
       buyClock: BUY_TIME,
@@ -266,6 +245,11 @@
       bots: [],
       events: [],              // transient feed events for the HUD
     };
+    Object.defineProperties(m, {
+      MAP: { value: MAP, enumerable: true },
+      navGraph: { value: NAVGRAPH },
+      navSearches: { get: () => navSearches },
+    });
     for (let i = 0; i < BOT_COUNT; i++) {
       const rng = mulberry32(0xC0FFEE + i * 7919);
       const sp = MAP.spawnBots[i];
@@ -383,9 +367,12 @@
         if (this.roundClock <= 0) { this.endRound('enemy'); return; }
         const px = sense && sense.px !== undefined ? sense.px : null;
         const pz = sense && sense.pz !== undefined ? sense.pz : null;
-        const playerNode = px !== null ? nearestNav({ x: px, z: pz }) : -1;
-        const distances = new Array(MAP.nav.length).fill(Infinity);
-        if (playerNode >= 0) {
+        const playerNode = Number.isFinite(px) && Number.isFinite(pz) ? nearestNav({ x: px, z: pz }) : -1;
+        // Distance field is match-local; static graph is shared per arena.
+        if (playerNode >= 0 && playerNode !== cachedPlayerNode) {
+          cachedPlayerNode = playerNode;
+          navSearches++;
+          distances.fill(Infinity);
           distances[playerNode] = 0; const queue = [playerNode];
           for (let q = 0; q < queue.length; q++) for (const n of NAVGRAPH[queue[q]]) {
             if (distances[n] === Infinity) { distances[n] = distances[queue[q]] + 1; queue.push(n); }
@@ -446,10 +433,16 @@
     return m;
   }
 
-  return {
+  const api = {
+    MAPS, forMap, NAVGRAPH: graphFor(MAP),
     mulberry32, WEAPONS, ECON, BUY_ITEMS: ['ak47', 'awp', 'deagle', 'armor'],
     buildSprayPattern, pickSpread,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
     createMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
   };
+  function forMap(id = 'desert') {
+    const map = resolveMap(id);
+    return { ...api, MAP: map, NAVGRAPH: graphFor(map), createMatch: () => createMatch(map), nearestNav: p => nearestNav(p, map) };
+  }
+  return api;
 });
