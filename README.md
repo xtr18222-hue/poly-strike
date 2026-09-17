@@ -7,7 +7,7 @@ Play: https://xtr18222-hue.github.io/poly-strike/
 ## Modes and maps
 
 Main menu order: Play Offline (vs Bots), Play Online, Settings.
-Select Sandline (Desert Compound), Foundry (Industrial Warehouse), or Crosswalk (Urban Alleyways) before starting. Each has distinct collision geometry and routes.
+Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), or Crossfire (Urban Alleyways) before starting. Each has distinct collision geometry and routes.
 
 Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All four weapons unlocked. No bomb or buy menu.
 
