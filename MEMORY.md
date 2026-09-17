@@ -30,7 +30,7 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - inspection.js pure eased paths: AK2.6s/Deagle2.3s airborne roll, AWP3.2s vertical sweep, knife two1.5s variants. Hands independent sibling roots. SW includes module.
 - Final polish verification: 72 Node tests passed; gameplay, feedback/inspections, username UI, radar pixels, offline/file/pointer-lock and real WebRTC tests passed. No runtime errors in completed browser runs. Performance final sample: 59.5–60.2FPS, p95 17.0–17.1ms, draws110–157 on local Edge (not low-memory certification).
 - Model polish complete: beveled Deagle, tapered butterfly blade, bot armor/boots/visor; merged environment details and clouds skipped in Performance mode. Collision footprints unchanged.
-- Independent scoped review passed with no security/logic findings. Nonblocking follow-ups: self-row highlight uses username equality; duplicate scoreboard CSS rules. Ready for Pages deployment; SW v3 cache.
+- Independent scoped review passed with no security/logic findings. Nonblocking follow-ups: self-row highlight uses username equality; duplicate scoreboard CSS rules. Polish commit 88ea3ff pushed; Pages build confirmed for that SHA. Live username/scoreboard, combat feedback/inspections and offline suites passed; SW v3 cache.
 
 ## Toolchain/deploy
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
