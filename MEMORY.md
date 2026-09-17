@@ -21,7 +21,7 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Offline cached reload, direct file:// and actual pointer lock passed. Original gameplay, integrated online, offline and pointer-lock suites passed again after final visual batching.
 - Performance on this Windows Edge machine at1280x800: desert60.13, industrial60.21, urban60.18 FPS; p95 17.0–17.1ms; total draws157/157/110; framebuffer307038 pixels; reported JS heap10.7–14.0MB (NOT total process memory or 1GB-hardware certification).
 - Screenshot visual assessment unavailable (vision model lacks support); numeric renderer/geometry tests are real. No universal60FPS/1GB claim.
-- Independent review passed with no security/logic findings; final regressions passed. Upgrade ready to commit/push. Previous live initial commit f6fdaa5.
+- Independent review passed with no security/logic findings; final regressions passed. Live upgrade commit 33348c6 pushed; Pages rebuilt/verified. Previous initial commit f6fdaa5.
 
 ## Toolchain/deploy
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
