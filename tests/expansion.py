@@ -10,8 +10,11 @@ with sync_playwright() as p:
     page.goto(BASE+'?test=1&expansion=2');page.wait_for_timeout(500)
     assert not errors,errors
     assert page.locator('#error').is_hidden()
-    assert page.locator('#primarySelect').count()==1,'primary loadout selector missing'
-    page.select_option('#primarySelect','kar98')
+    assert page.locator('#loadoutButton').count()==1,'loadout hub button missing'
+    page.click('#loadoutButton');page.wait_for_timeout(250)
+    page.click('.wcard[data-weapon="kar98"]');page.wait_for_timeout(150)
+    assert page.evaluate('Game.state().primary')=='kar98'
+    page.click('#loadoutClose');page.wait_for_timeout(150)
     page.check('#fallback');page.click('#start');page.wait_for_timeout(500)
     assert page.evaluate('Game.state().weapon')=='kar98'
     page.keyboard.press('Digit2');assert page.evaluate('Game.state().weapon')=='deagle'
@@ -55,7 +58,7 @@ with sync_playwright() as p:
     page.click('#applySettings');page.reload();page.wait_for_timeout(300)
     assert page.locator('#sensitivity').input_value()=='1.23'
     assert page.locator('#adsSensitivity').input_value()=='0.67'
-    assert page.locator('#primarySelect').input_value()=='kar98'
+    assert page.evaluate('localStorage.getItem("poly-primary")')=='kar98','loadout persists'
     assert not errors,errors
     print('PASS expansion inventory and loadout; zero errors')
     b.close()

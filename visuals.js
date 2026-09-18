@@ -640,77 +640,103 @@
     g.userData = { kind: 'deagle', mag: mag, bolt: slide, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
     return g;
   }
-  /* --- Kar98k: short military rifle, turned bolt, fixed internal magazine ---- */
+  /* --- Kar98k: completely rebuilt. Classic two-piece walnut stock, blued
+   * steel, full-length stepped barrel, hooded front sight, tangent rear
+   * sight, turned-down bolt handle and an internal box magazine. Unscoped. */
   function buildKar98(THREE, get) {
     const g = new THREE.Group();
-    const mWood  = get(THREE, 'k98Wood',  { color: 0x7a4e2a, roughness: 0.82 });
-    const mWoodD= get(THREE, 'k98WoodD', { color: 0x5e3c20 });
-    const mSteel = get(THREE, 'k98Steel', { color: 0x2a2e30, metalness: 0.7, roughness: 0.35 });
-    const mSteelD= get(THREE, 'k98SteelD',{ color: 0x1e2022 });
-    const mRing  = get(THREE, 'k98Ring',  { color: 0x3a3e40, metalness: 0.85 });
+    const mWood  = get(THREE, 'k98Wood',  { color: 0x8a5a30, roughness: 0.78 });   // walnut
+    const mWoodD = get(THREE, 'k98WoodD', { color: 0x6b4322, roughness: 0.8 });    // darker grain
+    const mSteel = get(THREE, 'k98Steel', { color: 0x31363a, metalness: 0.75, roughness: 0.32 });
+    const mSteelD= get(THREE, 'k98SteelD',{ color: 0x22262a, metalness: 0.7, roughness: 0.38 });
+    const mRing  = get(THREE, 'k98Ring',  { color: 0x4a5054, metalness: 0.85 });
 
-    // receiver body
-    g.add(box(THREE, mSteel,  0.048, 0.07,  0.26,  0, 0.01, -0.01));
-    g.add(box(THREE, mSteelD, 0.05,  0.018, 0.24,  0, 0.048,-0.01));   // dust cover
+    /* --- receiver + bolt body --- */
+    const receiver = new THREE.Group();
+    receiver.add(box(THREE, mSteel,  0.052, 0.072, 0.28, 0, 0.012, -0.01));        // receiver body
+    receiver.add(box(THREE, mSteelD, 0.046, 0.02,  0.26, 0, 0.05,  -0.01));        // dust cover
+    receiver.add(box(THREE, mSteelD, 0.05,  0.05,  0.05, 0, 0.008, 0.15));         // receiver ring
+    g.add(receiver);
 
-    // barrel + front sight tower
-    g.add(zcyl(THREE, mSteelD, 0.010, 0.38, 8, 0, 0.028, -0.44));
-    g.add(box(THREE, mSteel,  0.016, 0.032, 0.055, 0, 0.056, -0.32));    // gas block
-    /* Iron-sight platform instead of a scope: a low rail with protective ears
-       around the front post, so the Kar98k is completely unscoped. */
-    const sightRail = new THREE.Group();
-    sightRail.position.set(0, 0.035, -0.02);
-    sightRail.add(box(THREE, mSteel, 0.022, 0.016, 0.26, 0, 0, 0));           // low rail
-    sightRail.add(box(THREE, mSteelD, 0.018, 0.012, 0.02, 0, 0.008, -0.034)); // rear notch base
-    for (const side of [-1, 1]) {                                            // protective ears
-      sightRail.add(box(THREE, mSteel, 0.008, 0.014, 0.008, side * 0.014, 0.007, -0.034));
+    /* --- one continuous barrel, stepped at the muzzle band --- */
+    g.add(zcyl(THREE, mSteel, 0.0115, 0.42, 12, 0, 0.03, -0.46));                  // main barrel
+    g.add(zcyl(THREE, mSteelD, 0.013, 0.09, 12, 0, 0.03, -0.66));                  // muzzle step
+    g.add(cyl(THREE, mRing, 0.016, 0.016, 0.014, 12, 0, 0.03, -0.71));             // muzzle crown
+
+    /* --- hooded front sight: post inside a protective hood --- */
+    const frontHood = new THREE.Group();
+    frontHood.position.set(0, 0.058, -0.66);
+    frontHood.add(box(THREE, mSteel, 0.022, 0.026, 0.026, 0, 0, 0));               // hood shell
+    frontHood.add(box(THREE, mSteelD, 0.018, 0.022, 0.008, 0, 0.002, -0.011));     // hood rear cut
+    const fpost = cyl(THREE, mRing, 0.0035, 0.0035, 0.02, 6, 0, 0.004, -0.004);
+    fpost.userData.sight = 'front';
+    frontHood.add(fpost);
+    g.add(frontHood);
+
+    /* --- tangent rear sight: ramp with two leaves and a notch plate --- */
+    const rearSight = new THREE.Group();
+    rearSight.position.set(0, 0.046, -0.06);
+    rearSight.add(box(THREE, mSteel, 0.032, 0.012, 0.04, 0, 0, 0));                // base
+    rearSight.add(box(THREE, mSteelD, 0.028, 0.016, 0.006, 0, 0.014, -0.015));     // ramp
+    for (const side of [-1, 1]) {                                                  // tangent leaves
+      rearSight.add(box(THREE, mSteelD, 0.006, 0.016, 0.006, side * 0.012, 0.014, 0.009));
     }
-    sightRail.add(cyl(THREE, mSteel, 0.005, 0.005, 0.016, 8, 0, 0.012, -0.034)); // front post
-    sightRail.add(box(THREE, mSteel, 0.012, 0.02, 0.02, 0, 0.01, 0.02));    // rear notch
-    g.add(sightRail);
-    const front = box(THREE, mSteel, 0.007, 0.022, 0.01, 0, 0.085, -0.62);
-    front.userData.sight = 'front'; g.add(front);
-    g.add(box(THREE, mRing,   0.009, 0.01, 0.008, 0, 0.100, -0.62));   // front post
+    const rnotch = box(THREE, mRing, 0.024, 0.005, 0.005, 0, 0.023, 0.009);
+    rnotch.userData.sight = 'rear';
+    rearSight.add(rnotch);
+    g.add(rearSight);
 
-    // rear tangent sight
-    const rear = box(THREE, mSteel, 0.026, 0.018, 0.024, 0, 0.085, -0.10);
-    rear.userData.sight = 'rear'; g.add(rear);
-    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006, -0.010, 0.098, -0.10));
-    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006,  0.010, 0.098, -0.10));
-
-    // turned bolt (right side)
+    /* --- turned-down bolt (right side, animates on fire/reload) --- */
     const bolt = new THREE.Group();
-    bolt.position.set(0.026, 0.042, 0.01);
-    bolt.add(box(THREE, mSteel,  0.013, 0.015, 0.08, 0, 0, 0));
-    bolt.add(box(THREE, mSteelD, 0.011, 0.009, 0.016, 0, 0, 0.048));    // turned handle
+    bolt.position.set(0.028, 0.048, 0.015);
+    bolt.add(zcyl(THREE, mSteel, 0.009, 0.1, 8, 0, 0, 0));                         // bolt body
+    const handle = new THREE.Group();
+    handle.position.set(0, 0, 0.058);
+    handle.add(cyl(THREE, mSteelD, 0.005, 0.005, 0.03, 8, 0.011, 0, 0));           // turned arm
+    handle.add(cyl(THREE, mRing, 0.008, 0.008, 0.018, 8, 0.011, -0.012, 0));       // knob
+    handle.rotation.z = 0.42;
+    bolt.add(handle);
     g.add(bolt);
 
-    // internal magazine (pivot at base, animates down during reload)
+    /* --- internal magazine (pivot at base, animates down during reload) --- */
     const mag = new THREE.Group();
-    mag.position.set(0, -0.03, -0.035);
-    mag.add(box(THREE, mSteelD, 0.033, 0.055, 0.062, 0, -0.028, 0));
-    mag.add(box(THREE, mSteel,  0.035, 0.008, 0.064, 0, -0.06,  0));   // floorplate
+    mag.position.set(0, -0.034, -0.035);
+    mag.add(box(THREE, mSteelD, 0.034, 0.058, 0.064, 0, -0.029, 0));
+    mag.add(box(THREE, mSteel,  0.036, 0.008, 0.066, 0, -0.06,  0));               // floorplate
     g.add(mag);
 
-    // wooden stock (angled)
-    const stock = box(THREE, mWood,  0.042, 0.075, 0.24, 0, -0.002, 0.285);
-    stock.rotation.x = -0.055; g.add(stock);
-    g.add(box(THREE, mSteelD, 0.048, 0.06, 0.028, 0, -0.002, 0.405));  // butt plate
+    /* --- two-piece stock: buttstock with comb and pistol grip --- */
+    const stock = new THREE.Group();
+    const butt = box(THREE, mWood, 0.044, 0.082, 0.2, 0, 0.0, 0.3);
+    butt.rotation.x = -0.05;
+    stock.add(butt);
+    stock.add(box(THREE, mWoodD, 0.048, 0.062, 0.026, 0, 0.002, 0.415));           // butt plate
+    stock.add(box(THREE, mWood, 0.02, 0.03, 0.1, 0, 0.012, 0.22));                 // comb
+    g.add(stock);
 
-    // grip
-    const grip = box(THREE, mWoodD, 0.028, 0.085, 0.044, 0, -0.055, 0.09);
-    grip.rotation.x = 0.32; g.add(grip);
-    g.add(box(THREE, mSteelD, 0.007, 0.026, 0.007, 0, -0.025, 0.042));  // trigger
-    g.add(box(THREE, mSteelD, 0.007, 0.007, 0.085, 0, -0.04, 0.042));   // guard
+    /* --- pistol grip, angled like the real rifle --- */
+    const grip = box(THREE, mWoodD, 0.028, 0.088, 0.046, 0, -0.056, 0.088);
+    grip.rotation.x = 0.34;
+    g.add(grip);
 
-    // trigger guard
-    g.add(box(THREE, mSteelD, 0.007, 0.007, 0.055, 0, -0.055, 0.048));
+    /* --- trigger + guard --- */
+    g.add(box(THREE, mSteelD, 0.006, 0.024, 0.006, 0, -0.028, 0.044));
+    const guard = new THREE.Group();
+    guard.add(box(THREE, mSteelD, 0.006, 0.006, 0.088, 0, -0.044, 0.05));
+    guard.children[0].userData.part = 'guard';
+    g.add(guard);
+
+    /* --- barrel band near the stock forend --- */
+    g.add(box(THREE, mRing, 0.04, 0.014, 0.018, 0, 0.024, -0.02));
+
+    /* --- sling bar (small detail on the underside) --- */
+    g.add(cyl(THREE, mRing, 0.0035, 0.0035, 0.03, 6, 0, -0.058, 0.16));
 
     // hands
-    const gloveR = buildGlove(THREE, get); gloveR.position.set(0, -0.05, 0.10); gloveR.rotation.x = 0.5; g.add(gloveR);
-    const gloveL = buildGlove(THREE, get); gloveL.position.set(-0.005, -0.04, -0.22); gloveL.rotation.x = 0.3; g.add(gloveL);
+    const gloveR = buildGlove(THREE, get); gloveR.position.set(0, -0.052, 0.1);  gloveR.rotation.x = 0.5; g.add(gloveR);
+    const gloveL = buildGlove(THREE, get); gloveL.position.set(-0.006, -0.04, -0.2); gloveL.rotation.x = 0.3; g.add(gloveL);
 
-    const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.028, -0.63); g.add(muzzle);
+    const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.03, -0.715); g.add(muzzle);
     g.userData = { kind: 'kar98', mag: mag, bolt: bolt, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
     return g;
   }

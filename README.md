@@ -6,7 +6,7 @@ Play: https://xtr18222-hue.github.io/poly-strike/
 
 ## Modes and maps
 
-Main menu order: Play Offline (vs Bots), Play Online, Settings.
+Main menu order: Play Offline (vs Bots), Play Online, Loadout, Settings.
 Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), Crossfire (Urban Alleyways), or Training Range (open firing range with static target dummies and cover) before starting. Each has distinct collision geometry and routes. Training Range has no match pressure: no round clock, no score, and the targets never return fire, so it is the place to warm up movement, ADS, reloads and weapon handling.
 
 Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All weapons unlocked. No bomb or buy menu.
@@ -15,11 +15,26 @@ Online: host selects a map, clicks Play Online → Create Room, then shares the 
 
 Internet is required for online play. Vendored PeerJS uses its public signaling service plus WebRTC/STUN; no custom backend is required. Availability is not guaranteed. Restrictive NAT/firewalls may require TURN, which is not bundled. Try another network if a room times out. Room codes are not authentication; share privately. WebRTC exposes peer IP addresses to the other player. No accounts or analytics.
 
+## Loadout hub and career
+
+Loadout is a dedicated tab between Play Online and Settings. It opens an interactive armoury: a live 3D preview renders the selected weapon, and a full inspection can be triggered from inside the hub (Inspect Weapon). Primary cards choose between AK-47, AWP and Kar98k; secondary cards choose between Desert Eagle and Butterfly Knife. Selections persist locally and are used by the 1/2/3 weapon slots and the spawn loadout. The legacy dropdown primary selector has been removed.
+
+Career / Stats is reachable from the pause menu and tracks matches played, matches won, total eliminations, deaths, headshots, K/D ratio, lifetime accuracy and rounds won. Career data persists locally across sessions.
+
 ## Polish update
 
 Custom usernames (20 characters) persist locally and appear for both online players. Made by XTR is shown on the menu. Tab displays Name / Kills / Deaths / Score; score is 100 per kill plus 250 per round won. Bot stats persist within the match. Radar shows all living opponents. Headshots ring a metallic ding; headshot and knife eliminations appear amber. Red directional arcs point toward the attacker.
 
-F performs the unified cinematic inspection for every weapon: the rifle is brought forward and out to the support side, tilted through a graceful sequence that shows the receiver, barrel and stock from front to side, then eased smoothly back to the combat position on a C2 curve. Every weapon starts and ends on exactly the idle pose, so the transition never snaps. The knife keeps its two butterfly flip variants. Reloads are a fully animated tactical magazine swap for every magazine weapon: the empty mag is detached and thrown to the ground (a pooled procedural mesh with gravity), the action holds open, then a fresh mag is seated — AWP/Kar98k keep their bolt handling instead of a detachable box. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+F performs the unified cinematic inspection for every firearm: the rifle is brought forward and out to the support side, tilted through a graceful sequence that shows the receiver, chamber and sides from front to side, then eased smoothly back to the combat position on a C2 curve. Every weapon starts and ends on exactly the idle pose, so the transition never snaps. The Butterfly Knife keeps its two flip variants untouched. Pulling the trigger on an empty magazine now produces a distinct empty-chamber metallic dry-fire click. Reloads are a fully animated tactical magazine swap for every magazine weapon: the empty mag is detached and thrown to the ground (a pooled procedural mesh with gravity), the action holds open, then a fresh mag is seated — AWP/Kar98k keep their bolt handling instead of a detachable box. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+
+## Quality-of-life update
+
+- Bullet decals: pooled impact marks orient to the surface they hit and fade over ~6 seconds.
+- Ammo counter colour shifts smoothly from white at full, through amber, to deep red as the magazine empties.
+- Low-health vignette: below 25 HP the screen edges pulse red as a warning.
+- Weapon switching has its own foley cue and a faster equip animation.
+- Crosshair customization in Settings: colour, gap, length, thickness and an optional centre dot, persisted locally.
+- The Kar98k model was rebuilt from scratch: classic two-piece walnut stock, blued steel, full-length stepped barrel, hooded front sight, tangent rear sight and a turned-down bolt handle.
 
 ## Kar98k update
 
@@ -31,8 +46,8 @@ Kar98k joined the arsenal as an unscoped bolt-action sniper rifle: five-round in
 - C or Ctrl: crouch; press while sprinting forward to slide
 - Space: jump
 - Mouse: aim; left click: shoot/slash
-- Right click: AK-47/Deagle ADS toggle, AWP scope toggle
-- 1: primary (AK-47 / AWP / Kar98k, selected in the menu loadout); 2: Desert Eagle; 3: Butterfly Knife
+- Right click: AK-47/Deagle/Kar98k ADS toggle, AWP scope toggle
+- 1: primary (AK-47 / AWP / Kar98k, chosen in the Loadout tab); 2: Desert Eagle; 3: Butterfly Knife
 - Q: previous weapon; mouse wheel: cycle
 - R: reload (offline weapon switch cancels; online switching waits for reload)
 - F: inspect; knife alternates exactly two smooth flip variants
@@ -60,6 +75,7 @@ Open `index.html` directly offline, or serve with `python -m http.server 18957 -
 - `uv run --with playwright python tests/network.py` — real PeerJS transport
 - `uv run --with playwright python tests/offline.py` — offline cache, direct file, pointer lock
 - `uv run --with playwright python tests/performance.py` — 5-second per-map frame sampling, p95 and renderer budgets
+- `uv run --with playwright python tests/overhaul.py` — Loadout hub, crosshair customization, career stats, dry-fire, vignette, decals
 
 Browser tests use installed Edge. Set TEST_URL to a root URL ending `/` for hosted verification. `?test=1` enables local test fixtures; normal URLs expose read-only state. Performance artifacts are ignored by git.
 

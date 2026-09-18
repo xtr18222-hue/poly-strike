@@ -57,5 +57,14 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
 - Portable gh: C:/Users/xtr18/AppData/Local/gh-portable/bin/gh.exe authenticated xtr18222-hue. Local git noreply identity configured.
 - Server localhost18957; TEST_URL overrides browser suite roots (trailing slash).
-- Bump sw.js CACHE every runtime deployment; current poly-strike-v5-training. Reload after activation for previous cached clients.
+- Bump sw.js CACHE every runtime deployment; current poly-strike-v6-overhaul (was v5-training). Reload after activation for previous cached clients.
 - Ignore performance screenshots/results artifacts. Keep tests and licenses committed.
+
+## AAA overhaul (current pass)
+- Kar98k model fully rebuilt in visuals.js: classic two-piece walnut stock, blued steel, full-length stepped barrel with hooded front sight, tangent rear sight, turned-down bolt handle. Stats unchanged (`zoomFov:null, ads:true`); right-click ADS raises iron sights like the AK, no overlay/zoom, spread tightens via `pickSpread`'s `scoped && w.ads` branch.
+- Main menu is now strictly: Play Offline / Play Online / Loadout / Settings. Legacy `#primarySelect` dropdown removed everywhere (index.html + game.js). upgrade.py and polish_ui.py assert the new order.
+- Loadout hub (index.html `#loadoutPanel`, game.js): dedicated second Three.js scene + scissor-rendered `#loadoutCanvas` preview, primary cards (AK-47/AWP/Kar98k) and secondary cards (Deagle/Knife), live Inspect Weapon button drives the same PolyInspection poses, selections persist to localStorage (`poly-primary`/`poly-secondary`) and feed `inventory()`. Career stats (`poly-career`) recorded by `recordCareer(won)` in finishMatch; Career/Stats button on the pause menu.
+- inspection.js: firearms share one new cinematic sequence (receiver → chamber → sides, C2 easing, exact identity endpoints); knife's two flip variants untouched. durations are now ak47 3.4 / deagle 2.6 / awp 3.6 / kar98 3.8 / knife 1.5 — tests/kar98.py asserts the new values.
+- audio.js: distinct dry-fire cue (`dry` 2400Hz + double metallic tick) on empty trigger pull; new `switch` foley for weapon swaps.
+- game.js QoL: pooled bullet decals (`spawnDecal`, 48 cap, surface-oriented, fade 6s), ammo counter colour gradient (white→amber→red by `rounds/cap`), low-health vignette (`body.low-health` + pulsing `#damage` opacity below 25 hp), faster switch (`equip .35`, `A.sound('switch')`), crosshair customization (colour/gap/length/thickness/dot, `poly-crosshair`, applied via `applyCrosshair`).
+- tests/overhaul.py added: 24 checks for loadout hub, crosshair persistence, career panel, dry-fire, vignette, decals, fast switch — all PASS, zero console/page errors. All other suites green (89 node, kar98/upgrade/polish_ui/gameplay/feedback/offline/radar/performance/training/expansion/online_game).
