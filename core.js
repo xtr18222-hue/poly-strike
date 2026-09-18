@@ -39,6 +39,13 @@
       spreadBase: 0.05, spreadScoped: 0.0012, zoomFov: 20,
       price: 4750, killAward: 100, falloff: 0.001, recoil: 2.6,
     },
+    kar98: {
+      key: 'kar98', name: 'Kar98k', slot: 'primary', auto: false,
+      mag: 5, reserve: 40, damage: 110, headMult: 2.5, legMult: 0.75,
+      fireInterval: 1.2, reloadTime: 2.4,
+      spreadBase: 0.03, spreadScoped: 0.0015, zoomFov: 32,
+      price: 3400, killAward: 100, falloff: 0.0014, variance: 0.12, recoil: 2.2,
+    },
     deagle: {
       key: 'deagle', name: 'Desert Eagle', slot: 'secondary', auto: false,
       mag: 7, reserve: 35, damage: 53, headMult: 4, legMult: 0.75,
@@ -54,7 +61,7 @@
       price: 0, killAward: 1500, falloff: 0, recoil: 0,
     },
   };
-  const BUY_ITEMS = ['ak47', 'awp', 'deagle', 'armor'];
+  const BUY_ITEMS = ['ak47', 'awp', 'kar98', 'deagle', 'armor'];
 
   /* ------------------------------------------------------------- spread -- */
   // moveFactor: 0 standing .. 1 full sprint. crouch tightens, air wrecks,
@@ -71,6 +78,33 @@
       else if (scoped && w.ads) s *= w.spreadScoped / w.spreadBase;
     }
     return { yaw: (rng() * 2 - 1) * s, pitch: (rng() * 2 - 1) * s * 0.8 };
+  }
+
+  /* ------------------------------------------------------------- damage -- */
+  // Per-hit damage. Headshots use the head multiplier with no falloff and no
+  // variance, so a Kar98k headshot is a guaranteed kill at any range. Body and
+  // leg hits roll deterministic damage variance per weapon: rollVariance() is a
+  // pure hash of distance, so host and client always settle the same number.
+  // Existing weapons declare no variance and behave exactly as before.
+  function rollVariance(dist) {
+    let h = (Math.round(dist * 1000) + 0x9e3779b9) | 0;
+    h = Math.imul(h, 2654435761);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0x5bd1e995);
+    h ^= h >>> 15;
+    return ((h >>> 10) & 2047) / 2047;    // 0 .. 1
+  }
+  function shotDamage(weapon, part, dist) {
+    const w = WEAPONS[weapon];
+    const mult = part === 'head' ? w.headMult : (part === 'legs' ? w.legMult : 1);
+    let dmg;
+    if (part === 'head' || !w.variance) {
+      dmg = w.damage * mult * Math.max(0.4, 1 - dist * w.falloff);
+    } else {
+      const v = (rollVariance(dist) * 2 - 1) * w.variance;
+      dmg = w.damage * mult * Math.max(0.4, 1 - dist * w.falloff) * (1 + v);
+    }
+    return Math.max(0, dmg);
   }
 
   // Classic AK spray: hard vertical climb for the first ~8 bullets, then the
@@ -241,7 +275,7 @@
       hp: 100, armor: 0,
       kills: 0, deaths: 0, shotsFired: 0, shotsHit: 0, headshots: 0,
       owned: { primary: null, secondary: 'deagle' },
-      lastWinner: null,
+      lastWinner: null, lastClutch: false,
       bots: [],
       events: [],              // transient feed events for the HUD
     };
@@ -294,7 +328,7 @@
       this.buyClock = BUY_TIME;
       this.roundClock = ROUND_TIME;
       this.hp = 100;                 // armor persists, damaged
-      this.lastWinner = null;
+      this.lastWinner = null; this.lastClutch = false;
       for (const b of this.bots) {
         const sp = MAP.spawnBots[b.id];
         b.pos = { x: sp.x, z: sp.z };
@@ -326,9 +360,7 @@
       if (!w || !b || !b.alive || this.phase === 'end' || this.phase === 'matchover') {
         return { dmg: 0, killed: false };
       }
-      const mult = part === 'head' ? w.headMult : (part === 'legs' ? w.legMult : 1);
-      const falloffMul = Math.max(0.4, 1 - dist * w.falloff);
-      const dmg = w.damage * mult * falloffMul;
+      const dmg = shotDamage(weaponKey, part, dist);
       b.hp -= dmg;
       let killed = false;
       if (b.hp <= 0 && b.alive) {
@@ -336,8 +368,12 @@
         this.kills++;
         if (part === 'head') this.headshots++;
         this.money = Math.min(ECON.max, this.money + w.killAward);
+      this.lastVictim = b.name;
         this.events.push({ type: 'kill', who: 'player', weapon: weaponKey, head: part === 'head', name: b.name });
-        if (this.phase === 'live' && this.aliveBots().length === 0) this.endRound('player');
+        if (this.phase === 'live' && this.aliveBots().length === 0) {
+          this.lastClutch = this.bots.length > 1;   // 1v5: last kill of a full team is clutch
+          this.endRound('player');
+        }
       }
       return { dmg, killed };
     };
@@ -437,8 +473,8 @@
 
   const api = {
     MAPS, forMap, NAVGRAPH: graphFor(MAP),
-    mulberry32, WEAPONS, ECON, BUY_ITEMS: ['ak47', 'awp', 'deagle', 'armor'],
-    buildSprayPattern, pickSpread,
+    mulberry32, WEAPONS, ECON, BUY_ITEMS: ['ak47', 'awp', 'kar98', 'deagle', 'armor'],
+    buildSprayPattern, pickSpread, shotDamage, rollVariance,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
     createMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
   };

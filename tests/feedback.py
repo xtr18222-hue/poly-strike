@@ -6,14 +6,23 @@ with sync_playwright() as p:
  page.goto(os.environ.get('TEST_URL','http://127.0.0.1:18957/')+'?test=1');page.wait_for_function('window.Game');page.locator('#fallback').check();page.locator('#start').click()
  assert page.locator('#damageDirection').count()==1,'directional damage marker missing'
  page.evaluate("window.sounds=[];const original=PolyAudio.sound;PolyAudio.sound=t=>{sounds.push(t);original(t)};Game.test.fixture('target')")
- page.keyboard.press('Digit3');page.wait_for_timeout(300);page.mouse.click(640,400);page.wait_for_timeout(200)
- assert page.locator('#feed .special').count()==1
- assert 'headshot' in page.evaluate('sounds')
+ # Headshot kill with the primary (AK-47 by default): aim at the torso, then
+ # drag-look up so the ray lands on the head mesh. A torso hit would only wound,
+ # the headshot produces the amber kill feed entry.
+ page.keyboard.press('Digit1');page.wait_for_timeout(300)
+ page.evaluate('Game.test.aim(0)');page.wait_for_timeout(50)
+ page.mouse.move(640,400);page.mouse.down(button='right');page.wait_for_timeout(40)
+ page.mouse.move(640,370,steps=3);page.wait_for_timeout(40)
+ page.mouse.up(button='right');page.wait_for_timeout(40)
+ page.mouse.click(640,400);page.wait_for_timeout(200)
+ assert page.locator('#feed .skull.headshot').count()==1,'amber headshot kill feed entry'
+ assert 'headshot' in page.evaluate('sounds'),'headshot ding'
  page.evaluate('Game.test.damageFrom(10,20)');page.wait_for_timeout(100)
- assert float(page.locator('#damageDirection').evaluate('(e)=>getComputedStyle(e).opacity'))>0
- assert abs(float(page.locator('#damageDirection').get_attribute('data-angle'))-90)<1
- for slot in ['Digit1','Digit2','Digit3','Digit4']:
-  page.keyboard.press(slot);page.wait_for_timeout(250);page.keyboard.press('KeyF');page.wait_for_timeout(200);assert page.evaluate('Game.state().inspect')>0
-  page.wait_for_timeout(3400);assert page.evaluate('Game.state().inspect')==0
+ assert float(page.locator('#damageDirection').evaluate('(e)=>getComputedStyle(e).opacity'))>0,'damage marker visible'
+ assert abs(float(page.locator('#damageDirection').get_attribute('data-angle'))-90)<1,'damage marker points at source'
+ # Inspections for every slot present in a session: 1 primary, 2 Deagle, 3 knife.
+ for slot in ['Digit1','Digit2','Digit3']:
+  page.keyboard.press(slot);page.wait_for_timeout(250);page.keyboard.press('KeyF');page.wait_for_timeout(200);assert page.evaluate('Game.state().inspect')>0,'inspect starts on '+slot
+  page.wait_for_timeout(3600);assert page.evaluate('Game.state().inspect')==0,'inspect completes on '+slot
  assert not errors,errors;assert page.locator('#error').is_hidden()
- print('PASS headshot ding/gold kill, direction marker and all inspections complete without errors');b.close()
+ print('PASS headshot ding/amber kill, direction marker and all inspections complete without errors');b.close()

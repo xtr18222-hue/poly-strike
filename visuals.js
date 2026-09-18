@@ -619,6 +619,69 @@
     g.userData = { kind: 'deagle', mag: mag, bolt: slide, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
     return g;
   }
+  /* --- Kar98k: short military rifle, turned bolt, fixed internal magazine ---- */
+  function buildKar98(THREE, get) {
+    const g = new THREE.Group();
+    const mWood  = get(THREE, 'k98Wood',  { color: 0x7a4e2a, roughness: 0.82 });
+    const mWoodD= get(THREE, 'k98WoodD', { color: 0x5e3c20 });
+    const mSteel = get(THREE, 'k98Steel', { color: 0x2a2e30, metalness: 0.7, roughness: 0.35 });
+    const mSteelD= get(THREE, 'k98SteelD',{ color: 0x1e2022 });
+    const mRing  = get(THREE, 'k98Ring',  { color: 0x3a3e40, metalness: 0.85 });
+
+    // receiver body
+    g.add(box(THREE, mSteel,  0.048, 0.07,  0.26,  0, 0.01, -0.01));
+    g.add(box(THREE, mSteelD, 0.05,  0.018, 0.24,  0, 0.048,-0.01));   // dust cover
+
+    // barrel + front sight tower
+    g.add(zcyl(THREE, mSteelD, 0.010, 0.38, 8, 0, 0.028, -0.44));
+    g.add(box(THREE, mSteel,  0.016, 0.032, 0.055, 0, 0.056, -0.32));    // gas block
+    const front = box(THREE, mSteel, 0.007, 0.022, 0.01, 0, 0.085, -0.62);
+    front.userData.sight = 'front'; g.add(front);
+    g.add(box(THREE, mRing,   0.009, 0.01, 0.008, 0, 0.100, -0.62));   // front post
+
+    // rear tangent sight
+    const rear = box(THREE, mSteel, 0.026, 0.018, 0.024, 0, 0.085, -0.10);
+    rear.userData.sight = 'rear'; g.add(rear);
+    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006, -0.010, 0.098, -0.10));
+    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006,  0.010, 0.098, -0.10));
+
+    // turned bolt (right side)
+    const bolt = new THREE.Group();
+    bolt.position.set(0.026, 0.042, 0.01);
+    bolt.add(box(THREE, mSteel,  0.013, 0.015, 0.08, 0, 0, 0));
+    bolt.add(box(THREE, mSteelD, 0.011, 0.009, 0.016, 0, 0, 0.048));    // turned handle
+    g.add(bolt);
+
+    // internal magazine (pivot at base, animates down during reload)
+    const mag = new THREE.Group();
+    mag.position.set(0, -0.03, -0.035);
+    mag.add(box(THREE, mSteelD, 0.033, 0.055, 0.062, 0, -0.028, 0));
+    mag.add(box(THREE, mSteel,  0.035, 0.008, 0.064, 0, -0.06,  0));   // floorplate
+    g.add(mag);
+
+    // wooden stock (angled)
+    const stock = box(THREE, mWood,  0.042, 0.075, 0.24, 0, -0.002, 0.285);
+    stock.rotation.x = -0.055; g.add(stock);
+    g.add(box(THREE, mSteelD, 0.048, 0.06, 0.028, 0, -0.002, 0.405));  // butt plate
+
+    // grip
+    const grip = box(THREE, mWoodD, 0.028, 0.085, 0.044, 0, -0.055, 0.09);
+    grip.rotation.x = 0.32; g.add(grip);
+    g.add(box(THREE, mSteelD, 0.007, 0.026, 0.007, 0, -0.025, 0.042));  // trigger
+    g.add(box(THREE, mSteelD, 0.007, 0.007, 0.085, 0, -0.04, 0.042));   // guard
+
+    // trigger guard
+    g.add(box(THREE, mSteelD, 0.007, 0.007, 0.055, 0, -0.055, 0.048));
+
+    // hands
+    const gloveR = buildGlove(THREE, get); gloveR.position.set(0, -0.05, 0.10); gloveR.rotation.x = 0.5; g.add(gloveR);
+    const gloveL = buildGlove(THREE, get); gloveL.position.set(-0.005, -0.04, -0.22); gloveL.rotation.x = 0.3; g.add(gloveL);
+
+    const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0.028, -0.63); g.add(muzzle);
+    g.userData = { kind: 'kar98', mag: mag, bolt: bolt, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
+    return g;
+  }
+
 
   /* --- Butterfly knife: pivoted handles A/B + swinging blade -------------- */
   function buildKnife(THREE, get) {
@@ -680,7 +743,18 @@
     return g;
   }
 
-  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, deagle: buildDeagle, knife: buildKnife };
+  /* --- Shell casing: brass box with a rim, pooled by the controller. ------
+   * Carried by scene (not the view camera) so ejected brass arcs away from
+   * the player. Caller disposes it through the shared effects pool. */
+  function buildCasing(THREE) {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb08d3f, metalness: 0.8, roughness: 0.32 });
+    const g = new THREE.Group();
+    g.add(box(THREE, mat, 0.011, 0.011, 0.055, 0, 0, 0));        // case body
+    g.add(box(THREE, mat, 0.0135, 0.0135, 0.008, 0, 0, 0.032));  // rim
+    return g;
+  }
+
+  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle, knife: buildKnife };
 
   // View model: fires down -Z, origin at the grip so the parent can place it
   // at (0.32, -0.3, -0.65) with a fixed 65 FOV camera.
@@ -708,6 +782,7 @@
     buildArena: buildArena,
     buildBot: buildBot,
     buildWeapon: buildWeapon,
-    WEAPON_KEYS: ['ak47', 'awp', 'deagle', 'knife'],
+    buildCasing: buildCasing,
+    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'knife'],
   };
 });

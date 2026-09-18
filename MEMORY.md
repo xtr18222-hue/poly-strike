@@ -32,6 +32,16 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Model polish complete: beveled Deagle, tapered butterfly blade, bot armor/boots/visor; merged environment details and clouds skipped in Performance mode. Collision footprints unchanged.
 - Independent scoped review passed with no security/logic findings. Nonblocking follow-ups: self-row highlight uses username equality; duplicate scoreboard CSS rules. Polish commit 88ea3ff pushed; Pages build confirmed for that SHA. Live username/scoreboard, combat feedback/inspections and offline suites passed; SW v3 cache.
 
+## Kar98k update (current pass)
+- Kar98k integrated as the fifth weapon: unscoped bolt-action sniper, 5/40 ammo, 1.2s fire interval, 2.4s reload, turned bolt + tangent iron sights, wood/blued steel model, real builder in visuals.js (no longer an AWP alias). Menu loadout select, Digit1 slot, drop/pickup and online buy/lock all wired.
+- Damage model: core.js exports shotDamage(weapon,part,dist) and rollVariance(dist); playerShot (offline) and duel.shoot (online host authority) both call it, so host and client settle identical numbers. Headshots: multiplier only, no falloff, no variance → guaranteed kill at any range (Kar98k min 198 at 200m). Body/leg hits add deterministic per-distance variance (pure hash of distance, no RNG state consumed), giving Kar98k ~84% body-kill point-blank falling to ~16% at long range; leg hits never one-shot. Weapons without a `variance` field compute exactly the previous formula (0 regressions verified).
+- Kar98k stats: damage 110, headMult 2.5, legMult 0.75, falloff 0.0014, variance 0.12, zoomFov 32, ADS (no scope overlay), price 3400.
+- Inspections: inspection.js now has an explicit ak47/deagle branch sharing the sniper vertical-sweep family with a full 2π airborne roll and a tactical magazine detach/reseat (AK only; Deagle has no mag userData). Durations ak47 3.0s, deagle 2.7s, awp 3.2s, kar98 3.4s, knife 1.5s. All endpoints stationary and continuous; hands remain sibling roots.
+- Fixed two pre-existing test failures that blocked `node --test`: tests/core.test.cjs asserted exactly four weapons, and visuals.js exported an undefined buildCasing (ReferenceError killed the whole visuals.cjs file). buildCasing is now a real brass-casing factory used by the sniper shell-eject effect.
+- Stale Playwright suites repaired to the real loadout slots (Digit1 primary / Digit2 Deagle / Digit3 knife; Digit4 never existed) and to headshot aim via drag-look: gameplay.py, feedback.py, upgrade.py. New tests/kar98.py covers Kar98k mechanics, variable body outcomes and all inspections.
+- Verification: 86 Node tests pass (was 56/54). Browser suites pass: gameplay, feedback, upgrade, offline, radar, polish_ui, expansion, network, online_game (real WebRTC), performance (56.0-56.3 FPS, draws 157/157/110, heap 13.0-16.1MB, Performance mode). Not committed/pushed yet.
+- Deploy note: sw.js CACHE bumped to poly-strike-v4-kar98; README corrected to five weapons, Kar98k section added, controls slot numbers fixed.
+
 ## Toolchain/deploy
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
 - Portable gh: C:/Users/xtr18/AppData/Local/gh-portable/bin/gh.exe authenticated xtr18222-hue. Local git noreply identity configured.

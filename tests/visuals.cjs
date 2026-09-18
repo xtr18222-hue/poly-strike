@@ -368,15 +368,15 @@ test('knife: continuous tapered blade and machined handle channels', function ()
   assert.ok(allMeshes(w).length<=20);assertFinite(w,'clean knife');
 });
 
-test('weapons: all four keys build and are distinct', function () {
-  const keys = ['ak47', 'awp', 'deagle', 'knife'];
+test('weapons: all five keys build and are distinct', function () {
+  const keys = ['ak47', 'awp', 'deagle', 'kar98', 'knife'];
   const built = keys.map(function (k) { return PolyVisual.buildWeapon(THREE, k); });
   built.forEach(function (w, i) { assert.equal(w.userData.kind, keys[i]); });
   assert.notEqual(built[0].uuid, built[1].uuid);
 });
 
 test('weapons: muzzle is at the visual barrel tip (beyond every other -Z mesh)', function () {
-  for (const key of ['ak47', 'awp', 'deagle']) {
+  for (const key of ['ak47', 'awp', 'deagle', 'kar98']) {
     const w = PolyVisual.buildWeapon(THREE, key);
     const mz = w.userData.muzzle;
     // setFromObject(mesh) updates the mesh but not its ancestor pivot;
@@ -394,7 +394,7 @@ test('weapons: muzzle is at the visual barrel tip (beyond every other -Z mesh)',
 });
 
 test('weapons: iron sights exist on the long guns', function () {
-  for (const key of ['ak47', 'awp', 'deagle']) {
+  for (const key of ['ak47', 'awp', 'deagle', 'kar98']) {
     const w = PolyVisual.buildWeapon(THREE, key);
     const sights = [];
     w.traverse(function (o) { if (o.userData && o.userData.sight) sights.push(o.userData.sight); });

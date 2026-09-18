@@ -30,18 +30,19 @@ with sync_playwright() as p:
     page.keyboard.press('KeyR');page.wait_for_timeout(80);assert state()['reload']>0
     page.wait_for_timeout(2550);assert state()['ammo']['ak47']['mag']==30,'reload replenishes'
     # Switching cancels reload, semi-auto does not fire repeatedly while held.
-    page.keyboard.press('Digit3');page.wait_for_timeout(400);fixture()
+    # Slots: 1 primary (AK-47 by default), 2 Deagle, 3 knife.
+    page.keyboard.press('Digit2');page.wait_for_timeout(400);fixture()
     page.mouse.down();page.wait_for_timeout(650);page.mouse.up()
     assert state()['ammo']['deagle']['mag']==6,'semi-auto exactly one shot while held'
-    page.keyboard.press('KeyR');page.wait_for_timeout(100);page.keyboard.press('Digit2');page.wait_for_timeout(400)
-    assert state()['reload']<=0 and state()['weapon']=='awp','switch cancels reload'
-    fixture();page.mouse.click(640,400,button='right');page.wait_for_timeout(250)
-    assert state()['scoped'] and page.locator('#scope').is_visible(),'scope overlay'
+    page.keyboard.press('KeyR');page.wait_for_timeout(100);page.keyboard.press('Digit1');page.wait_for_timeout(400)
+    assert state()['reload']<=0 and state()['weapon']=='ak47','switch cancels reload'
+    fixture();page.mouse.move(640,400);page.mouse.down(button='right');page.wait_for_timeout(40)
+    page.mouse.move(640,370,steps=3);page.wait_for_timeout(40);page.mouse.up(button='right');page.wait_for_timeout(40)
+    assert state()['ads'],'AK ADS overlay'
     old=state()['kills'];page.mouse.click(640,400);page.wait_for_timeout(100)
-    assert state()['kills']==old+1,'AWP raycast kills target'
-    assert not state()['scoped'],'bolt action unscopes'
+    assert state()['kills']==old+1,'AK headshot raycast kills target'
     # Knife animation plus close-range collision.
-    page.keyboard.press('Digit4');page.wait_for_timeout(450);page.keyboard.press('KeyF');page.wait_for_timeout(80)
+    page.keyboard.press('Digit3');page.wait_for_timeout(450);page.keyboard.press('KeyF');page.wait_for_timeout(80)
     assert state()['inspect']>1,'knife inspect'
     fixture();page.evaluate('Game.test.place(0,16)');page.wait_for_timeout(100)
     page.mouse.down();page.wait_for_timeout(700);page.mouse.up();assert state()['alive']==0,'knife close-range kill'

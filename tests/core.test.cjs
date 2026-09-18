@@ -7,8 +7,8 @@ const path = require('path');
 const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
-test('arsenal contains exactly the four required weapons', () => {
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['ak47', 'awp', 'deagle', 'knife']);
+test('arsenal contains the five weapons with consistent stats', () => {
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['ak47', 'awp', 'deagle', 'kar98', 'knife']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');

@@ -19,12 +19,12 @@ with sync_playwright() as p:
  page.keyboard.down('KeyW');page.keyboard.down('ShiftLeft');page.wait_for_timeout(150);page.keyboard.press('KeyC');page.wait_for_timeout(100)
  assert page.evaluate('Game.state().slide>0'),'sprint crouch slides'
  page.keyboard.up('KeyW');page.keyboard.up('ShiftLeft');page.wait_for_timeout(900)
- for digit,key in [('Digit1','ak47'),('Digit3','deagle')]:
+ for digit,key in [('Digit1','ak47'),('Digit2','deagle')]:
   page.keyboard.press(digit);page.wait_for_timeout(400);page.mouse.click(640,400,button='right');page.wait_for_timeout(250)
   assert page.evaluate('Game.state().ads'),key+' ADS'
   assert page.locator('#scope').is_hidden(),'rifle/pistol ADS is not sniper overlay'
   page.mouse.click(640,400,button='right')
- page.keyboard.press('Digit4');page.wait_for_timeout(450)
+ page.keyboard.press('Digit3');page.wait_for_timeout(450)
  variants=[]
  for i in range(3):
   page.keyboard.press('KeyF');page.wait_for_timeout(50);variants.append(page.evaluate('Game.state().inspectVariant'));page.wait_for_timeout(1600)

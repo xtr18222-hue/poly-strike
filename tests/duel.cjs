@@ -5,9 +5,29 @@ const arena=(solids=[])=>({id:'test',bounds:{hx:38,hz:38},solids,spawnPlayer:{x:
 const create=(map=arena())=>require('../duel.js').create(map,C);
 const advance=(d,seconds)=>{for(let t=0;t<seconds-1e-8;t+=.05)d.step(Math.min(.05,seconds-t));};
 const shot=(weapon='ak47',seq=1)=>({weapon,origin:{x:0,y:1.7,z:10},dir:{x:0,y:-.07,z:-1},seq});
+test('primary locks on first valid pose and rejects other weapons',()=>{
+ const d=create(),p=d.state.players[0];
+ assert.equal(p.primary,'ak47');
+ assert.equal(d.move(0,{...p,primary:'kar98',weapon:'kar98'}),true);
+ assert.equal(p.primary,'kar98');d.move(0,{...p,primary:'awp',weapon:'awp'});assert.equal(p.primary,'kar98');assert.equal(p.weapon,'kar98');
+ advance(d,5.1);assert.equal(d.shoot(0,shot('awp')).accepted,false);assert.equal(d.shoot(0,shot('kar98')).accepted,true);
+ p.ammo.awp.mag=0;assert.equal(d.reload(0,'awp'),false);
+});
+test('drop preserves authoritative ammo, proximity pickup and round cleanup',()=>{
+ const d=create(),p=d.state.players[0];assert.equal(d.drop(0),false);advance(d,5.1);
+ p.ammo.ak47.mag=12;assert.equal(d.drop(0),true);assert.equal(p.weapon,'deagle');assert.equal(p.dropped,true);
+ const item=d.snapshot().drops[0];assert.equal(item.mag,12);assert.equal(d.drop(0),false);assert.equal(d.shoot(0,shot()).accepted,false);
+ assert.equal(d.pickup(1,item.id),false);assert.equal(d.pickup(0,'bogus'),false);assert.equal(d.pickup(0,item.id),true);assert.equal(p.ammo.ak47.mag,12);assert.equal(d.pickup(0,item.id),false);
+ d.drop(0);advance(d,94.2);assert.equal(d.state.drops.length,0);assert.equal(d.state.players[0].dropped,false);
+});
+test('accuracy counts accepted gunshots and hits across rounds only',()=>{
+ const d=create();advance(d,5.1);d.shoot(0,{...shot(),dir:{x:1,y:0,z:0}});advance(d,.11);d.shoot(0,shot('ak47',2));d.shoot(0,shot('ak47',3));
+ assert.equal(d.state.players[0].shotsFired,2);assert.equal(d.state.players[0].shotsHit,1);
+ advance(d,94.2);assert.equal(d.state.players[0].shotsFired,2);assert.equal(d.state.players[0].shotsHit,1);assert.equal(d.state.events.length,0);
+});
 test('sprint and slide fit 14m/s host budget and low eye height',()=>{const d=create();advance(d,5.1);assert.equal(d.move(0,{x:0,z:7.3,y:.85,yaw:0,pitch:0}),true);advance(d,.1);assert.equal(d.move(0,{x:0,z:6,y:.85,yaw:0,pitch:0}),true);});
 test('five eliminations end match, respawn refills, tied timeout draws',()=>{
- const d=create();for(let i=0;i<5;i++){advance(d,5.1);assert.equal(d.state.phase,'live');assert.equal(d.shoot(0,shot('awp',i)).killed,true);assert.equal(d.state.phase,'end');assert.equal(d.state.score[0],i+1);advance(d,4.1);}
+ const d=create();d.state.players[0].primary='awp';for(let i=0;i<5;i++){advance(d,5.1);assert.equal(d.state.phase,'live');assert.equal(d.shoot(0,shot('awp',i)).killed,true);assert.equal(d.state.phase,'end');assert.equal(d.state.score[0],i+1);advance(d,4.1);}
  assert.equal(d.state.phase,'matchover');assert.equal(d.state.matchWinner,0);assert.equal(d.shoot(0,shot('awp',9)).accepted,false);
  const tie=create();advance(tie,95.1);assert.equal(tie.state.phase,'end');assert.equal(tie.state.lastWinner,null);assert.deepEqual(tie.state.score,[0,0]);advance(tie,4.1);assert.equal(tie.state.round,2);
 });

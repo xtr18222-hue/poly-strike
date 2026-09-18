@@ -6,7 +6,7 @@ with sync_playwright() as p:
  b=p.chromium.launch(channel='msedge',headless=True,args=['--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows']);errors=[]
  host=b.new_page(service_workers='block');guest=b.new_page(service_workers='block')
  for page in [host,guest]:
-  page.on('pageerror',lambda e:errors.append(str(e)));page.goto(BASE+'?test=1');page.wait_for_function('window.Game');page.locator('#fallback').check();page.locator('#onlineButton').click()
+  page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None);page.on('pageerror',lambda e:errors.append(str(e)));page.goto(BASE+'?test=1');page.wait_for_function('window.Game');page.locator('#fallback').check();page.locator('#onlineButton').click()
  for page,name in [(host,'Host XTR'),(guest,'Guest XTR')]:page.locator('#username').evaluate('(e,n)=>{e.value=n;e.dispatchEvent(new Event("change"))}',name)
  host.locator('#hostRoom').click();host.wait_for_function("document.querySelector('#netStatus').textContent.includes('waiting')",timeout=40000)
  code=host.locator('#roomCode').inner_text();guest.locator('#roomInput').fill(code);guest.locator('#joinRoom').click()
@@ -27,8 +27,26 @@ with sync_playwright() as p:
  assert abs(guest.evaluate('Game.state().x'))>1,'guest movement accepted'
  host.evaluate('Game.test.online.win()');guest.wait_for_timeout(250)
  assert host.locator('#pauseTitle').inner_text()=='VICTORY';assert guest.locator('#pauseTitle').inner_text()=='DEFEAT'
+ # Host consent alone cannot restart; guest consent keeps the same room and rotates map.
+ original_room=host.evaluate('Game.state().room')
+ host.locator('#nextMap').select_option('industrial');host.locator('#rematch').click();host.wait_for_timeout(300)
+ assert host.evaluate('Game.state().phase')=='matchover';assert guest.evaluate('Game.state().phase')=='matchover'
+ guest.locator('#rematch').click()
+ for page in [host,guest]:
+  page.wait_for_function("Game.state().map==='industrial' && Game.state().phase==='buy'",timeout=10000)
+  assert page.evaluate('Game.state().room')==original_room
+  assert page.evaluate('Game.state().hp')==100
+  assert page.evaluate('Game.state().score')=={'player':0,'enemy':0}
+ # Wait for repeated snapshots: old terminal state and damage must not reappear.
+ host.wait_for_timeout(700)
+ for page in [host,guest]:
+  assert page.evaluate('Game.state().phase')=='buy'
+  assert page.evaluate('Game.state().hp')==100
+  assert page.evaluate('Game.state().drops')==[]
+ # Conclude the rematch to exercise leaving the retained peer room.
+ host.evaluate('Game.test.online.win()');guest.wait_for_timeout(250)
  guest.locator('#toMenu').click();host.wait_for_function('!Game.state().online',timeout=10000)
  assert host.locator('#onlinePanel').is_visible(),'disconnect returns UI with status'
  assert not errors,errors
- print(json.dumps({'PASS':'real WebRTC integrated host/join, bidirectional damage, movement, score, match win/loss and disconnect','errors':errors}))
+ print(json.dumps({'PASS':'real WebRTC integrated host/join, bidirectional damage, movement, score, both-consent rotated rematch, stale-state prevention and disconnect','errors':errors}))
  b.close()

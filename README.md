@@ -9,7 +9,7 @@ Play: https://xtr18222-hue.github.io/poly-strike/
 Main menu order: Play Offline (vs Bots), Play Online, Settings.
 Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), or Crossfire (Urban Alleyways) before starting. Each has distinct collision geometry and routes.
 
-Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All four weapons unlocked. No bomb or buy menu.
+Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All weapons unlocked. No bomb or buy menu.
 
 Online: host selects a map, clicks Play Online → Create Room, then shares the displayed code with one friend. Friend clicks Play Online, enters code and Join Room. Both click Resume when connected. First to five eliminations wins; timeout awards the round to higher HP, equal HP draws. Host calculates damage, ammo, movement bounds and rounds; guest receives snapshots at 20Hz. Online matches do NOT pause in menus. Leave returns to the main menu; disconnection ends the session. No host migration or ranked anti-cheat.
 
@@ -19,7 +19,11 @@ Internet is required for online play. Vendored PeerJS uses its public signaling 
 
 Custom usernames (20 characters) persist locally and appear for both online players. Made by XTR is shown on the menu. Tab displays Name / Kills / Deaths / Score; score is 100 per kill plus 250 per round won. Bot stats persist within the match. Radar shows all living opponents. Headshots ring a metallic ding; headshot and knife eliminations appear amber. Red directional arcs point toward the attacker.
 
-F performs eased airborne AK/Deagle inspections, a slower top-to-bottom AWP sweep, or one of two butterfly flips. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+F performs eased cinematic inspections for every weapon: AK/Deagle sweep through a full airborne spin with a tactical magazine handling pass, snipers (AWP/Kar98k) perform a slower top-to-bottom vertical sweep with detached magazine, and the knife offers one of two butterfly flips. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+
+## Kar98k update
+
+Kar98k joined the arsenal as an unscoped bolt-action sniper rifle: five-round internal magazine, 40 reserve, 1.2s bolt cycle, 2.4s reload, turned-down bolt and tangent iron sights, wood and blued steel. Damage profile models a real sniper round: a headshot is a guaranteed instant kill at any range. Body damage is deliberately variable — a deterministic per-distance roll gives heavy rounds that sometimes drop a full-health target outright and sometimes leave them alive to be finished, scaling from roughly four-in-five body kills point-blank down to around one-in-five at long range. Leg hits retain the reduced multiplier and never one-shot. Other weapons are unchanged.
 
 ## Controls
 
@@ -28,7 +32,7 @@ F performs eased airborne AK/Deagle inspections, a slower top-to-bottom AWP swee
 - Space: jump
 - Mouse: aim; left click: shoot/slash
 - Right click: AK-47/Deagle ADS toggle, AWP scope toggle
-- 1: AK-47; 2: AWP; 3: Desert Eagle; 4: Butterfly Knife
+- 1: primary (AK-47 / AWP / Kar98k, selected in the menu loadout); 2: Desert Eagle; 3: Butterfly Knife
 - Q: previous weapon; mouse wheel: cycle
 - R: reload (offline weapon switch cancels; online switching waits for reload)
 - F: inspect; knife alternates exactly two smooth flip variants
@@ -37,7 +41,7 @@ F performs eased airborne AK/Deagle inspections, a slower top-to-bottom AWP swee
 
 Desktop keyboard/mouse and WebGL required. Click to capture mouse/audio. Drag-to-look fallback holds right mouse; right-click also toggles ADS, so pointer lock is recommended.
 
-AK-47: automatic 30/90, deterministic climbing/sideways spray, classic wood/black steel finish. AWP: 10/30, olive finish, high damage, bolt delay, modeled scope and custom reticle/lens overlay; firing exits scope. Deagle: semi-auto 7/35, silver metal; click once per shot. Butterfly: close-range unlimited slashes, chrome blade/cool handles.
+AK-47: automatic 30/90, deterministic climbing/sideways spray, classic wood/black steel finish. AWP: 10/30, olive finish, high damage, bolt delay, modeled scope and custom reticle/lens overlay; firing exits scope. Kar98k: 5/40 bolt-action, unscoped with ADS, wood and blued steel; headshots always kill, body damage is variable and falls off with range. Deagle: semi-auto 7/35, silver metal; click once per shot. Butterfly: close-range unlimited slashes, chrome blade/cool handles.
 
 ## Graphics and offline use
 

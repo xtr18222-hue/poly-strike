@@ -15,17 +15,19 @@
   }
   try{const out=copy(value,0);if(JSON.stringify(out).length>16384)return null;return out;}catch(_){return null;}
  }
- function packet(value){const p=sanitize(value);return p&&['input','shot','reload','snapshot'].includes(p.type)?p:null;}
+ function packet(value){const p=sanitize(value);return p&&['input','shot','reload','snapshot','drop','pickup','rematch','rematchStatus','rematchStart'].includes(p.type)?p:null;}
  function create(callbacks={}){
   let role=null,code='',mapId='',connected=false,peer=null,conn=null,active=false,generation=0,stage='';
   const timers=new Set();let signalTimer,handshakeTimer,idleTimer,rateAt=0,rateCount=0;
   function touch(){cancel(idleTimer);idleTimer=later(()=>close('Opponent stopped responding. Reconnect to continue.'),30000);}
-  function heartbeat(){if(!connected)return;raw({ps:2,kind:'ping'});later(heartbeat,5000);}
+  let ping=null,pendingPing=null,pingToken=0;
+  const nowMs=()=>root.performance&&typeof root.performance.now==='function'?root.performance.now():Date.now();
+  function heartbeat(){if(!connected)return;pendingPing={token:++pingToken,at:nowMs()};raw({ps:2,kind:'ping',token:pendingPing.token});later(heartbeat,5000);}
   function later(fn,ms){const t=setTimeout(()=>{timers.delete(t);fn();},ms);timers.add(t);return t;}
   function cancel(t){clearTimeout(t);timers.delete(t);}
   const emit=(key,value)=>{if(typeof callbacks[key]==='function')callbacks[key](value);};
   const status=s=>emit('onStatus',s);
-  function close(reason='Disconnected.'){if(!active)return;active=false;connected=false;generation++;for(const t of timers)clearTimeout(t);timers.clear();const c=conn,p=peer;conn=null;peer=null;role=null;code='';try{if(c)c.close();}catch(_){}try{if(p)p.destroy();}catch(_){}status(reason);emit('onClose',reason);}
+  function close(reason='Disconnected.'){if(!active)return;active=false;connected=false;ping=null;pendingPing=null;generation++;for(const t of timers)clearTimeout(t);timers.clear();const c=conn,p=peer;conn=null;peer=null;role=null;code='';try{if(c)c.close();}catch(_){}try{if(p)p.destroy();}catch(_){}status(reason);emit('onClose',reason);}
   function raw(msg){try{if(!conn||!conn.open)return false;conn.send(msg);return true;}catch(_){close('Connection interrupted. Please create a new room.');return false;}}
   function ready(){cancel(handshakeTimer);connected=true;stage='ready';touch();later(heartbeat,5000);status('Opponent connected.');emit('onReady',{role,mapId,code});}
   function bind(c,g){
@@ -33,7 +35,7 @@
    conn=c;handshakeTimer=later(()=>{if(g===generation&&!connected)close('Direct connection timed out. Room may be full or your network may block WebRTC.');},20000);stage=role==='host'?'hello':'accept';
    c.on('open',()=>{if(g!==generation)return;if(role==='guest')raw({ps:2,kind:'hello'});else status('Opponent connecting…');});
    c.on('data',value=>{if(g!==generation||!active)return;const now=Date.now();if(now-rateAt>1000){rateAt=now;rateCount=0;}if(++rateCount>240){close('Opponent sent too many packets.');return;}const d=sanitize(value);if(!d||d.ps!==2){close('Invalid packet from opponent.');return;}
-    if(connected){touch();if(d.kind==='ping'){raw({ps:2,kind:'pong'});return;}if(d.kind==='pong')return;if(d.kind==='data'){const p=packet(d.payload);if(!p){close('Invalid game packet from opponent.');return;}emit('onData',p);return;}}
+    if(connected){touch();if(d.kind==='ping'){if(d.token===undefined)raw({ps:2,kind:'pong'});else if(Number.isSafeInteger(d.token)&&d.token>=0&&d.token<=1e12)raw({ps:2,kind:'pong',token:d.token});return;}if(d.kind==='pong'){if(pendingPing&&d.token===pendingPing.token){const elapsed=nowMs()-pendingPing.at;if(elapsed>=0&&elapsed<=30000)ping=Math.round(elapsed);pendingPing=null;}return;}if(d.kind==='data'){const p=packet(d.payload);if(!p){close('Invalid game packet from opponent.');return;}emit('onData',p);return;}}
     if(role==='host'&&stage==='hello'&&d.kind==='hello'){stage='ack';raw({ps:2,kind:'accept',mapId,code});}
     else if(role==='guest'&&stage==='accept'&&d.kind==='accept'&&typeof d.mapId==='string'&&MAP.test(d.mapId)&&d.code===code){mapId=d.mapId;if(raw({ps:2,kind:'ack'}))ready();}
     else if(role==='host'&&stage==='ack'&&d.kind==='ack')ready();
@@ -53,7 +55,7 @@
     return true;
    }catch(_){close('WebRTC could not start in this browser.');return false;}
   }
-  return {host(m){if(typeof m!=='string'||!MAP.test(m)){status('Invalid map.');return false;}return start('host',randomCode(),m);},join(value){if(typeof value!=='string'){status('Enter the 8-character room code.');return false;}let c=value.trim().toLowerCase();if(/^[a-z0-9]{8}$/.test(c))c='ps2-'+c;if(!ROOM.test(c)){status('Enter the 8-character room code.');return false;}return start('guest',c,'');},send(value){if(!connected)return false;const p=packet(value);return p?raw({ps:2,kind:'data',payload:p}):false;},close,get role(){return role;},get code(){return code;},get connected(){return connected;}};
+  return {host(m){if(typeof m!=='string'||!MAP.test(m)){status('Invalid map.');return false;}return start('host',randomCode(),m);},join(value){if(typeof value!=='string'){status('Enter the 8-character room code.');return false;}let c=value.trim().toLowerCase();if(/^[a-z0-9]{8}$/.test(c))c='ps2-'+c;if(!ROOM.test(c)){status('Enter the 8-character room code.');return false;}return start('guest',c,'');},send(value){if(!connected)return false;const p=packet(value);return p?raw({ps:2,kind:'data',payload:p}):false;},close,get role(){return role;},get code(){return code;},get connected(){return connected;},get ping(){return ping;}};
  }
  root.PolyNet={create};
 })(typeof window!=='undefined'?window:globalThis);
