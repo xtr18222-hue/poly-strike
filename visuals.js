@@ -129,11 +129,13 @@
     if (!map || !Array.isArray(map.solids)) throw new Error('buildArena: C.MAP.solids missing');
     if (!['performance', 'medium', 'high'].includes(preset)) preset = 'medium';
     const performance = preset === 'performance', high = preset === 'high';
-    const theme = ['desert', 'industrial', 'urban'].includes(map.theme) ? map.theme : 'desert';
+    const theme = ['desert', 'industrial', 'urban', 'training'].includes(map.theme) ? map.theme : 'desert';
     const palette = {
       desert: [0xd2b183,0xdcb98a,0xb8946a,0x8a5a33,0x2f8a86,0x395875,0xd8c9a8],
       industrial: [0x647076,0x9aa6a8,0x495860,0x426c73,0xe4b24e,0x34434c,0xa6b9bf],
-      urban: [0x666d76,0xa5a6ad,0x727883,0x71716b,0xacc6d4,0x435c70,0xbac7d5]
+      urban: [0x666d76,0xa5a6ad,0x727883,0x71716b,0xacc6d4,0x435c70,0xbac7d5],
+      // Clean purpose-built range: green floor, white lanes, red accents.
+      training: [0x4a6b5c,0x8fae9d,0x6b8f7a,0x39564a,0xd9534a,0x2b3a33,0xbfd8c8]
     }[theme];
     const root = new THREE.Group(); root.name = 'arena-' + theme; scene.add(root);
     const hitMeshes = [], objects = [], materials = [];
@@ -197,6 +199,10 @@
         const angle=i*Math.PI*2/(high?12:6),r=Math.hypot(hx,hz)+12;
         if(theme==='desert'){
           const m=new THREE.Mesh(new THREE.SphereGeometry(7+i%3,8,4),trimMat);m.position.set(Math.cos(angle)*r,-2,Math.sin(angle)*r);m.scale.y=.35;root.add(m);objects.push(m);
+        }else if(theme==='training'){
+          // Open range: keep the sight lines clear, only low distant hedgerows.
+          const hh=2.5+(i%3)*1.5;
+          add(trimMat,14,hh,3,Math.cos(angle)*r,hh/2,Math.sin(angle)*r);
         }else{
           const height=theme==='urban'?12+(i%4)*5:9+(i%3)*4;
           add(trimMat,theme==='urban'?8:3,height,theme==='urban'?8:3,Math.cos(angle)*r,height/2,Math.sin(angle)*r);
@@ -204,8 +210,16 @@
       }
     }
     if(!performance){
-      const decor=make('decor',theme==='desert'?0x82705b:0x596569);
+      const decor=make('decor',theme==='desert'?0x82705b:theme==='training'?0x2b3a33:0x596569);
       decor.polygonOffset=true;decor.polygonOffsetFactor=-1;decor.polygonOffsetUnits=-1;
+      // Training range paints lane stripes instead of crate clutter.
+      if(theme==='training'){
+        for(let lane=-2;lane<=2;lane++){
+          add(accent,.18,.012,2*hz-8,lane*7,.014,0);
+          add(siteA,.5,.02,.5,lane*7,.02,14);
+          add(siteB,.5,.02,.5,lane*7,.02,2);
+        }
+      } else
       // Cargo sits on existing roofs/crates: no new collision footprint.
       for(const s of map.solids){
         if(s.kind==='crate'){
@@ -477,7 +491,9 @@
     g.add(box(THREE, mSteel, 0.05, 0.13, 0.03, 0, -0.01, 0.555));           // recoil pad
     g.add(box(THREE, mTeal, 0.054, 0.014, 0.1, 0, -0.03, 0.42));            // teal inlay
 
-    // 3D scope: tube + objective/ocular bells + two rings + lens + turrets
+    /* Raised 3D scope: tube + objective/ocular bells + rings + lens + turrets.
+       The AWP is the one scoped weapon in the arsenal; the Kar98k stays
+       unscoped with iron sights only. */
     const scope = new THREE.Group();
     scope.position.set(0, 0.105, -0.02);
     scope.add(zcyl(THREE, mRing, 0.028, 0.2, 12, 0, 0, 0));                 // main tube
@@ -493,7 +509,6 @@
     scope.add(eyeLens);
     scope.add(cyl(THREE, mRing, 0.014, 0.014, 0.03, 10, 0, 0.04, 0.02));    // elevation turret
     scope.add(cyl(THREE, mTeal, 0.012, 0.012, 0.024, 10, 0.032, 0, 0.02));  // windage turret
-    // Separate raised scope clamp rings, not just a solid tube silhouette.
     for (const z of [-0.06, 0.05]) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(0.030, 0.006, 6, 16), mTeal);
       ring.position.z = z;
@@ -504,13 +519,19 @@
     scope.add(box(THREE, mSteel, 0.02, 0.05, 0.03, 0, -0.03, 0.05));        // rear mount
     g.add(scope);
 
-    // iron backup sights
-    const fs = box(THREE, mSteel, 0.01, 0.02, 0.01, 0, 0.085, -0.6);
+    // raised iron sights
+    const fs = box(THREE, mSteel, 0.009, 0.026, 0.012, 0, 0.092, -0.6);
     fs.userData.sight = 'front';
     g.add(fs);
-    const rs = box(THREE, mSteel, 0.024, 0.018, 0.012, 0, 0.085, 0.2);
+    g.add(box(THREE, mSteel, 0.004, 0.02, 0.004, 0, 0.104, -0.6));         // front bead
+    const rs = box(THREE, mSteel, 0.026, 0.022, 0.014, 0, 0.092, 0.2);
     rs.userData.sight = 'rear';
     g.add(rs);
+    // twin rear sight leaves with a centre notch
+    for (const side of [-1, 1]) {
+      g.add(box(THREE, mBodyD, 0.006, 0.014, 0.006, side * 0.01, 0.103, 0.2));
+    }
+    g.add(box(THREE, mBodyD, 0.028, 0.005, 0.004, 0, 0.106, 0.2));         // notch plate
 
     // magazine
     const mag = new THREE.Group();
@@ -635,6 +656,18 @@
     // barrel + front sight tower
     g.add(zcyl(THREE, mSteelD, 0.010, 0.38, 8, 0, 0.028, -0.44));
     g.add(box(THREE, mSteel,  0.016, 0.032, 0.055, 0, 0.056, -0.32));    // gas block
+    /* Iron-sight platform instead of a scope: a low rail with protective ears
+       around the front post, so the Kar98k is completely unscoped. */
+    const sightRail = new THREE.Group();
+    sightRail.position.set(0, 0.035, -0.02);
+    sightRail.add(box(THREE, mSteel, 0.022, 0.016, 0.26, 0, 0, 0));           // low rail
+    sightRail.add(box(THREE, mSteelD, 0.018, 0.012, 0.02, 0, 0.008, -0.034)); // rear notch base
+    for (const side of [-1, 1]) {                                            // protective ears
+      sightRail.add(box(THREE, mSteel, 0.008, 0.014, 0.008, side * 0.014, 0.007, -0.034));
+    }
+    sightRail.add(cyl(THREE, mSteel, 0.005, 0.005, 0.016, 8, 0, 0.012, -0.034)); // front post
+    sightRail.add(box(THREE, mSteel, 0.012, 0.02, 0.02, 0, 0.01, 0.02));    // rear notch
+    g.add(sightRail);
     const front = box(THREE, mSteel, 0.007, 0.022, 0.01, 0, 0.085, -0.62);
     front.userData.sight = 'front'; g.add(front);
     g.add(box(THREE, mRing,   0.009, 0.01, 0.008, 0, 0.100, -0.62));   // front post
@@ -754,6 +787,31 @@
     return g;
   }
 
+  /* Dropped magazine for the tactical reload swap. Curved AK box mag with a
+     visible round stack, or a straight pistol mag. Pooled by the caller. */
+  function buildMagazine(THREE, kind) {
+    const isPistol = kind === 'deagle';
+    const mBody = new THREE.MeshStandardMaterial({ color: isPistol ? 0x3a3f45 : 0x6f5630, metalness: 0.4, roughness: 0.6 });
+    const mSteel = new THREE.MeshStandardMaterial({ color: 0xb08d3f, metalness: 0.85, roughness: 0.3 });
+    const g = new THREE.Group();
+    g.name = 'dropped-mag';
+    if (isPistol) {
+      g.add(box(THREE, mBody, 0.026, 0.075, 0.04, 0, 0, 0));
+      g.add(box(THREE, mSteel, 0.03, 0.012, 0.044, 0, -0.042, 0));   // basepad
+    } else {
+      // slight curve suggested by two angled boxes
+      const lower = box(THREE, mBody, 0.032, 0.05, 0.055, 0, -0.018, 0.014);
+      lower.rotation.x = 0.22;
+      g.add(lower);
+      g.add(box(THREE, mBody, 0.032, 0.045, 0.05, 0, 0.012, -0.012));
+      g.add(box(THREE, mSteel, 0.034, 0.01, 0.058, 0, -0.048, 0.022)); // floorplate
+      for (let i = 0; i < 3; i++) {                                   // visible rounds
+        g.add(box(THREE, mSteel, 0.012, 0.014, 0.016, 0, 0.02 - i * 0.016, -0.004 - i * 0.008));
+      }
+    }
+    return g;
+  }
+
   const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle, knife: buildKnife };
 
   // View model: fires down -Z, origin at the grip so the parent can place it
@@ -783,6 +841,7 @@
     buildBot: buildBot,
     buildWeapon: buildWeapon,
     buildCasing: buildCasing,
+    buildMagazine: buildMagazine,
     WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'knife'],
   };
 });

@@ -3,9 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const C = require('../core.js');
 
-test('three selectable maps expose bound simulation contexts', () => {
+test('four selectable maps expose bound simulation contexts', () => {
   assert.ok(C.MAPS, 'map registry exists');
-  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert', 'industrial', 'urban']);
+  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert', 'industrial', 'training', 'urban']);
   assert.equal(C.MAP, C.MAPS.desert, 'legacy default stays desert');
   for (const id of Object.keys(C.MAPS)) {
     const ctx = C.forMap(id);
@@ -29,7 +29,7 @@ test('classic scripts expose the same map API without Node or DOM', () => {
   const sandbox = {};
   vm.createContext(sandbox);
   for (const file of ['maps.js', 'core.js']) vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',file),'utf8'), sandbox);
-  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban']);
+  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban','training']);
   assert.equal(sandbox.POLY_CORE.forMap('urban').createMatch().MAP.id,'urban');
 });
 
@@ -47,6 +47,21 @@ test('30 seeded full-round bot traces remain collision-safe on every map', () =>
       assert.ok(m.navSearches <= 8, 'not per-frame BFS');
     }
   }
+});
+
+test('training range is a pressure-free target range', () => {
+  const ctx = C.forMap('training'), m = ctx.createTrainingMatch();
+  assert.equal(m.training, true);
+  m.phase = 'live';
+  const sense = { px: 0, pz: 34 };
+  m.step(0.05, C.mulberry32(1), sense);
+  assert.equal(m.phase, 'live');
+  assert.equal(m.bots.every(b => b.speed === 0), true, 'targets are static');
+  const shot = m.playerShot('ak47', 0, 'head', 10);
+  assert.equal(shot.killed, true, 'targets still take damage');
+  for (let i = 0; i < 60; i++) m.step(0.05, C.mulberry32(i), sense);
+  assert.equal(m.bots[0].alive, true, 'targets respawn');
+  assert.ok(m.roundClock !== 90 || m.training, 'no round clock pressure');
 });
 
 test('reloads finish in the faster per-weapon times', () => {
@@ -79,6 +94,8 @@ test('all arena navigation and spawn paths have full collision-safe connectivity
     assert.equal(map.size, 76);
     assert.deepEqual(map.bounds, {hx:38, hz:38});
     assert.equal(map.spawnBots.length, 5);
+    // Training is an open range: no round clock, no score pressure.
+    assert.equal(!!map.training, id === 'training');
     footprints.add(JSON.stringify(map.solids));
     for (const s of map.solids) {
       assert.ok(['building', 'wall', 'crate'].includes(s.kind));
@@ -103,7 +120,7 @@ test('all arena navigation and spawn paths have full collision-safe connectivity
     }
     assert.ok(Math.hypot(map.spawnPlayer.x-map.spawnOpponent.x, map.spawnPlayer.z-map.spawnOpponent.z)>50);
   }
-  assert.equal(footprints.size, 3, 'topologies differ, not just materials');
+  assert.equal(footprints.size, 4, 'topologies differ, not just materials');
 });
 
 test('map/context match arguments share cached graphs but not live match state', () => {

@@ -33,7 +33,7 @@ with sync_playwright() as p:
     # --- inspections run to completion with zero errors. Only slots present in
     # this session are asserted here (primary is kar98); ak47/awp pose math and
     # durations are covered by tests/inspection.cjs in Node. ---
-    for w, dur in [('kar98', 3.4), ('deagle', 2.7), ('knife', 1.5)]:
+    for w, dur in [('kar98', 3.4), ('deagle', 2.5), ('knife', 1.5)]:
         page.keyboard.press('Digit1' if w == 'kar98' else ('Digit2' if w == 'deagle' else 'Digit3'))
         page.wait_for_timeout(300)
         check(page.evaluate('Game.state().weapon') == w, 'selected ' + w)
@@ -118,7 +118,7 @@ with sync_playwright() as p:
     check(page.evaluate("PolyVisual.buildCasing && PolyVisual.buildCasing(THREE).isObject3D"), 'buildCasing exported and returns Object3D')
     check(page.evaluate("PolyInspection.durations.kar98 === 3.4"), 'Kar98k inspect duration 3.4s')
     check(page.evaluate("PolyInspection.durations.ak47 === 3.0"), 'AK inspect duration 3.0s')
-    check(page.evaluate("PolyInspection.durations.deagle === 2.7"), 'Deagle inspect duration 2.7s')
+    check(page.evaluate("PolyInspection.durations.deagle === 2.5"), 'Deagle inspect duration 2.5s')
     check(page.evaluate("typeof POLY_CORE.shotDamage === 'function'"), 'shotDamage exported')
     check(page.evaluate("POLY_CORE.shotDamage('kar98','head',110) > 100"), 'Kar98k headshot > 100 damage')
 

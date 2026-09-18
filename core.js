@@ -43,7 +43,9 @@
       key: 'kar98', name: 'Kar98k', slot: 'primary', auto: false,
       mag: 5, reserve: 40, damage: 110, headMult: 2.5, legMult: 0.75,
       fireInterval: 1.2, reloadTime: 2.4,
-      spreadBase: 0.03, spreadScoped: 0.0015, zoomFov: 32,
+      // Iron sights only: no scope overlay and no zoom (zoomFov null), so ADS
+      // behaves like the AK-47 -- fast, unzoomed, tactical.
+      spreadBase: 0.03, spreadScoped: 0.0015, zoomFov: null, ads: true,
       price: 3400, killAward: 100, falloff: 0.0014, variance: 0.12, recoil: 2.2,
     },
     deagle: {
@@ -471,16 +473,61 @@
     return m;
   }
 
+  /* -------------------------------------------------------- training --- */
+  // Training range: no match pressure. Bots are static range targets that
+  // respawn shortly after being hit and never shoot back; the clock never
+  // ends the round and the score is not tracked.
+  function createTrainingMatch(mapOrContext = MAP) {
+    const base = createMatch(mapOrContext);
+    base.training = true;
+    base.roundClock = Infinity;
+    base.respawnClock = [0, 0, 0, 0, 0];
+    base.step = function (dt, rng, sense) {
+      if (this.phase === 'buy') { this.buyClock = 0; this.phase = 'live'; }
+      if (this.phase !== 'live') return;
+      // Targets stay put; keep their nav node valid but idle.
+      for (const b of this.bots) { b.cool = 999; b.speed = 0; }
+      for (let i = 0; i < this.bots.length; i++) {
+        if (!this.bots[i].alive) {
+          this.respawnClock[i] = (this.respawnClock[i] || 0) + dt;
+          if (this.respawnClock[i] >= 2.5) {
+            this.bots[i].alive = true;
+            this.bots[i].hp = 100;
+            this.respawnClock[i] = 0;
+          }
+        }
+      }
+    };
+    base.playerShot = function (weaponKey, botId, part, dist) {
+      const w = WEAPONS[weaponKey];
+      const b = this.bots.find(b => b.id === botId);
+      if (!w || !b || !b.alive) return { dmg: 0, killed: false };
+      const dmg = shotDamage(weaponKey, part, dist);
+      b.hp -= dmg;
+      let killed = false;
+      if (b.hp <= 0) {
+        b.alive = false; b.deaths++; killed = true;
+        this.kills++;
+        if (part === 'head') this.headshots++;
+        this.events.push({ type: 'kill', who: 'player', weapon: weaponKey, head: part === 'head', name: b.name });
+        this.respawnClock[b.id] = 0;
+      }
+      return { dmg, killed };
+    };
+    return base;
+  }
+
   const api = {
     MAPS, forMap, NAVGRAPH: graphFor(MAP),
     mulberry32, WEAPONS, ECON, BUY_ITEMS: ['ak47', 'awp', 'kar98', 'deagle', 'armor'],
     buildSprayPattern, pickSpread, shotDamage, rollVariance,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
-    createMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
+    createMatch, createTrainingMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
   };
   function forMap(id = 'desert') {
     const map = resolveMap(id);
-    return { ...api, MAP: map, NAVGRAPH: graphFor(map), createMatch: () => createMatch(map), nearestNav: p => nearestNav(p, map) };
+    return { ...api, MAP: map, NAVGRAPH: graphFor(map), createMatch: () => createMatch(map),
+      createTrainingMatch: () => createTrainingMatch(map), nearestNav: p => nearestNav(p, map) };
   }
   return api;
 });

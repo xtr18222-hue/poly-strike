@@ -42,9 +42,20 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Verification: 86 Node tests pass (was 56/54). Browser suites pass: gameplay, feedback, upgrade, offline, radar, polish_ui, expansion, network, online_game (real WebRTC), performance (56.0-56.3 FPS, draws 157/157/110, heap 13.0-16.1MB, Performance mode). Not committed/pushed yet.
 - Deploy note: sw.js CACHE bumped to poly-strike-v4-kar98; README corrected to five weapons, Kar98k section added, controls slot numbers fixed.
 
+## Unscoped Kar98k + cinematic inspection + tactical reload (current pass)
+- Kar98k is now completely unscoped in both stats and model: `zoomFov: null`, `ads: true` in core.js, and the scope body replaced in visuals.js by a low iron-sight rail with protective ears plus tangent front/rear posts. ADS right-click raises iron sights exactly like the AK-47 — no scope overlay, no zoom. `game.js` uses `scopedOnly(k)=>k==='awp'` (was `sniper(k)`, which treated kar98 as scoped), so only the AWP is scoped. Kar98k damage profile is unchanged: headshot guaranteed kill, variable body damage via the deterministic distance hash, leg multiplier retained.
+- Inspection system rewritten in inspection.js as one unified cinematic sequence for all five weapons: weapon brought forward and out to the support side, tilted through three poses (receiver → barrel → side), eased back on C2 curves. Pose endpoints are exactly the identity at t=0 and t=1, all paths finite and bounded; knife keeps its two butterfly flip variants. Tests updated: tests/inspection.cjs rewritten to the new invariants; deagle duration moved 2.7 → 2.5s (also in tests/kar98.py).
+- Tactical magazine swap in game.js: reload now runs in three stages — detach, hold-open, seat. The spent mag is thrown into the world as a pooled procedural mesh (visuals.js `buildMagazine`, curved AK / straight Deagle variants) with gravity, inheriting player velocity. AWP/Kar98k keep bolt handling (internal magazine) and skip the drop.
+
+## Training Mode (fourth map)
+- maps.js adds `training`: an open firing range (firing lane + cover crates + target wall) with its own palette and nav graph; its mid-cover crates are offset from the 4m nav grid so bots never clip a corner (the 30-seed collision trace test caught this at frame 459).
+- core.js adds `createTrainingMatch(map)`: static targets (`speed 0`, `cool 999`) that never return fire, no round clock (Infinity), no score pressure, 2.5s target respawn. `forMap('training')` binds `createTrainingMatch` and the nav graph.
+- game.js wires it: deploy picks `createTrainingMatch` when `C.MAP.training`, HUD objective reads "TRAINING · N TARGETS READY" and the clock freezes at 0, syncBots runs instead of round-end logic. Both map selects (`mapSelect`, `nextMap`) and the online map rotation list it fourth, so the net.cjs rotate test now expects urban → training.
+- Covered by tests/training.py: four-map order, no scope overlay, no score/round pressure, targets never fire, unscoped Kar98k ADS and one-shot kill, tactical reload, F inspection, and render budget (307,038 px / 59 draw calls). Read `Game.state().alive` ~400ms after the shot — training targets respawn after 2.5s, so a longer wait reads 1→4 instead of 1→0.
+
 ## Toolchain/deploy
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
 - Portable gh: C:/Users/xtr18/AppData/Local/gh-portable/bin/gh.exe authenticated xtr18222-hue. Local git noreply identity configured.
 - Server localhost18957; TEST_URL overrides browser suite roots (trailing slash).
-- Bump sw.js CACHE every runtime deployment; current poly-strike-v3-polish. Reload after activation for previous cached clients.
+- Bump sw.js CACHE every runtime deployment; current poly-strike-v5-training. Reload after activation for previous cached clients.
 - Ignore performance screenshots/results artifacts. Keep tests and licenses committed.

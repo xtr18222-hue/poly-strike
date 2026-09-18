@@ -7,7 +7,7 @@ Play: https://xtr18222-hue.github.io/poly-strike/
 ## Modes and maps
 
 Main menu order: Play Offline (vs Bots), Play Online, Settings.
-Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), or Crossfire (Urban Alleyways) before starting. Each has distinct collision geometry and routes.
+Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), Crossfire (Urban Alleyways), or Training Range (open firing range with static target dummies and cover) before starting. Each has distinct collision geometry and routes. Training Range has no match pressure: no round clock, no score, and the targets never return fire, so it is the place to warm up movement, ADS, reloads and weapon handling.
 
 Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All weapons unlocked. No bomb or buy menu.
 
@@ -19,7 +19,7 @@ Internet is required for online play. Vendored PeerJS uses its public signaling 
 
 Custom usernames (20 characters) persist locally and appear for both online players. Made by XTR is shown on the menu. Tab displays Name / Kills / Deaths / Score; score is 100 per kill plus 250 per round won. Bot stats persist within the match. Radar shows all living opponents. Headshots ring a metallic ding; headshot and knife eliminations appear amber. Red directional arcs point toward the attacker.
 
-F performs eased cinematic inspections for every weapon: AK/Deagle sweep through a full airborne spin with a tactical magazine handling pass, snipers (AWP/Kar98k) perform a slower top-to-bottom vertical sweep with detached magazine, and the knife offers one of two butterfly flips. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
+F performs the unified cinematic inspection for every weapon: the rifle is brought forward and out to the support side, tilted through a graceful sequence that shows the receiver, barrel and stock from front to side, then eased smoothly back to the combat position on a C2 curve. Every weapon starts and ends on exactly the idle pose, so the transition never snaps. The knife keeps its two butterfly flip variants. Reloads are a fully animated tactical magazine swap for every magazine weapon: the empty mag is detached and thrown to the ground (a pooled procedural mesh with gravity), the action holds open, then a fresh mag is seated — AWP/Kar98k keep their bolt handling instead of a detachable box. Deagle deals 53 body damage with no distance falloff: two body hits or one headshot kill a full-health bot/online opponent. Leg hits retain their reduced multiplier. Natural finishes and existing ADS remain.
 
 ## Kar98k update
 

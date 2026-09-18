@@ -22,6 +22,8 @@ test('arsenal contains the five weapons with consistent stats', () => {
   assert.equal(C.WEAPONS.ak47.auto, true, 'AK is automatic');
   assert.equal(C.WEAPONS.deagle.auto, false, 'Deagle is semi-auto');
   assert.equal(C.WEAPONS.awp.zoomFov < 40, true, 'AWP has scope zoom');
+  assert.equal(C.WEAPONS.kar98.zoomFov, null, 'Kar98k is unscoped (iron sights only)');
+  assert.equal(C.WEAPONS.kar98.ads, true, 'Kar98k uses ADS like the AK-47');
 });
 
 /* ---------- 2. Spray pattern ---------- */

@@ -86,5 +86,32 @@
       { x: 12, z: -4, w: 2, d: 3, h: 1.6, kind: 'crate' },
     ],
   };
-  return { desert, industrial, urban };
+  // Training: open firing range with range lanes, cover and pop-up targets.
+  // No match pressure: bots are static ducks/targets and never shoot back.
+  const training = {
+    id: 'training', name: 'Training Range', theme: 'training',
+    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
+    spawnPlayer: { x: 0, z: 34 },
+    spawnOpponent: { x: 0, z: -34 },
+    training: true,
+    spawnBots: [
+      { x: 0, z: 14 }, { x: -10, z: 6 }, { x: 10, z: 6 },
+      { x: -18, z: -8 }, { x: 18, z: -8 },
+    ],
+    solids: [
+      // perimeter sight line
+      { x: 0, z: 0, w: 30, d: 1, h: 0.6, kind: 'wall' },
+      // cover crates near the player
+      { x: -10, z: 24, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 10, z: 24, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 0, z: 18, w: 4, d: 4, h: 2, kind: 'crate' },
+      // mid cover, offset from the 4m nav grid so bots never clip a corner
+      { x: -17, z: 1, w: 3, d: 3, h: 1.5, kind: 'crate' },
+      { x: 17, z: 1, w: 3, d: 3, h: 1.5, kind: 'crate' },
+      // back wall
+      { x: -11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
+      { x: 11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
+    ],
+  };
+  return { desert, industrial, urban, training };
 });

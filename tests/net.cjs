@@ -43,7 +43,7 @@ test('rematch requires both consent and host map; stale events cannot cross matc
  ends[0].cb.onData({type:'input',matchId:1,round:h.state.round,state:{...h.state.players[1],x:before+.1}});
  h.step(.06);flush();assert.equal(h.state.players[1].x,before);
  ends[0].cb.onData({type:'drop',matchId:2,round:h.state.round-1});h.step(.06);assert.equal(h.state.players[1].dropped,false);
- h.test.win();flush();h.requestRematch('rotate');flush();assert.equal(h.state.phase,'matchover');g.requestRematch();flush();assert.equal(g.state.mapId,'desert');assert.equal(g.state.round,1);
+ h.test.win();flush();h.requestRematch('rotate');flush();assert.equal(h.state.phase,'matchover');g.requestRematch();flush();assert.equal(g.state.mapId,'training', 'rotate cycles through all four maps');assert.equal(g.state.round,1);
 });
 test('guest never treats remote status as its own consent',()=>{
  const {h,g,ends,flush}=onlinePair();h.test.win();flush();
