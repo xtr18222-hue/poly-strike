@@ -57,7 +57,7 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Node24, Python3.11 via uv, Playwright installed Edge channel msedge.
 - Portable gh: C:/Users/xtr18/AppData/Local/gh-portable/bin/gh.exe authenticated xtr18222-hue. Local git noreply identity configured.
 - Server localhost18957; TEST_URL overrides browser suite roots (trailing slash).
-- Bump sw.js CACHE every runtime deployment; current poly-strike-v6-overhaul (was v5-training). Reload after activation for previous cached clients.
+- Bump sw.js CACHE every runtime deployment; current poly-strike-v7-store (was v6-overhaul). Reload after activation for previous cached clients.
 - Ignore performance screenshots/results artifacts. Keep tests and licenses committed.
 
 ## AAA overhaul (current pass)
@@ -68,3 +68,15 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - audio.js: distinct dry-fire cue (`dry` 2400Hz + double metallic tick) on empty trigger pull; new `switch` foley for weapon swaps.
 - game.js QoL: pooled bullet decals (`spawnDecal`, 48 cap, surface-oriented, fade 6s), ammo counter colour gradient (white→amber→red by `rounds/cap`), low-health vignette (`body.low-health` + pulsing `#damage` opacity below 25 hp), faster switch (`equip .35`, `A.sound('switch')`), crosshair customization (colour/gap/length/thickness/dot, `poly-crosshair`, applied via `applyCrosshair`).
 - tests/overhaul.py added: 24 checks for loadout hub, crosshair persistence, career panel, dry-fire, vignette, decals, fast switch — all PASS, zero console/page errors. All other suites green (89 node, kar98/upgrade/polish_ui/gameplay/feedback/offline/radar/performance/training/expansion/online_game).
+
+## Store / skins / missions pass (overhaul 2)
+- Main menu is now strictly: Play Offline / Play Online / Loadout / Store / Settings. upgrade.py, polish_ui.py and overhaul.py assert the 5-item order.
+- Loadout canvas viewport bug fixed: the scissor render now scales by `PolySettings.resolution(...)` (physical pixels, matching `setSize(...,false)`) and restores the full viewport afterwards. Click-drag on `#loadoutCanvas` rotates the preview 360° (`loadoutYaw`/`loadoutPitch`, pointer-captured).
+- Skins: `PolyVisual.SKINS` has 3 finishes per weapon (ak47 Classic/Tactical/Sunset, awp Issue/Frost/Dragon, kar98 Natural/Storm/Golden, deagle Silver/Midnight/Bronze, knife Chrome/Crimson/Gold). Legendary AWP "Dragon" is the top-tier case drop. `PolyVisual.applySkin(T, model, key, idx)` retints cached materials; `CHAR_SKINS` (Operator/Desert/Arctic) recolour the player rig via `applyCharSkinToView`. Persisted `poly-skins` / `poly-charskin`.
+- Store + cases (game.js): loot table `CASE_ITEMS` of [weapon, skinIdx, rarity], weights 45/28/17/8/2%, reel of 42 items with a 4.2s double-out scroll landing the reward under a centre marker. 3 free crates (`poly-crates`), unlocked skins saved to `poly-owned`. `rollCase` uses its own `mulberry32` stream so crate luck never advances the match RNG (online determinism).
+- Missions: `MISSIONS` (kills20/wins3/hs10/matches5/rounds15) grant crate rewards; `progressMissions` fed by `addKill` (both offline + online kill paths) and `recordCareer`. Rendered in the Store panel.
+- Legs: each bot/player leg now has its own hip pivot (`root.userData.legPivots`, container `userData.legs` kept for the bot test); `syncBots` swings them 180° out of phase, amplitude scaled by speed, frozen when stationary.
+- Kar98k iron sights sharpened: taller triangular post in the hood, deeper V-notch tangent rear.
+- inspection.js circular glitch fixed: roll was driven by a signed `Math.sin` so it flipped sign mid-animation; now a one-sided easing with exact identity endpoints. Knife flips untouched.
+- tests/overhaul2.py added: 17 checks — canvas size/viewport, 360 drag, 3 skins + Dragon, applySkin colour change, 5-item menu, 3 crates, reel scroll + crate consumed + rarity result, mission progress + crate reward, two independent hip pivots. ALL PASS, zero errors.
+- Gotcha (cost 2h): `const models={}` was declared inside the `try {` block, making it block-scoped and invisible to `applyCharSkinToView` in the IIFE scope — TDZ `ReferenceError` killed the whole game init. Hoist such declarations out of the try.

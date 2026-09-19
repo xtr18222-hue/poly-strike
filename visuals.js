@@ -22,6 +22,99 @@
 })(typeof window !== 'undefined' ? window : (typeof self !== 'undefined' ? self : this), function () {
 
   /* ------------------------------------------------------------ helpers -- */
+  // Weapon skins: 3 distinct finishes per weapon. Each is a set of material
+  // overrides keyed by the material cache name the builder used, so a skin can
+  // recolour wood, steel and accents without rebuilding any geometry. The first
+  // entry is always the default the models are built with.
+  const SKINS = {
+    ak47: [
+      { name: 'Classic',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x22262a },
+      { name: 'Tactical',  wood: 0x2e3a2c, steel: 0x161a1c, accent: 0x3d4a3a },
+      { name: 'Sunset',    wood: 0xb0531f, steel: 0x4a2f22, accent: 0xd9a13b },
+    ],
+    awp: [
+      { name: 'Issue',     wood: 0x4a5340, steel: 0x2b2f33, accent: 0x1b1e21 },
+      { name: 'Frost',     wood: 0x8fa3b8, steel: 0xc3cdd6, accent: 0x6f8296 },
+      { name: 'Dragon',    wood: 0x7a1f2b, steel: 0x2a1013, accent: 0xffcf3f },   // Legendary
+    ],
+    kar98: [
+      { name: 'Natural',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x4a5054 },
+      { name: 'Storm',     wood: 0x39424a, steel: 0x23272b, accent: 0x6b7680 },
+      { name: 'Golden',    wood: 0x6b4a1e, steel: 0x8a6a1f, accent: 0xd9b24a },
+    ],
+    deagle: [
+      { name: 'Silver',    steel: 0x9aa3a8, accent: 0x6b7176 },
+      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
+      { name: 'Bronze',    steel: 0x8a5a2b, accent: 0xc08a4a },
+    ],
+    knife: [
+      { name: 'Chrome',    steel: 0xb8c0c5, accent: 0x37474f },
+      { name: 'Crimson',   steel: 0x8e1f2b, accent: 0x3a0d12 },
+      { name: 'Gold',      steel: 0xc9a227, accent: 0x6b4a1e },
+    ],
+  };
+  // Character skins (player + bots share the rig): fabric, armour and boots.
+  const CHAR_SKINS = [
+    { name: 'Operator',  cloth: 0x3a4a55, clothD: 0x2b3840, armor: 0x4a5a25, boot: 0x1c2226 },
+    { name: 'Desert',    cloth: 0x8a7448, clothD: 0x6b5a36, armor: 0x9a8a5a, boot: 0x4a3c28 },
+    { name: 'Arctic',    cloth: 0xcfd8dc, clothD: 0xaeb9c0, armor: 0x8fa3b8, boot: 0x5a6670 },
+  ];
+
+  // Apply a weapon skin by recolouring the materials of a built model. The
+  // materials are shared through the cache, so this clones any material it
+  // recolours first, keeping other weapons on their own skin.
+  function applySkin(THREE, group, key, skinIndex) {
+    const list = SKINS[key];
+    if (!list || !group) return false;
+    const s = list[Math.max(0, Math.min(list.length - 1, skinIndex | 0))];
+    const match = m => {
+      const n = m.name || '';
+      if (/wood/i.test(n)) return s.wood !== undefined ? s.wood : null;
+      if (/ring|accent/i.test(n)) return s.accent !== undefined ? s.accent : null;
+      if (/steel|slide|blade|edge|metal/i.test(n)) return s.steel !== undefined ? s.steel : null;
+      return null;
+    };
+    let touched = 0;
+    group.traverse(function (o) {
+      if (!o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        const hex = match(m);
+        if (hex === null || hex === undefined) return;
+        if (!m.userData.owned) { m = m.clone(); m.userData.owned = true; o.material = m; touched++; }
+        m.color.setHex(hex);
+      });
+    });
+    group.userData.skin = s.name;
+    group.userData.skinIndex = skinIndex;
+    return touched > 0;
+  }
+
+  // Character skin: recolour the cloth/armour materials of a built rig.
+  function applyCharSkin(THREE, group, skinIndex) {
+    const s = CHAR_SKINS[Math.max(0, Math.min(CHAR_SKINS.length - 1, skinIndex | 0))];
+    if (!group) return false;
+    let touched = 0;
+    group.traverse(function (o) {
+      if (!o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        const n = m.name || '';
+        let hex = null;
+        if (/cloth/i.test(n) && !/d$/i.test(n)) hex = s.cloth;
+        else if (/cloth/i.test(n)) hex = s.clothD;
+        else if (/boot|glove/i.test(n)) hex = s.boot;
+        else if (/armor|plate|vest/i.test(n)) hex = s.armor;
+        if (hex === null) return;
+        if (!m.userData.owned) { m = m.clone(); m.userData.owned = true; o.material = m; touched++; }
+        m.color.setHex(hex);
+      });
+    });
+    group.userData.charSkin = s.name;
+    return touched > 0;
+  }
+
+
   // Shared material cache: keeps shader programs low across the arena.
   function matCache() {
     const cache = Object.create(null);
@@ -279,22 +372,32 @@
     root.userData.botId = id;
     root.userData.legs = null;
 
-    // legs (pivot at hips, y = 0.95)
+    // legs: each leg is its own pivot group at the hip so the strides can swing
+    // independently and alternate. root.userData.legs is the container whose
+    // children are the two hip pivots ([leftPivot, rightPivot]).
     const legs = new THREE.Group();
-    legs.position.y = 0.95;
-    root.add(legs);
+    legs.position.y = 0;
+    const legPivots = [];
     for (const side of [-1, 1]) {
-      const thigh = tagMesh(box(THREE, mCloth, 0.19, 0.48, 0.21, side * 0.13, -0.24, 0), id, 'legs');
-      legs.add(thigh);
-      const shin = tagMesh(box(THREE, mClothD, 0.16, 0.44, 0.18, side * 0.13, -0.68, 0.01), id, 'legs');
-      legs.add(shin);
-      const boot = tagMesh(bevelBox(THREE, mBoot, 0.18, 0.14, 0.3, side * 0.13, -0.92, 0.05), id, 'legs');
-      boot.name=side<0?'boot-left':'boot-right';
-      legs.add(boot);
+      const pivot = new THREE.Group();
+      pivot.position.set(side * 0.13, 0.95, 0);
+      pivot.name = side < 0 ? 'leg-left' : 'leg-right';
+      pivot.userData.baseY = 0.95;
+      legs.add(pivot);
+      legPivots.push(pivot);
+      const thigh = tagMesh(box(THREE, mCloth, 0.19, 0.48, 0.21, 0, -0.24, 0), id, 'legs');
+      pivot.add(thigh);
+      const shin = tagMesh(box(THREE, mClothD, 0.16, 0.44, 0.18, 0, -0.68, 0.01), id, 'legs');
+      pivot.add(shin);
+      const boot = tagMesh(bevelBox(THREE, mBoot, 0.18, 0.14, 0.3, 0, -0.92, 0.05), id, 'legs');
+      boot.name = side < 0 ? 'boot-left' : 'boot-right';
+      pivot.add(boot);
     }
-    const hips = tagMesh(box(THREE, mClothD, 0.42, 0.16, 0.26, 0, 0.02, 0), id, 'legs');
+    const hips = tagMesh(box(THREE, mClothD, 0.42, 0.16, 0.26, 0, 0.97, 0), id, 'legs');
     legs.add(hips);
+    root.add(legs);
     root.userData.legs = legs;
+    root.userData.legPivots = legPivots;
 
     // torso (body)
     const torso = tagMesh(box(THREE, mCloth, 0.5, 0.6, 0.3, 0, 1.28, 0), id, 'body');
@@ -663,25 +766,28 @@
     g.add(zcyl(THREE, mSteelD, 0.013, 0.09, 12, 0, 0.03, -0.66));                  // muzzle step
     g.add(cyl(THREE, mRing, 0.016, 0.016, 0.014, 12, 0, 0.03, -0.71));             // muzzle crown
 
-    /* --- hooded front sight: post inside a protective hood --- */
+    /* --- hooded front sight: a tall, prominent post inside a protective hood.
+     * The post is sharpened (triangular blade) and raised well above the barrel
+     * so it is unambiguous to align with the rear notch during ADS. --- */
     const frontHood = new THREE.Group();
     frontHood.position.set(0, 0.058, -0.66);
     frontHood.add(box(THREE, mSteel, 0.022, 0.026, 0.026, 0, 0, 0));               // hood shell
     frontHood.add(box(THREE, mSteelD, 0.018, 0.022, 0.008, 0, 0.002, -0.011));     // hood rear cut
-    const fpost = cyl(THREE, mRing, 0.0035, 0.0035, 0.02, 6, 0, 0.004, -0.004);
+    const fpost = cyl(THREE, mRing, 0.0045, 0.0018, 0.034, 6, 0, 0.011, -0.003);
     fpost.userData.sight = 'front';
     frontHood.add(fpost);
     g.add(frontHood);
 
-    /* --- tangent rear sight: ramp with two leaves and a notch plate --- */
+    /* --- tangent rear sight: raised V-notch on a ramp for a clear sight
+     * picture. The notch is taller and thinner so the front post slots in. --- */
     const rearSight = new THREE.Group();
     rearSight.position.set(0, 0.046, -0.06);
     rearSight.add(box(THREE, mSteel, 0.032, 0.012, 0.04, 0, 0, 0));                // base
     rearSight.add(box(THREE, mSteelD, 0.028, 0.016, 0.006, 0, 0.014, -0.015));     // ramp
     for (const side of [-1, 1]) {                                                  // tangent leaves
-      rearSight.add(box(THREE, mSteelD, 0.006, 0.016, 0.006, side * 0.012, 0.014, 0.009));
+      rearSight.add(box(THREE, mSteelD, 0.006, 0.022, 0.006, side * 0.012, 0.017, 0.009));
     }
-    const rnotch = box(THREE, mRing, 0.024, 0.005, 0.005, 0, 0.023, 0.009);
+    const rnotch = box(THREE, mRing, 0.02, 0.007, 0.006, 0, 0.028, 0.009);
     rnotch.userData.sight = 'rear';
     rearSight.add(rnotch);
     g.add(rearSight);
@@ -866,6 +972,10 @@
     buildArena: buildArena,
     buildBot: buildBot,
     buildWeapon: buildWeapon,
+    applySkin: applySkin,
+    applyCharSkin: applyCharSkin,
+    SKINS: SKINS,
+    CHAR_SKINS: CHAR_SKINS,
     buildCasing: buildCasing,
     buildMagazine: buildMagazine,
     WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'knife'],

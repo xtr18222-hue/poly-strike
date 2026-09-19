@@ -22,10 +22,10 @@ with sync_playwright() as p:
     page.wait_for_timeout(700)
     check(not errors, 'no load errors')
 
-    # --- strict main menu order: Play Offline / Play Online / Loadout / Settings
+    # --- strict main menu order: Play Offline / Play Online / Loadout / Store / Settings
     order = page.locator('#mainActions button').all_text_contents()
-    check(order == ['Play Offline (vs Bots)', 'Play Online', 'Loadout', 'Settings'],
-          'menu order is Play Offline / Play Online / Loadout / Settings %s' % order)
+    check(order == ['Play Offline (vs Bots)', 'Play Online', 'Loadout', 'Store', 'Settings'],
+          'menu order is Play Offline / Play Online / Loadout / Store / Settings %s' % order)
     check(page.locator('#primarySelect').count() == 0, 'legacy primary loadout select removed')
 
     # --- Loadout hub: previews render, primary + secondary selection persist

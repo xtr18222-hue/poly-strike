@@ -33,15 +33,15 @@
        * length of the gun. Every channel is multiplied by b (or by envelope
        * windows that vanish at t=0 and t=1) so the pose lands exactly on the
        * identity at both endpoints. */
-      const beat = Math.sin(Math.PI * 3 * e);            // three-beat roll
-      const sweep = Math.sin(Math.PI * 2 * e);           // length-wise presentation
+      const beat = Math.abs(Math.sin(Math.PI * 1.5 * e));       // three-beat tilt, one-sided
+      const sweep = Math.sin(Math.PI * 2 * e) * b;              // length-wise presentation (fades at ends)
       const amp = isRifle ? 1 : 0.78;                    // pistols are more compact
       p.dx = -0.135 * amp * b;
       p.dy = 0.17 * amp * b;
       p.dz = 0.07 * amp * b;
       p.rx = 0.26 * amp * b + 0.1 * beat * b;
       p.ry = -0.36 * amp * b + sweep * 0.24 * amp;
-      p.rz = 0.62 * amp * beat * b;
+      p.rz = 0.45 * amp * beat * b;
       if (key === 'ak47') {
         // Tactical magazine handling: detach, carry alongside, reseat.
         const lift = t < 0.25 ? smooth(t / 0.25) : t > 0.75 ? smooth((1 - t) / 0.25) : 1;

@@ -6,7 +6,7 @@ Play: https://xtr18222-hue.github.io/poly-strike/
 
 ## Modes and maps
 
-Main menu order: Play Offline (vs Bots), Play Online, Loadout, Settings.
+Main menu order: Play Offline (vs Bots), Play Online, Loadout, Store, Settings.
 Select Sandline (Desert Compound), Ironworks (Industrial Warehouse), Crossfire (Urban Alleyways), or Training Range (open firing range with static target dummies and cover) before starting. Each has distinct collision geometry and routes. Training Range has no match pressure: no round clock, no score, and the targets never return fire, so it is the place to warm up movement, ADS, reloads and weapon handling.
 
 Offline: eliminate five bots in 90 seconds. Death/timeout loses the round. Five-second preparation; first to five wins. Health, armor and ammunition reset. All weapons unlocked. No bomb or buy menu.
@@ -17,7 +17,15 @@ Internet is required for online play. Vendored PeerJS uses its public signaling 
 
 ## Loadout hub and career
 
-Loadout is a dedicated tab between Play Online and Settings. It opens an interactive armoury: a live 3D preview renders the selected weapon, and a full inspection can be triggered from inside the hub (Inspect Weapon). Primary cards choose between AK-47, AWP and Kar98k; secondary cards choose between Desert Eagle and Butterfly Knife. Selections persist locally and are used by the 1/2/3 weapon slots and the spawn loadout. The legacy dropdown primary selector has been removed.
+Loadout is a dedicated tab between Play Online and Store. It opens an interactive armoury: a live 3D preview renders the selected weapon, and a full inspection can be triggered from inside the hub (Inspect Weapon). The preview canvas fits its panel only and never hijacks the main game resolution; click and drag anywhere on the preview to rotate the weapon a full 360 degrees. Primary cards choose between AK-47, AWP and Kar98k; secondary cards choose between Desert Eagle and Butterfly Knife. Selections persist locally and are used by the 1/2/3 weapon slots and the spawn loadout. The legacy dropdown primary selector has been removed.
+
+Weapon skins are chosen in the same hub: every weapon has three distinct finishes, and three operator skins are available for the player rig. Skin choices persist locally.
+
+## Store, cases and missions
+
+The Store is a dedicated tab between Loadout and Settings. Every player starts with three free supply crates; opening one plays a CS:GO-style scroll reel that rolls through items of all five rarity tiers — Common, Uncommon, Rare, Epic and Legendary — before landing on the reward. Rewards are weighted (45/28/17/8/2%) and the Legendary drop is the custom "Dragon" AWP skin. Unlocked skins are saved locally and become selectable in the Loadout hub.
+
+Missions are listed inside the Store and track progress dynamically: eliminating enemies, landing headshots, winning matches and winning rounds each contribute toward a goal, and completing a mission grants free crates. Progress persists locally.
 
 Career / Stats is reachable from the pause menu and tracks matches played, matches won, total eliminations, deaths, headshots, K/D ratio, lifetime accuracy and rounds won. Career data persists locally across sessions.
 
@@ -76,6 +84,7 @@ Open `index.html` directly offline, or serve with `python -m http.server 18957 -
 - `uv run --with playwright python tests/offline.py` — offline cache, direct file, pointer lock
 - `uv run --with playwright python tests/performance.py` — 5-second per-map frame sampling, p95 and renderer budgets
 - `uv run --with playwright python tests/overhaul.py` — Loadout hub, crosshair customization, career stats, dry-fire, vignette, decals
+- `uv run --with playwright python tests/overhaul2.py` — canvas viewport fix, 360 preview drag, skins, Store/cases, missions, decoupled legs
 
 Browser tests use installed Edge. Set TEST_URL to a root URL ending `/` for hosted verification. `?test=1` enables local test fixtures; normal URLs expose read-only state. Performance artifacts are ignored by git.
 
