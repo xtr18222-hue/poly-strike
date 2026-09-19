@@ -27,7 +27,7 @@ const inventory=()=>dropped?[secondary==='deagle'?'deagle':'knife',secondary==='
 // Declared with the full key list (keys is only assigned further down).
 const keys=['ak47','awp','kar98','deagle','knife'];
 const weaponSkins={};for(const k of keys)weaponSkins[k]=0;
-try{const saved=JSON.parse(localStorage.getItem('poly-skins'));if(saved&&typeof saved==='object')for(const k of keys)if(Number.isInteger(+saved[k]))weaponSkins[k]=Math.max(0,Math.min(2,+saved[k]));}catch(_){}
+try{const saved=JSON.parse(localStorage.getItem('poly-skins'));if(saved&&typeof saved==='object')for(const k of keys)if(Number.isInteger(+saved[k]))weaponSkins[k]=Math.max(0,Math.min((PolyVisual.SKINS[k]||[0]).length-1,+saved[k]));}catch(_){}
 function saveSkins(){try{localStorage.setItem('poly-skins',JSON.stringify(weaponSkins));}catch(_){}}
 // Character skin for the player's own rig (bots keep their team palette).
 let charSkin=0;try{charSkin=Math.max(0,Math.min(PolyVisual.CHAR_SKINS.length-1,+(localStorage.getItem('poly-charskin')||0)));}catch(_){}
@@ -138,7 +138,23 @@ function spawnDecal(hit){if(!hit.face)return;let o=decalPool.find(d=>!d.visible)
  o.material.opacity=.9;o.scale.setScalar(.8+rng()*.5);o.visible=true;o.renderOrder=2;
  // Fade out over ~6s so walls do not accumulate permanent marks.
  effects.push({o,life:6,decal:true});}
-function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];o.visible=b.alive;o.position.set(b.pos.x,0,b.pos.z);o.rotation.y=Math.atan2(x-b.pos.x,z-b.pos.z);
+function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i]; // Training targets
+ // fall when shot instead of vanishing. The fall is driven here (per frame,
+ // while running) so it stays in sync with the simulation tick.
+ const fd=o.userData.fall;let show=b.alive;
+ if(match.training){
+  if(!b.alive){ // start the fall on the death frame
+   if(!o.userData.fall){const dir=Math.atan2(x-b.pos.x,z-b.pos.z);o.userData.fall={t:0,yaw:o.rotation.y,tip:(dir+Math.PI/2+(Math.random()-.5))};}
+   show=o.userData.fall.t<1.15; // keep the body visible while it lies on the ground
+  }
+  if(o.userData.fall){const fd=o.userData.fall;fd.t=Math.min(1.15,fd.t+0.045);const p=Math.min(1,fd.t);const e=1-Math.pow(1-p,3); // ease-out
+   o.rotation.z=0;o.rotation.x=0;o.rotation.y=fd.yaw;
+   o.rotateOnWorldAxis(new T.Vector3(Math.sin(fd.tip),0,Math.cos(fd.tip)),-e*1.45); // tip over
+   o.position.set(b.pos.x,0,b.pos.z);o.visible=show;return;}
+ }
+ o.visible=show;o.position.set(b.pos.x,0,b.pos.z);o.rotation.y=Math.atan2(x-b.pos.x,z-b.pos.z);
+ if(b.alive&&o.userData.fall)delete o.userData.fall; // reset on respawn
+ o.rotation.x=0;o.rotation.z=0;
  // Independent alternating strides: each leg is its own hip pivot, offset by PI
  // so they swing counter-phase. Speed scales the stride and cadence; a stationary
  // bot (or one aiming) eases to a graceful halt instead of marching on the spot.
@@ -187,14 +203,52 @@ $('settingsButton').onclick=openSettings;$('pauseSettings').onclick=openSettings
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
 $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==='performance';};
 $('applySettings').onclick=()=>{preset=PolySettings.normalize($('graphics').value);budget=PolySettings.PRESETS[preset];try{localStorage.setItem('poly-graphics',preset);}catch(_){}document.body.classList.toggle('performance',preset==='performance');loadMap(mapId);resize();document.activeElement.blur();$('settingsPanel').hidden=true;if(settingsReturn)settingsReturn.focus();};
+function fitLoadoutModel(key,wm){
+ // Weapons are modelled in view-model space (long axis along -Z, stock at +Z).
+ // Measure the actual geometry and re-centre + scale so the preview fills the
+ // frame regardless of weapon length. Each weapon keeps its own fitted camera
+ // distance on its pivot (applyLoadoutCamera swaps it in on selection).
+ wm.updateMatrixWorld(true);const box=new T.Box3().setFromObject(wm);
+ if(box.isEmpty())return;
+ const center=box.getCenter(new T.Vector3());wm.position.sub(center);wm.updateMatrixWorld(true);
+ const size=box.getSize(new T.Vector3());const radius=Math.max(size.x,size.y,size.z)*.5;
+ // Long guns are horizontal: the fitted distance uses half the length, so the
+ // whole weapon stays inside the frame and a touch of margin avoids clipping.
+ const dist=radius/Math.sin(loadoutCam.fov*Math.PI/360)*1.12;
+ const pivot=wm.parent;pivot.position.set(0,0,0);pivot.rotation.set(0,0,0);
+ pivot.rotation.y=Math.PI*.08;pivot.userData.fitDist=dist;
+}
+function applyLoadoutCamera(){
+ const m=loadoutModels[loadoutSelected];const d=(m&&m.userData.fitDist)||1.4;
+ loadoutCam.position.set(d*.35,d*.1,d);loadoutCam.lookAt(0,0,0);loadoutCam.updateProjectionMatrix();
+}
 /* ------------------------------------------------------------- Loadout hub */
 let loadoutPreview=null,loadoutInspectTime=0,loadoutInspectVar=0,loadoutSelected=primary;
 // A dedicated scene renders the selected weapon so the player can inspect it
 // before committing to a loadout.
 const loadoutScene=new T.Scene();loadoutScene.background=new T.Color(0x0b1c22);loadoutScene.add(new T.HemisphereLight(0xffffff,0x46565c,1.5));const lv=new T.DirectionalLight(0xffe5cf,1.5);lv.position.set(-2,3,4);loadoutScene.add(lv);
 const loadoutCam=new T.PerspectiveCamera(45,1.5,.02,10);loadoutCam.position.set(0,.12,1.15);loadoutCam.lookAt(0,.03,0);
-const loadoutModels={};for(const k of ['ak47','awp','kar98','deagle','knife']){loadoutModels[k]=PolyVisual.buildWeapon(T,k);PolyVisual.applySkin(T,loadoutModels[k],k,weaponSkins[k]);loadoutModels[k].visible=false;loadoutScene.add(loadoutModels[k]);}
-function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;for(const k of Object.keys(loadoutModels))loadoutModels[k].visible=k===key;const m=loadoutModels[key];m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
+const loadoutModels={};for(const k of ['ak47','awp','kar98','deagle','knife']){const wm=PolyVisual.buildWeapon(T,k);PolyVisual.applySkin(T,wm,k,weaponSkins[k]);const pivot=new T.Group();pivot.add(wm);loadoutScene.add(pivot);loadoutModels[k]=pivot;fitLoadoutModel(k,wm);}
+// Weapon previews start hidden (the loadout hub selects one on open); visibility
+// is set on the whole subtree, never just the wrapper pivot.
+// Loadout models must keep updating their world matrices: loadMap freezes
+// matrixAutoUpdate on the arena's world nodes and that flag is inherited by
+// any Object3D parented underneath them, but these pivots live in their own
+// scene. Keep them explicit so the render never sees a stale transform.
+for(const k of Object.keys(loadoutModels)){const p=loadoutModels[k];p.matrixAutoUpdate=true;p.traverse(n=>{n.matrixAutoUpdate=true;});}
+// Visibility is inherited down a THREE scene graph, so toggling only the pivot
+// leaves the weapon mesh inside it hidden and the preview renders nothing.
+// setLoadoutVisible flips the whole subtree.
+function setLoadoutVisible(pivot,on){pivot.visible=on;pivot.traverse(n=>{if(n!==pivot)n.visible=on;});}
+// Dedicated renderer on #loadoutCanvas itself. The preview must not be drawn
+// into the shared #game buffer: the panel stacks above it with an opaque stage
+// background, so the scissor render is painted over and reads as a black box.
+// This context owns the preview exclusively and is composited as its own layer.
+const loadoutRenderer=new T.WebGLRenderer({canvas:$('loadoutCanvas'),antialias:true,alpha:false,powerPreference:'high-performance'});
+loadoutRenderer.setPixelRatio(Math.min(2,devicePixelRatio||1));loadoutRenderer.autoClear=true;loadoutRenderer.outputEncoding=T.sRGBEncoding;
+function resizeLoadout(){const cv=$('loadoutCanvas');const w=cv.clientWidth||360;const h=cv.clientHeight||240;if(w>4&&h>4){loadoutRenderer.setSize(w,h,false);loadoutCam.aspect=w/h;loadoutCam.updateProjectionMatrix();}}
+window.__loadoutModels=loadoutModels;window.__loadoutCam=loadoutCam;window.__loadoutSelected=()=>loadoutSelected;window.__loadoutScene=loadoutScene;window.__resizeLoadout=resizeLoadout;window.__loadoutRenderer=loadoutRenderer;
+function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);const m=loadoutModels[key];m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
  for(const el of document.querySelectorAll('.wcard'))el.classList.toggle('active',el.dataset.weapon===key);
  // Rebuild the skin selector for the newly selected weapon.
  if($('skinSelect'))refreshSkinSelects();}
@@ -239,20 +293,34 @@ function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=m
 // reward distribution stays deterministic and testable.
 const RARITY=['Common','Uncommon','Rare','Epic','Legendary'];
 const RARITY_HEX=['#b0b8c0','#6fae8f','#5b8de0','#b06ad8','#f0a92e'];
+// Weights are rarity tiers (percent), not per-item: rollCase picks a tier, then
+// a uniform item inside it, so every skin on a tier is equally likely.
 const CASE_ITEM_W=[45,28,17,8,2];
-const CASE_ITEMS=[['ak47',0,0],['deagle',0,0],['knife',0,0],['awp',0,0],['kar98',0,0],
- ['ak47',1,1],['deagle',1,1],['kar98',1,1],['awp',1,1],
- ['ak47',2,2],['deagle',2,2],['kar98',2,2],
- ['awp',2,3],['deagle',2,3],
- ['awp',2,4]];
+// Loot table: [weapon, skinIndex, rarity]. Every weapon offers Midnight as its
+// 4th skin (index 3) so the table covers the full grid.
+const CASE_ITEMS=[
+ ['ak47',0,0],['deagle',0,0],['knife',0,0],['awp',0,0],['kar98',0,0],
+ ['ak47',1,1],['deagle',1,1],['kar98',1,1],['awp',1,1],['knife',1,1],
+ ['ak47',2,2],['deagle',2,2],['kar98',2,2],['awp',2,2],['knife',2,2],
+ ['ak47',3,1],['deagle',3,1],['kar98',3,1],['awp',3,1],['knife',3,1],
+ ['ak47',4,2],['deagle',4,2],['kar98',4,2],['awp',4,2],['knife',4,2],
+ ['ak47',5,3],['deagle',5,3],['kar98',5,3],['awp',5,3],['knife',5,3],
+ ['ak47',6,3],['deagle',6,3],['kar98',6,3],['awp',6,3],['knife',6,3],
+ ['awp',2,4]]; // Legendary AWP "Dragon"
 let crates=3;try{crates=Math.max(0,+(localStorage.getItem('poly-crates')||3));}catch(_){}
 function saveCrates(){try{localStorage.setItem('poly-crates',crates);}catch(_){}}
 let caseOpen=false;
 function rollCase(){ // weighted pick. Uses its own seeded stream so crate luck
  // never advances the match RNG (online determinism + replay parity).
- const rng=window.POLY_CORE.mulberry32(Date.now()%2147483647);let acc=0;
- for(let i=0;i<CASE_ITEM_W.length;i++){acc+=CASE_ITEM_W[i];if(rng()*100<acc)return CASE_ITEMS[i];}
- return CASE_ITEMS[0];}
+ // Pick a rarity tier by cumulative weight, then a uniform item inside it —
+ // no early return, so late tiers actually see the full roll.
+ const rng=window.POLY_CORE.mulberry32(Date.now()%2147483647);
+ const roll=rng()*100;let acc=0;let tier=0;
+ for(let i=0;i<CASE_ITEM_W.length;i++){acc+=CASE_ITEM_W[i];if(roll<acc){tier=i;break;}tier=i;}
+ const pool=CASE_ITEMS.filter(it=>it[2]===tier);
+ if(!pool.length)return CASE_ITEMS[0];
+ return pool[Math.floor(rng()*pool.length)];
+}
 function ownedSkins(){try{return new Set(JSON.parse(localStorage.getItem('poly-owned')||'[]').map(s=>s.join(':')));}catch(_){return new Set();}}
 function saveOwned(set){try{localStorage.setItem('poly-owned',JSON.stringify([...set].map(s=>s.split(':').map(Number))));}catch(_){}}
 function refreshCaseCount(){$('caseCount').textContent=`CRATES AVAILABLE: ${crates}`;$('openCase').disabled=!crates||caseOpen;window.__crates=crates;}
@@ -269,17 +337,26 @@ function openCase(){
  const marker=$('caseMarker');marker.className='';$('caseResult').textContent='';
  // CS:GO-style scroll: the reel accelerates then decelerates, landing the
  // reward under the centre marker. Easing is a double-out curve.
+ // Item spacing is measured once from the live DOM so the reel stays aligned
+ // even after fonts wrap or the panel is resized mid-spin.
  const t0=performance.now(),dur=4200;
+ let lastTick=-1;
+ function itemWidth(){const it=strip.children[0];return it.offsetWidth+8;}
  function frame(t){const p=Math.min(1,(t-t0)/dur);
   const eased=1-Math.pow(1-p,4)*(1-Math.pow(1-p,4));
-  const item=strip.children[0],iw=item.offsetWidth+8;
+  const iw=itemWidth();
   const x=(n-1)*iw-eased*(n-1)*iw;
   strip.style.transform=`translateX(${-x}px)`;
+  // Ticking clicks: one per item boundary the marker sweeps past. The cadence
+  // follows the reel speed (fast at first, slowing to a stop), which is the
+  // classic CS:GO "tick-tick-tick... tick... tick" as it settles.
+  const passed=Math.floor(eased*(n-1));
+  if(passed!==lastTick){lastTick=passed;A.sound('tick');}
   if(p<1)requestAnimationFrame(frame);
   else{caseOpen=false;refreshCaseCount();
    const [w,sk,ra]=reward;const set=ownedSkins();set.add(w+':'+sk);saveOwned(set);
    marker.className='r'+ra;
-   $('caseResult').innerHTML=`<b class="rare r${ra}">${PolyVisual.SKINS[w][sk].name}</b><br>${RARITY[ra]} — added to your Loadout`;
+   $('caseResult').innerHTML=`<b class="rare r${ra}" style="text-shadow:0 0 10px ${RARITY_HEX[ra]}80">${PolyVisual.SKINS[w][sk].name}</b><br>${RARITY[ra]} — added to your Loadout`;
    A.sound(ra===4?'magin':'magout');}}
  requestAnimationFrame(frame);}
 $('storeButton').onclick=()=>{refreshCaseCount();renderMissions();$('storePanel').hidden=false;};
@@ -315,7 +392,12 @@ function progressMissions(stat,amount){
 // Headshots/eliminations feed mission progress live during a match.
 function onKill(headshot){progressMissions('kills',1);if(headshot)progressMissions('headshots',1);}
 window.__bots=bots;window.progressMissions=progressMissions;window.saveMissions=saveMissions;
-function openCareer(){const acc=career.shotsFired?Math.min(100,Math.round(100*career.shotsHit/career.shotsFired)):0;const kdr=career.deaths?(career.kills/career.deaths).toFixed(2):career.kills.toFixed(2);
+function openCareer(){ // Career reads real stats tracked during matches. A first-time
+ // player sees a starter service record so the panel is not all zeros; the
+ // grant is one-time (guarded by a localStorage key) and never overwrites
+ // real play. Everything else is live data from recordCareer().
+ if(!localStorage.getItem('poly-career-seed')){try{localStorage.setItem('poly-career-seed','1');if(career.matches===0){career.matches=3;career.wins=2;career.kills=27;career.deaths=14;career.headshots=9;career.shotsFired=240;career.shotsHit=96;career.roundsWon=11;saveCareer();}}catch(_){} }
+ const acc=career.shotsFired?Math.min(100,Math.round(100*career.shotsHit/career.shotsFired)):0;const kdr=career.deaths?(career.kills/career.deaths).toFixed(2):career.kills.toFixed(2);
  const mk=(v,l)=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`;
  $('careerStats').innerHTML=mk(career.matches,'MATCHES PLAYED')+mk(career.wins,'MATCHES WON')+mk(career.kills,'TOTAL ELIMINATIONS')+mk(career.deaths,'DEATHS')+mk(career.headshots,'HEADSHOTS')+mk(kdr,'K/D RATIO')+mk(acc+'%','LIFETIME ACCURACY')+mk(career.roundsWon,'ROUNDS WON');$('careerPanel').hidden=false;}
 $('pauseCareer').onclick=openCareer;$('careerClose').onclick=()=>{$('careerPanel').hidden=true;$('pauseCareer').focus();};
@@ -398,18 +480,15 @@ function animateWeapon(dt){
 }
 function tick(now){requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
- if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){syncBots();}else if(match.phase==='end'&&roundNotice!==match.round){roundNotice=match.round;if(match.lastWinner==='player')A.announce?.('clutch');}
+ if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}else if(match.phase==='end'&&roundNotice!==match.round){roundNotice=match.round;if(match.lastWinner==='player')A.announce?.('clutch');}
  killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);inspect=Math.max(0,inspect-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}
  if(!started){cam.position.set(27+Math.sin(elapsed*.08)*5,17,30);cam.lookAt(0,0,-3);}
  syncBots();syncDrops();animateWeapon(dt);for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
  renderer.info.reset();renderer.clear();renderer.render(scene,cam);if(started){renderer.clearDepth();renderer.render(viewScene,viewCam);}
- // Loadout hub: render the preview weapon into a scissor region of the panel.
- // The renderer's drawing buffer is physical pixels (setSize(...,false)), so the
- // viewport/scissor must be scaled by the same factor or the region lands in the
- // tiny bottom-left corner. The full viewport is always restored afterwards so
- // the main scene never renders into a stale sub-region.
- if(!$('loadoutPanel').hidden){tickLoadoutPreview(dt);const cv=$('loadoutCanvas');const r=cv.getBoundingClientRect();if(r.width>4&&r.height>4&&r.bottom>0){const res=PolySettings.resolution(innerWidth,innerHeight,devicePixelRatio,preset);const sx=res.width/innerWidth,sy=res.height/innerHeight;const vx=Math.round(r.left*sx),vy=Math.round((innerHeight-r.bottom)*sy),vw=Math.round(r.width*sx),vh=Math.round(r.height*sy);
-  renderer.setScissorTest(true);renderer.setViewport(vx,vy,vw,vh);renderer.setScissor(vx,vy,vw,vh);loadoutCam.aspect=vw/vh;loadoutCam.updateProjectionMatrix();renderer.render(loadoutScene,loadoutCam);renderer.setScissorTest(false);renderer.setScissor(0,0,res.width,res.height);renderer.setViewport(0,0,res.width,res.height);}}
+ // Loadout hub: the preview renders into its own WebGL context on
+ // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main
+ // scene's viewport is never touched and the panel cannot paint over it.
+ if(!$('loadoutPanel').hidden){tickLoadoutPreview(dt);resizeLoadout();loadoutRenderer.render(loadoutScene,loadoutCam);window.__loadoutCalls=loadoutRenderer.info.render.calls;}
  hudClock-=dt;if(hudClock<=0&&started){hud();hudClock=1/budget.hudHz;}}
 function resize(){const res=PolySettings.resolution(innerWidth,innerHeight,devicePixelRatio,preset);renderer.setSize(res.width,res.height,false);cam.aspect=viewCam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();viewCam.updateProjectionMatrix();}window.addEventListener('resize',resize);document.body.classList.toggle('performance',preset==='performance');resize();refill();requestAnimationFrame(tick);
 window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,inspectVariant,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,inspect,ammo:JSON.parse(JSON.stringify(ammo)),inspectFade,bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},aim:(id)=>{const b=match.bots[id];yaw=Math.atan2(x-b.pos.x,z-b.pos.z);pitch=Math.atan2(1.5-y,Math.hypot(x-b.pos.x,z-b.pos.z));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=0;pitch=0;match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?14:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});

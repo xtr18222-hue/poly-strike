@@ -70,7 +70,7 @@ async def main():
         await page.click('#loadoutClose')
         await page.wait_for_timeout(200)
         n_skins = await page.evaluate("() => PolyVisual.SKINS['ak47'].length")
-        check('3 skins defined per weapon', n_skins == 3, f'{n_skins} skins')
+        check('7 skins defined per weapon', n_skins == 7, f'{n_skins} skins')
         has_legendary = await page.evaluate(
             "() => PolyVisual.SKINS['awp'].some(s => s.name.toLowerCase().includes('dragon'))")
         check('Legendary AWP skin exists ("Dragon")', has_legendary)

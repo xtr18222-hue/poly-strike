@@ -31,26 +31,46 @@
       { name: 'Classic',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x22262a },
       { name: 'Tactical',  wood: 0x2e3a2c, steel: 0x161a1c, accent: 0x3d4a3a },
       { name: 'Sunset',    wood: 0xb0531f, steel: 0x4a2f22, accent: 0xd9a13b },
+      { name: 'Midnight',  wood: 0x1b2429, steel: 0x0e1214, accent: 0x2b3840 },
+      { name: 'Jungle',    wood: 0x3f4a32, steel: 0x22271f, accent: 0x6f8a4a },
+      { name: 'Crimson',   wood: 0x5a1f26, steel: 0x2a1416, accent: 0xc93b34 },
+      { name: 'Golden',    wood: 0x6b4a1e, steel: 0x8a6a1f, accent: 0xe8c462 },
     ],
     awp: [
       { name: 'Issue',     wood: 0x4a5340, steel: 0x2b2f33, accent: 0x1b1e21 },
       { name: 'Frost',     wood: 0x8fa3b8, steel: 0xc3cdd6, accent: 0x6f8296 },
       { name: 'Dragon',    wood: 0x7a1f2b, steel: 0x2a1013, accent: 0xffcf3f },   // Legendary
+      { name: 'Midnight',  wood: 0x161c20, steel: 0x0b0e10, accent: 0x2b3840 },
+      { name: 'Highland',  wood: 0x4e5a3c, steel: 0x252b22, accent: 0x7d9a4f },
+      { name: 'Ember',     wood: 0x4a2412, steel: 0x2a1a10, accent: 0xe07a2a },
+      { name: 'Pearl',     wood: 0xa8b3b8, steel: 0x8a949a, accent: 0xdfe6ea },
     ],
     kar98: [
       { name: 'Natural',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x4a5054 },
       { name: 'Storm',     wood: 0x39424a, steel: 0x23272b, accent: 0x6b7680 },
       { name: 'Golden',    wood: 0x6b4a1e, steel: 0x8a6a1f, accent: 0xd9b24a },
+      { name: 'Midnight',  wood: 0x1b2429, steel: 0x0e1214, accent: 0x2b3840 },
+      { name: 'Hunter',    wood: 0x4a3a24, steel: 0x26301f, accent: 0x6b7f45 },
+      { name: 'Bloodline', wood: 0x5c2226, steel: 0x2a1618, accent: 0xb3362f },
+      { name: 'Winter',    wood: 0x9aa5ad, steel: 0x6b7479, accent: 0xdfe6ea },
     ],
     deagle: [
       { name: 'Silver',    steel: 0x9aa3a8, accent: 0x6b7176 },
-      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
       { name: 'Bronze',    steel: 0x8a5a2b, accent: 0xc08a4a },
+      { name: 'Graphite',  steel: 0x3a4046, accent: 0x1c2023 },
+      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
+      { name: 'Ivory',     steel: 0xdfe4e6, accent: 0x9aa3a8 },
+      { name: 'Inferno',   steel: 0x8e3a1f, accent: 0xe07a2a },
+      { name: 'Gold',      steel: 0xc9a227, accent: 0x8a6a1f },
     ],
     knife: [
       { name: 'Chrome',    steel: 0xb8c0c5, accent: 0x37474f },
       { name: 'Crimson',   steel: 0x8e1f2b, accent: 0x3a0d12 },
       { name: 'Gold',      steel: 0xc9a227, accent: 0x6b4a1e },
+      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
+      { name: 'Sapphire',  steel: 0x2b4a8a, accent: 0x16244a },
+      { name: 'Emerald',   steel: 0x2f7a4a, accent: 0x123a26 },
+      { name: 'White',     steel: 0xdfe4e6, accent: 0x8a949a },
     ],
   };
   // Character skins (player + bots share the rig): fabric, armour and boots.
@@ -761,8 +781,11 @@
     receiver.add(box(THREE, mSteelD, 0.05,  0.05,  0.05, 0, 0.008, 0.15));         // receiver ring
     g.add(receiver);
 
-    /* --- one continuous barrel, stepped at the muzzle band --- */
-    g.add(zcyl(THREE, mSteel, 0.0115, 0.42, 12, 0, 0.03, -0.46));                  // main barrel
+    /* --- one continuous barrel, stepped at the muzzle band. The barrel must
+     * reach back into the receiver ring (z=-0.135) or it visibly detaches:
+     * a 0.42 cylinder centred at z=-0.46 only spans -0.67..-0.25, leaving a
+     * gap over the receiver. It is now one continuous taper from the ring. --- */
+    g.add(zcyl(THREE, mSteel, 0.0115, 0.545, 12, 0, 0.03, -0.4025));               // main barrel (ring → muzzle step)
     g.add(zcyl(THREE, mSteelD, 0.013, 0.09, 12, 0, 0.03, -0.66));                  // muzzle step
     g.add(cyl(THREE, mRing, 0.016, 0.016, 0.014, 12, 0, 0.03, -0.71));             // muzzle crown
 

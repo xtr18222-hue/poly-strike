@@ -32,7 +32,7 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Model polish complete: beveled Deagle, tapered butterfly blade, bot armor/boots/visor; merged environment details and clouds skipped in Performance mode. Collision footprints unchanged.
 - Independent scoped review passed with no security/logic findings. Nonblocking follow-ups: self-row highlight uses username equality; duplicate scoreboard CSS rules. Polish commit 88ea3ff pushed; Pages build confirmed for that SHA. Live username/scoreboard, combat feedback/inspections and offline suites passed; SW v3 cache.
 
-## Kar98k update (current pass)
+## Kar98k update (prior pass)
 - Kar98k integrated as the fifth weapon: unscoped bolt-action sniper, 5/40 ammo, 1.2s fire interval, 2.4s reload, turned bolt + tangent iron sights, wood/blued steel model, real builder in visuals.js (no longer an AWP alias). Menu loadout select, Digit1 slot, drop/pickup and online buy/lock all wired.
 - Damage model: core.js exports shotDamage(weapon,part,dist) and rollVariance(dist); playerShot (offline) and duel.shoot (online host authority) both call it, so host and client settle identical numbers. Headshots: multiplier only, no falloff, no variance → guaranteed kill at any range (Kar98k min 198 at 200m). Body/leg hits add deterministic per-distance variance (pure hash of distance, no RNG state consumed), giving Kar98k ~84% body-kill point-blank falling to ~16% at long range; leg hits never one-shot. Weapons without a `variance` field compute exactly the previous formula (0 regressions verified).
 - Kar98k stats: damage 110, headMult 2.5, legMult 0.75, falloff 0.0014, variance 0.12, zoomFov 32, ADS (no scope overlay), price 3400.
@@ -42,7 +42,17 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Verification: 86 Node tests pass (was 56/54). Browser suites pass: gameplay, feedback, upgrade, offline, radar, polish_ui, expansion, network, online_game (real WebRTC), performance (56.0-56.3 FPS, draws 157/157/110, heap 13.0-16.1MB, Performance mode). Not committed/pushed yet.
 - Deploy note: sw.js CACHE bumped to poly-strike-v4-kar98; README corrected to five weapons, Kar98k section added, controls slot numbers fixed.
 
-## Unscoped Kar98k + cinematic inspection + tactical reload (current pass)
+## Field Operations pass (current)
+- Six fixes applied, all verified in browser + 53 Node tests (45 baseline + 8 new tests/fieldops.test.cjs).
+- 1. Loadout canvas black screen: `setLoadoutVisible` now walks the subtree (THREE visibility is inherited) — the pivot-only toggle left the inner weapon mesh `visible=false` forever, so the render culled everything (0 draw calls). Preview now renders 34 draw calls, well-framed, canvas CSS size == drawing buffer.
+- 2. Store reel: CS:GO-style decelerating scroll (ease-out, lands the reward under the centre marker) with `tick` audio cues between items; new `tick: [1500,.02,.05]` cue in audio.js.
+- 3. Skins expanded to 7 per weapon; Midnight is slot 3 on ALL weapons (deagle/knife reordered). Loot table now covers the full grid; rollCase fixed — the old `if(rng()*100<acc)return CASE_ITEMS[i]` early-return biased every roll to the first tier (Legendary never dropped). Now: pick a rarity tier by cumulative weight, then uniform within the tier.
+- 4. Career stats: `recordCareer` already tracked real matches/kills/deaths/accuracy; a first-time player now sees a one-time starter service record (`poly-career-seed`) so the panel is not all zeros. Real play always adds on top.
+- 5. Training targets fall: `syncBots` drives an ease-out tip-over (`userData.fall`) when a training target dies instead of vanishing. Body stays visible through the fall, then the 2.5s respawn clears the pose (`match.botViews` wired from game.js; core.js clears `userData.fall` on respawn). Verified visually — target lies flat on the ground.
+- 6. Kar98k barrel detachment: the main barrel cylinder (h 0.42 at z -0.46) only spanned z -0.67..-0.25, leaving a 0.115m gap over the receiver ring (front face z -0.135). Now h 0.545 at z -0.4025 → spans -0.675..-0.130, continuous ring-to-muzzle.
+- SW cache bumped to poly-strike-v8-fieldops. `npm test` now includes fieldops.test.cjs; `npm run serve` uses tests/serve.mjs (python http.server returns empty replies on this host).
+- Server/tests: static server is `node tests/serve.mjs 18959` (python http.server is broken here). Browser suites take TEST_URL/PORT=18959.
+
 - Kar98k is now completely unscoped in both stats and model: `zoomFov: null`, `ads: true` in core.js, and the scope body replaced in visuals.js by a low iron-sight rail with protective ears plus tangent front/rear posts. ADS right-click raises iron sights exactly like the AK-47 — no scope overlay, no zoom. `game.js` uses `scopedOnly(k)=>k==='awp'` (was `sniper(k)`, which treated kar98 as scoped), so only the AWP is scoped. Kar98k damage profile is unchanged: headshot guaranteed kill, variable body damage via the deterministic distance hash, leg multiplier retained.
 - Inspection system rewritten in inspection.js as one unified cinematic sequence for all five weapons: weapon brought forward and out to the support side, tilted through three poses (receiver → barrel → side), eased back on C2 curves. Pose endpoints are exactly the identity at t=0 and t=1, all paths finite and bounded; knife keeps its two butterfly flip variants. Tests updated: tests/inspection.cjs rewritten to the new invariants; deagle duration moved 2.7 → 2.5s (also in tests/kar98.py).
 - Tactical magazine swap in game.js: reload now runs in three stages — detach, hold-open, seat. The spent mag is thrown into the world as a pooled procedural mesh (visuals.js `buildMagazine`, curved AK / straight Deagle variants) with gravity, inheriting player velocity. AWP/Kar98k keep bolt handling (internal magazine) and skip the drop.
@@ -60,7 +70,7 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - Bump sw.js CACHE every runtime deployment; current poly-strike-v7-store (was v6-overhaul). Reload after activation for previous cached clients.
 - Ignore performance screenshots/results artifacts. Keep tests and licenses committed.
 
-## AAA overhaul (current pass)
+## AAA overhaul (prior pass)
 - Kar98k model fully rebuilt in visuals.js: classic two-piece walnut stock, blued steel, full-length stepped barrel with hooded front sight, tangent rear sight, turned-down bolt handle. Stats unchanged (`zoomFov:null, ads:true`); right-click ADS raises iron sights like the AK, no overlay/zoom, spread tightens via `pickSpread`'s `scoped && w.ads` branch.
 - Main menu is now strictly: Play Offline / Play Online / Loadout / Settings. Legacy `#primarySelect` dropdown removed everywhere (index.html + game.js). upgrade.py and polish_ui.py assert the new order.
 - Loadout hub (index.html `#loadoutPanel`, game.js): dedicated second Three.js scene + scissor-rendered `#loadoutCanvas` preview, primary cards (AK-47/AWP/Kar98k) and secondary cards (Deagle/Knife), live Inspect Weapon button drives the same PolyInspection poses, selections persist to localStorage (`poly-primary`/`poly-secondary`) and feed `inventory()`. Career stats (`poly-career`) recorded by `recordCareer(won)` in finishMatch; Career/Stats button on the pause menu.

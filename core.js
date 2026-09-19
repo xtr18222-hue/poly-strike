@@ -494,6 +494,10 @@
             this.bots[i].alive = true;
             this.bots[i].hp = 100;
             this.respawnClock[i] = 0;
+            // Clear the client-side fall pose so the reset target stands up
+            // cleanly instead of snapping out of a tipped-over pose.
+            const view = this.botViews && this.botViews[i];
+            if (view) delete view.userData.fall;
           }
         }
       }
