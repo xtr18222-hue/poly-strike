@@ -5,7 +5,7 @@ with sync_playwright() as p:
  b=p.chromium.launch(channel='msedge',headless=True);page=b.new_page(viewport={'width':1280,'height':800},service_workers='block');errors=[]
  page.on('pageerror',lambda e:errors.append(str(e)));page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None)
  page.goto(BASE+'?test=1')
- assert page.locator('#mainActions button').all_text_contents()==['Play Offline (vs Bots)','Play Online','Loadout','Store','Settings'],'exact menu order'
+ assert page.locator('#mainActions button').all_text_contents()==['Play Offline (vs Bots)','Play Online','Loadout','Settings'],'exact menu order'
  page.locator('#settingsButton').click();page.select_option('#graphics','performance');page.locator('#applySettings').click()
  assert page.evaluate("Game.state().preset==='performance'")
  page.locator('#fallback').check()

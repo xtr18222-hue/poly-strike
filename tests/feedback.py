@@ -9,6 +9,7 @@ with sync_playwright() as p:
  # Headshot kill with the primary (AK-47 by default): aim at the torso, then
  # drag-look up so the ray lands on the head mesh. A torso hit would only wound,
  # the headshot produces the amber kill feed entry.
+ page.evaluate("Game.test.fixture('target', 60)");page.wait_for_timeout(150)
  page.keyboard.press('Digit1');page.wait_for_timeout(300)
  page.evaluate('Game.test.aim(0)');page.wait_for_timeout(50)
  page.mouse.move(640,400);page.mouse.down(button='right');page.wait_for_timeout(40)

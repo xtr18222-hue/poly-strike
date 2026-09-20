@@ -38,7 +38,7 @@ with sync_playwright() as p:
     assert page.evaluate('Game.state().reload')==0,'empty fire never autoreloads'
     assert 'RELOAD!' in page.locator('#status').inner_text()
     page.keyboard.press('KeyR');page.wait_for_timeout(2800)
-    assert page.evaluate('Game.state().ammo.kar98.mag')==5
+    assert page.evaluate('Game.state().ammo.mosin.mag')==5
     page.evaluate('Game.test.lowHealth()');page.wait_for_timeout(150)
     assert 'low-health' in page.locator('body').get_attribute('class')
     page.evaluate("Game.test.kill('Enemy <b>unsafe</b>',true)");page.wait_for_timeout(100)

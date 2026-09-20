@@ -32,7 +32,7 @@ with sync_playwright() as p:
     page.click('#loadoutButton')
     page.wait_for_timeout(400)
     check(page.locator('#loadoutPanel').is_visible(), 'loadout panel opened')
-    check(page.locator('#primaryCards .wcard').count() == 3, 'three primary cards (AK/AWP/Kar98k)')
+    check(page.locator('#primaryCards .wcard').count() == 5, 'five primary cards')
     check(page.locator('#secondaryCards .wcard').count() == 2, 'two secondary cards (Deagle/Knife)')
 
     for key in ['akm', 'l96', 'mosin']:

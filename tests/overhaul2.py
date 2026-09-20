@@ -68,19 +68,19 @@ async def main():
 
 
 
-        # ---- 6. Leg strides are decoupled and freeze when stationary ---------
+        # ---- 6. Bots use the Soldier asset, one rig per bot -------------------
         legs_ok = await page.evaluate('''() => {
           const o = window.__bots && window.__bots[0];
           if (!o) return 'no bots';
-          const pivots = o.userData.legPivots;
-          if (!pivots || pivots.length !== 2) return 'no leg pivots: ' + (pivots?.length);
-          // Both pivots exist and are independent groups at the hips.
-          const a = pivots[0], b = pivots[1];
-          if (a === b) return 'pivots identical';
-          if (a.position.x === b.position.x) return 'legs share hip x';
+          // The old procedural leg pivots are gone; each bot carries one
+          // Soldier rig, hit-tagged for ray damage.
+          const meshes = [];
+          o.traverse(n => { if (n.isMesh) meshes.push(n); });
+          if (!meshes.length) return 'no mesh in bot group';
+          if (meshes[0].userData.botId !== 0) return 'bot mesh untagged: ' + meshes[0].userData.botId;
           return true;
         }''')
-        check('bot rig has two independent hip pivots', legs_ok is True, str(legs_ok))
+        check('bots carry the Soldier rig, hit-tagged', legs_ok is True, str(legs_ok))
 
         await b.close()
         print(f"\nconsole/page errors: {len(errors)}")
