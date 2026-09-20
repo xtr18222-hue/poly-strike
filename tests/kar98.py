@@ -122,8 +122,8 @@ with sync_playwright() as p:
 
     # --- module contracts ---
     check(page.evaluate("PolyVisual.buildCasing && PolyVisual.buildCasing(THREE).isObject3D"), 'buildCasing exported and returns Object3D')
-    check(page.evaluate("PolyInspection.durations.kar98 === 3.8"), 'Kar98k inspect duration 3.8s')
-    check(page.evaluate("PolyInspection.durations.ak47 === 3.4"), 'AK inspect duration 3.4s')
+    check(page.evaluate("PolyInspection.durations.mosin === 3.8"), 'Mosin inspect duration 3.8s')
+    check(page.evaluate("PolyInspection.durations.akm === 3.4"), 'AKM inspect duration 3.4s')
     check(page.evaluate("PolyInspection.durations.deagle === 2.6"), 'Deagle inspect duration 2.6s')
     check(page.evaluate("typeof POLY_CORE.shotDamage === 'function'"), 'shotDamage exported')
     check(page.evaluate("POLY_CORE.shotDamage('mosin','head',110) > 100"), 'Kar98k headshot > 100 damage')

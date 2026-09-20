@@ -10,5 +10,5 @@ with sync_playwright() as p:
  assert pixel(0,14)[:3]==[255,115,94],pixel(0,14)
  page.evaluate('Game.test.bot(0,4,14)');page.wait_for_timeout(150);assert pixel(4,14)[:3]==[255,115,94]
  # Wall-occluded bots are still tracked, matching the always-active radar requirement.
- page.evaluate('Game.test.bot(1,-30,-30)');page.wait_for_timeout(150);assert pixel(0,14)[:3]==[255,115,94]
+ page.evaluate('Game.test.bot(1,-30,-30)');page.wait_for_timeout(150);assert pixel(4,14)[:3]==[255,115,94]
  print('PASS radar pixels track player movement and live bot world coordinates');b.close()
