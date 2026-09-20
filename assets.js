@@ -119,9 +119,25 @@
     gltf.load(url, res, undefined, rej);
   });
 
+  // Soldier clones must be re-centred like weapons: the raw export origin sits
+  // ~16m off the rig, so a bot at waypoint (0,12) renders its mesh elsewhere
+  // and the hit ray lands on empty air. Wrap the clone in a pivot and offset
+  // that pivot by the rig's own bounding-box centre.
   function cloneSoldier() {
     if (!soldierGLB) return null;
-    return cloneGLB(soldierGLB, true);
+    const g = cloneGLB(soldierGLB, true);
+    if (!g) return null;
+    const T = needThree();
+    const pivot = new T.Group();
+    pivot.add(g);
+    const box = new T.Box3().setFromObject(pivot);
+    if (box.isEmpty()) return pivot;
+    const c = new T.Vector3(); box.getCenter(c);
+    g.position.x -= c.x;
+    g.position.z -= c.z;
+    g.position.y -= box.min.y;
+    pivot.updateMatrixWorld(true);
+    return pivot;
   }
 
   // SkeletonUtils.clone() is only needed for skinned meshes — it rebuilds the

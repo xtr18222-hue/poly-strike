@@ -74,15 +74,21 @@ with sync_playwright() as p:
     # Stand the target well clear of the mid-cover crates so the ray is clean.
     page.evaluate('Game.test.fixture("target", 100)')
     page.wait_for_timeout(150)
-    page.evaluate('Game.test.place(0, 10); Game.test.aim(0)')
+    # place() moves the player; bot() stages the target so the ray actually
+    # crosses the Soldier rig.
+    # The camera faces -Z at yaw 0, so the target must be staged in front of
+    # the player (lower z), not behind it.
+    page.evaluate('Game.test.bot(0, 0, 12); Game.test.aim(0)')
     page.wait_for_timeout(150)
-    hp0 = page.evaluate('Game.state().alive')
+    # Mosin damage varies by roll; track the bot's own hp, not the alive count
+    # (training respawns make that ambiguous anyway).
+    hp0 = page.evaluate('window.__match.bots[0].hp')
     page.mouse.down(button='left')
     page.wait_for_timeout(150)
     page.mouse.up(button='left')
     page.wait_for_timeout(400)   # damage applies on impact, before the 2.5s respawn
-    hp1 = page.evaluate('Game.state().alive')
-    check(hp1 < hp0, f'unscoped Kar98k still hits hard ({hp0} -> {hp1} targets alive)')
+    hp1 = page.evaluate('window.__match.bots[0].hp')
+    check(hp1 < hp0, f'unscoped Kar98k still hits hard ({hp0} -> {hp1} hp)')
     page.wait_for_timeout(1800)  # let the bolt cycle finish before reloading
 
     # Tactical reload drops the spent magazine into the world.

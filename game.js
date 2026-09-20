@@ -28,7 +28,9 @@ const inventory=()=>dropped?[secondary==='deagle'?'deagle':'bayonet',secondary==
 const keys=['akm','l96','mosin','mx','hecate','deagle','bayonet'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
-const scopedOnly=k=>k==='l96'||k==='mosin'||k==='hecate';
+// The Mosin is an iron-sight bolt rifle: right-click aims, it does not mount a scope.
+// The L96 and Hecate are the dedicated scoped platforms.
+const scopedOnly=k=>k==='l96'||k==='hecate';
 const cleanName=v=>String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,20)||'Operator';
 let username='Operator';try{username=cleanName(localStorage.getItem('poly-username'));}catch(_){}
 $('username').value=username;$('username').onchange=()=>{username=cleanName($('username').value);$('username').value=username;try{localStorage.setItem('poly-username',username);}catch(_){}};
@@ -61,13 +63,21 @@ readyAll().then(()=>{
   // The Soldier replaces the placeholder rig outright. Nesting it would
   // leave the procedural body visible underneath, so swap children instead.
   // Every mesh needs userData.botId or the hit ray treats it as scenery.
-  bots.forEach((g,i)=>{const m=PolyAsset.soldier();if(!m)return;
-    g.children.filter(c=>!c.isLight).forEach(c=>g.remove(c));
-    m.traverse(n=>{ if(n.isMesh){ n.userData.botId=i;
+  // Only attach once: rebuildBots() re-rigs on every spawn cycle, and a second
+  // pass would stack two Soldier clones in one group, doubling draw cost and
+  // giving raycasts two meshes with mismatched botId tags.
+  const attachSoldier = (g, i) => {
+    const m = PolyAsset.soldier(); if (!m) return;
+    g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
+    m.traverse(n => { if (n.isMesh) {
+      n.userData.botId = i;
       // Head tag = top ~18% of the rig, matching the old operator proportions.
-      n.userData.part=(n.geometry&&n.geometry.boundingBox)
-        ? (n.geometry.boundingBox.max.y>1.5?'head':'body') : 'body'; }});
-    g.add(m);});
+      n.userData.part = (n.geometry && n.geometry.boundingBox)
+        ? (n.geometry.boundingBox.max.y > 1.5 ? 'head' : 'body') : 'body';
+    }});
+    g.add(m);
+  };
+  bots.forEach((g, i) => { if (!g.userData.soldierAttached) { g.userData.soldierAttached = true; attachSoldier(g, i); } });
 });
  // Weapons now come from the GLB asset suite; the procedural builder is gone.
 for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
@@ -128,7 +138,7 @@ function refill(){for(const k of keys)ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WE
 function spawn(){killCount=0;roundNotice=0;inspectFade=0;inspectRest=null;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='bayonet';ads=false;slide=0;slideCool=0;equip=.2;burst=0;inspect=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
-function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}loadMap($('mapSelect').value);match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
+function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}loadMap($('mapSelect').value);if(C.MAP.training&&primaries.includes('mosin'))primary='mosin';match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;previous=weapon;weapon=k;bolt=0;inspectFade=0;inspectRest=null;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;inspect=0;equip=.35;cool=.15;A.sound('switch');}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
@@ -157,7 +167,9 @@ function shotEffects(){if(!budget.effects||!scopedOnly(weapon)||effects.length>2
  if(PolyVisual.buildCasing){const o=PolyVisual.buildCasing(T);o.position.set(x+Math.cos(yaw)*.3,y-.18,z-Math.sin(yaw)*.3);scene.add(o);effects.push({o,life:.7,v:new T.Vector3(Math.cos(yaw)*1.7,1.1,-Math.sin(yaw)*1.7),spin:true});}
  const o=new T.Mesh(new T.IcosahedronGeometry(.075,0),new T.MeshBasicMaterial({color:0xc4c9c3,transparent:true,opacity:.3,depthWrite:false}));o.position.copy(origin).addScaledVector(dir,.85);scene.add(o);effects.push({o,life:.45,smoke:true,v:new T.Vector3(0,.15,0)});
 }
-function tracer(a,b,color){if(!budget.effects||effects.length>=24)return;const g=new T.BufferGeometry().setFromPoints([a,b]);const m=new T.LineBasicMaterial({color,transparent:true,opacity:.7});const o=new T.Line(g,m);scene.add(o);effects.push({o,life:.07});}
+// A zero-length segment (muzzle under a target's hit point) yields NaN
+// normals; degenerate tracers are skipped rather than poisoning the geometry.
+function tracer(a,b,color){if(!budget.effects||effects.length>=24)return;if(a.distanceToSquared(b)<1e-8)return;const g=new T.BufferGeometry().setFromPoints([a,b]);const m=new T.LineBasicMaterial({color,transparent:true,opacity:.7});const o=new T.Line(g,m);scene.add(o);effects.push({o,life:.07});}
 // Bullet impact decals: pooled marks oriented to the surface they hit.
 const decalGeo=new T.PlaneGeometry(.055,.055);const decalMat=()=>new T.MeshBasicMaterial({color:0x12140f,transparent:true,opacity:.9,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2});const decalPool=[];const MAX_DECALS=48;
 function spawnDecal(hit){if(!hit.face)return;let o=decalPool.find(d=>!d.visible);if(!o){if(decalPool.length>=MAX_DECALS)o=decalPool.shift();else{o=new T.Mesh(decalGeo,decalMat());decalPool.push(o);}scene.add(o);o.frustumCulled=false;}
@@ -185,7 +197,14 @@ function shoot(){const w=C.WEAPONS[weapon];if(running)cancelInspect();if(!runnin
  cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(C.WEAPONS[weapon].slot!=='melee')ammo[weapon].mag--;A.sound(weapon);flashTime=C.WEAPONS[weapon].slot==='melee'?0:.045;recoil=C.WEAPONS[weapon].slot==='melee'?.8:1;
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=C.WEAPONS[weapon].slot==='melee'?2.65:150;
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
- const hits=ray.intersectObjects([...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)],true);let end=origin.clone().addScaledVector(dir,80);if(hits.length){const h=hits[0];end=h.point;
+ const rayMeshes=[...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)];
+ // The viewmodel weapon sits at the camera, so it lands at distance 0 and
+ // shadows every real target. Filter it out before the raycast.
+ // An arena mesh at distance 0 is the floor under the camera; it should not
+// block point-blank shots at bots standing above it.
+const hits=ray.intersectObjects(rayMeshes,true);let end=origin.clone().addScaledVector(dir,80);// Skip non-bot scenery that lands first (floor at distance 0, walls) and
+// take the first hit that is actually a target or the switch box.
+const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;
   if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
    const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
   }
@@ -216,10 +235,7 @@ function rebuildBots(){
  if(window.PolyAsset&&PolyAsset.progress().soldier){
   // Fresh bot groups still need the real Soldier rig; rebuildBots runs after
   // the asset boot, so the swap above never sees these groups.
-  bots.forEach((g,i)=>{const m=PolyAsset.soldier();if(!m)return;
-    m.traverse(n=>{ if(n.isMesh){ n.userData.botId=i;
-      n.userData.part=(n.geometry&&n.geometry.boundingBox&&n.geometry.boundingBox.max.y>1.5)?'head':'body'; }});
-    g.add(m);});
+  bots.forEach((g, i) => { g.userData.soldierAttached = false; attachSoldier(g, i); });
  }
 }
 function loadMap(id){
@@ -435,8 +451,15 @@ PolyAsset.ready().then(boot, boot);
 requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
   if(!booted) { resize(); }
 });
-let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,inspectVariant,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,inspect,ammo:JSON.parse(JSON.stringify(ammo)),inspectFade,bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
-aim:(id)=>{const b=match.bots[id];yaw=Math.atan2(x-b.pos.x,z-b.pos.z);pitch=Math.atan2(1.85-y,Math.hypot(x-b.pos.x,z-b.pos.z));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
+let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,inspectVariant,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,inspect,ammo:JSON.parse(JSON.stringify(ammo)),inspectFade,bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// syncBots() writes the group transform; the nested Soldier pivot needs its
+// own world matrix refreshed or raycasts still see the pre-move position.
+bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
+// Camera forward is -Z at yaw 0, so the bearing to a target is atan2(dx,-dz).
+// The old (dx,dz) form pointed away from bots behind the player and made
+// every trainer shot hit scenery instead.
+// Camera forward is -Z at yaw 0. Bearing to target: atan2(dx, -dz) puts a
+// target straight ahead (-Z) at yaw 0, which is what the trainer needs.
+aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.85-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 } catch(e){$('error').hidden=false;$('errorText').textContent=e.message;console.error(e);}
 })();
