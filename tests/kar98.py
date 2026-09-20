@@ -104,7 +104,7 @@ with sync_playwright() as p:
     # measures against.
 
     # reload restores the internal magazine from reserve
-    before = page.evaluate('Game.state().ammo.kar98')
+    before = page.evaluate('Game.state().ammo.mosin')
     page.keyboard.press('KeyR')
     # the bolt cycle can still be running; wait until the reload actually starts
     for _ in range(40):

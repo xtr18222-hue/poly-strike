@@ -211,8 +211,9 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
   }
   else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,part,h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;
    const stationary=match.training&&match.mode!=='active';
-   A.sound(h.object.userData.part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
-   if(result.killed)addKill(`${h.object.userData.part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,h.object.userData.part==='head');}}
+   A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
+   // part is the height-classified hit zone (the Soldier is a single mesh).
+if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,part==='head');}}
   else if(C.WEAPONS[weapon].slot!=='melee'&&budget.effects)spawnDecal(h);}}
  shotEffects();if(C.WEAPONS[weapon].slot!=='melee')tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(C.WEAPONS[weapon].slot!=='melee')pitch=Math.min(1.45,pitch+w.recoil*.013);

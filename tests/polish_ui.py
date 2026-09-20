@@ -4,7 +4,7 @@ BASE=os.environ.get('TEST_URL','http://127.0.0.1:18957/')
 with sync_playwright() as p:
  b=p.chromium.launch(channel='msedge',headless=True);page=b.new_page(service_workers='block');errors=[]
  page.on('pageerror',lambda e:errors.append(str(e)));page.on('console',lambda m:errors.append(m.text) if m.type=='error' else None)
- page.goto(BASE+'?test=1');page.wait_for_function('window.Game')
+ page.goto(BASE+'?test=1');page.wait_for_function('window.PolyAsset && window.PolyAsset.progress().soldier',timeout=90000);page.wait_for_function('window.Game')
  assert page.locator('#username').count()==1,'custom username input'
  page.locator('#username').fill('<XTR & tester>');page.locator('#username').dispatch_event('change');page.reload();assert page.locator('#username').input_value()=='<XTR & tester>'
  assert 'Made by XTR' in page.locator('#menu footer').inner_text()
