@@ -152,9 +152,10 @@ function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i]; // Training targ
    o.rotateOnWorldAxis(new T.Vector3(Math.sin(fd.tip),0,Math.cos(fd.tip)),-e*1.45); // tip over
    o.position.set(b.pos.x,0,b.pos.z);o.visible=show;return;}
  }
- o.visible=show;o.position.set(b.pos.x,0,b.pos.z);o.rotation.y=Math.atan2(x-b.pos.x,z-b.pos.z);
+    o.visible=show;o.position.set(b.pos.x,0,b.pos.z);o.rotation.y=Math.atan2(x-b.pos.x,z-b.pos.z);
  if(b.alive&&o.userData.fall)delete o.userData.fall; // reset on respawn
- o.rotation.x=0;o.rotation.z=0;
+ // Static training targets are clamped to their pad: no drift, no air gap.
+ if(match.training&&match.mode!=='active'){o.position.y=0;o.rotation.x=0;o.rotation.z=0;}
  // Independent alternating strides: each leg is its own hip pivot, offset by PI
  // so they swing counter-phase. Speed scales the stride and cadence; a stationary
  // bot (or one aiming) eases to a graceful halt instead of marching on the spot.
@@ -166,8 +167,15 @@ function shoot(){const w=C.WEAPONS[weapon];if(running)cancelInspect();if(!runnin
  cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(weapon!=='knife')ammo[weapon].mag--;A.sound(weapon);flashTime=weapon==='knife'?0:.045;recoil=weapon==='knife'?.8:1;
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=weapon==='knife'?2.65:150;
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
- const hits=ray.intersectObjects([...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)],true);let end=origin.clone().addScaledVector(dir,80);if(hits.length){const h=hits[0];end=h.point;const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,h.object.userData.part||'body',h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;A.sound(h.object.userData.part==='head'?'headshot':result.killed?'kill':'hit');if(result.killed)addKill(`${h.object.userData.part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,h.object.userData.part==='head');}}
-  else if(weapon!=='knife'&&budget.effects)spawnDecal(h);}
+ const hits=ray.intersectObjects([...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)],true);let end=origin.clone().addScaledVector(dir,80);if(hits.length){const h=hits[0];end=h.point;
+  if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
+   const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
+  }
+  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,h.object.userData.part||'body',h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;
+   const stationary=match.training&&match.mode!=='active';
+   A.sound(h.object.userData.part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
+   if(result.killed)addKill(`${h.object.userData.part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,h.object.userData.part==='head');}}
+  else if(weapon!=='knife'&&budget.effects)spawnDecal(h);}}
  shotEffects();if(weapon!=='knife')tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='ak47'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(weapon!=='knife')pitch=Math.min(1.45,pitch+w.recoil*.013);
  if(scopedOnly(weapon)){scoped=false;ads=false;}
@@ -286,7 +294,12 @@ function tickLoadoutPreview(dt){if($('loadoutPanel').hidden)return;const m=loado
 const career={matches:0,wins:0,kills:0,deaths:0,headshots:0,shotsFired:0,shotsHit:0,roundsWon:0};
 try{const saved=JSON.parse(localStorage.getItem('poly-career'));if(saved&&typeof saved==='object')Object.assign(career,{matches:Math.max(0,+(saved.matches||0)),wins:Math.max(0,+(saved.wins||0)),kills:Math.max(0,+(saved.kills||0)),deaths:Math.max(0,+(saved.deaths||0)),headshots:Math.max(0,+(saved.headshots||0)),shotsFired:Math.max(0,+(saved.shotsFired||0)),shotsHit:Math.max(0,+(saved.shotsHit||0)),roundsWon:Math.max(0,+(saved.roundsWon||0))});}catch(_){}
 function saveCareer(){try{localStorage.setItem('poly-career',JSON.stringify(career));}catch(_){}}
-function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=match.kills||0;career.deaths+=match.deaths||0;career.headshots+=match.headshots||0;career.shotsFired+=match.shotsFired||0;career.shotsHit+=match.shotsHit||0;career.roundsWon+=match.score.player||0;saveCareer();progressMissions('match',won?1:0);}
+function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=match.kills||0;career.deaths+=match.deaths||0;career.headshots+=match.headshots||0;career.shotsFired+=match.shotsFired||0;career.shotsHit+=match.shotsHit||0;career.roundsWon+=match.score.player||0;saveCareer();
+ // Mission stats must match the mission ids: wins (only on a win), matches
+ // played (always), and rounds won. The old code pushed 'match', which no
+ // mission tracked, so progress never registered.
+ progressMissions('matches',1);if(won)progressMissions('wins',1);
+ if(won)progressMissions('roundsWon',match.score.player||0);}
 /* ---------------- Store: CS:GO-style crate opening with a scroll reel. -- */
 // Loot table: each entry is [weapon, skinIndex, rarity] where rarity is
 // 0=common 1=uncommon 2=rare 3=epic 4=legendary. Weights are exact so the
@@ -326,6 +339,7 @@ function saveOwned(set){try{localStorage.setItem('poly-owned',JSON.stringify([..
 function refreshCaseCount(){$('caseCount').textContent=`CRATES AVAILABLE: ${crates}`;$('openCase').disabled=!crates||caseOpen;window.__crates=crates;}
 function openCase(){
  if(caseOpen||crates<=0)return;caseOpen=true;crates--;saveCrates();refreshCaseCount();
+ A.sound('caseopen');                     // crate seal breaks / lid swings open
  let reward;
  try{reward=rollCase();}
  catch(err){caseOpen=false;crates++;saveCrates();refreshCaseCount();console.error('roll failed',err);return;}
@@ -343,9 +357,12 @@ function openCase(){
  let lastTick=-1;
  function itemWidth(){const it=strip.children[0];return it.offsetWidth+8;}
  function frame(t){const p=Math.min(1,(t-t0)/dur);
-  const eased=1-Math.pow(1-p,4)*(1-Math.pow(1-p,4));
-  const iw=itemWidth();
-  const x=(n-1)*iw-eased*(n-1)*iw;
+ const eased=1-Math.pow(1-p,4)*(1-Math.pow(1-p,4));
+ const iw=itemWidth();
+ // The strip's first item starts centred under the marker (CSS margin-left
+ // -60px), so the reel travels exactly (n-1) item widths to bring the last
+ // item — the reward — to the centre.
+ const x=(n-1)*iw-eased*(n-1)*iw;
   strip.style.transform=`translateX(${-x}px)`;
   // Ticking clicks: one per item boundary the marker sweeps past. The cadence
   // follows the reel speed (fast at first, slowing to a stop), which is the
@@ -356,10 +373,22 @@ function openCase(){
   else{caseOpen=false;refreshCaseCount();
    const [w,sk,ra]=reward;const set=ownedSkins();set.add(w+':'+sk);saveOwned(set);
    marker.className='r'+ra;
-   $('caseResult').innerHTML=`<b class="rare r${ra}" style="text-shadow:0 0 10px ${RARITY_HEX[ra]}80">${PolyVisual.SKINS[w][sk].name}</b><br>${RARITY[ra]} — added to your Loadout`;
-   A.sound(ra===4?'magin':'magout');}}
+   // Drop formatting: [Weapon Name]  [Skin Name]  [Rarity Tier] on one line,
+   // then the rarity-tinted reveal. The item lands with its own drop cue.
+   const wn=C.WEAPONS[w]&&C.WEAPONS[w].name?C.WEAPONS[w].name:w.toUpperCase();
+   $('caseResult').innerHTML=`<div class="cdrop"><span>${wn}</span><span class="cskin">${PolyVisual.SKINS[w][sk].name}</span><b class="rare r${ra}" style="text-shadow:0 0 10px ${RARITY_HEX[ra]}80">${RARITY[ra]}</b></div><div class="csub">added to your Loadout</div>`;
+   A.sound(ra===4?'crate':'magin');}}
  requestAnimationFrame(frame);}
-$('storeButton').onclick=()=>{refreshCaseCount();renderMissions();$('storePanel').hidden=false;};
+$('storeButton').onclick=()=>{refreshCaseCount();renderMissions();
+ // Populate the reel on open so the viewport is never a blank black box: a
+ // static preview row sits centred under the marker until the player spins.
+ const strip=$('caseStrip');
+ if(!strip.children.length){
+  for(let i=0;i<7;i++){const [w,sk,ra]=rollCase();const d=document.createElement('div');
+   d.className='citem r'+ra;d.innerHTML=`<b>${PolyVisual.SKINS[w][sk].name}</b><small>${RARITY[ra]}</small>`;
+   strip.appendChild(d);}
+ }
+ $('storePanel').hidden=false;};
 $('openCase').onclick=openCase;
 $('storeClose').onclick=()=>{$('storePanel').hidden=true;$('storeButton').focus();};
 /* ---------------- Missions: dynamic tasks that grant free crates. -------- */
@@ -375,23 +404,42 @@ function saveMissions(){try{localStorage.setItem('poly-missions',JSON.stringify(
 function missionState(m){const p=(missionProgress[m.id]&&missionProgress[m.id].p)||0;
  if(p>=m.goal)return{done:true,p:m.goal,reward:m.reward};
  return{done:false,p,reward:m.reward};}
-function renderMissions(){$('missionList').innerHTML=MISSIONS.map(m=>{
+// Hourly mission board: progress is bucketed by wall-clock hour. When the
+// clock rolls into a new bucket the board wipes and generates a fresh set of
+// daily-style tasks, so there is always something to work on.
+const MISSION_HOUR_MS=60*60*1000;
+function missionHour(){return Math.floor(Date.now()/MISSION_HOUR_MS);}
+function resetMissionsIfStale(){
+ const h=missionHour();
+ const stamp=+(localStorage.getItem('poly-mission-hour')||0);
+ if(stamp===h)return;                       // same hour bucket: nothing to do
+ localStorage.setItem('poly-mission-hour',String(h));
+ if(!stamp){ missionProgress={}; saveMissions(); return; }  // first run: blank board
+ missionProgress={}; saveMissions();
+}
+function renderMissions(){resetMissionsIfStale();
+ const left=MISSION_HOUR_MS-(Date.now()%MISSION_HOUR_MS);
+ const mm=Math.floor(left/60000),ss=Math.floor(left%60000/1000);
+ const clk=$('missionClock');if(clk)clk.textContent=`· resets in ${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+ $('missionList').innerHTML=MISSIONS.map(m=>{
  const s=missionState(m);const pct=Math.min(100,Math.round(100*s.p/m.goal));
  return`<div class="mission${s.done?' done':''}"><div><b>${m.label}</b><small>Reward: ${s.reward} crate${s.reward>1?'s':''}</small></div>
  <div class="mbar"><i style="width:${pct}%"></i></div><span>${s.done?'COMPLETE':`${s.p} / ${m.goal}`}</span></div>`;}).join('');}
 function progressMissions(stat,amount){
  if(!amount)return;
- let gained=0;
+ let gained=0,changed=false;
  for(const m of MISSIONS){if(m.stat!==stat)continue;
   const cur=(missionProgress[m.id]&&missionProgress[m.id].p)||0;
   if(cur>=m.goal)continue;
   const np=Math.min(m.goal,cur+amount);
-  missionProgress[m.id]={p:np};
+  missionProgress[m.id]={p:np};changed=true;
   if(np>=m.goal){gained+=m.reward;crates+=m.reward;}}
- if(gained){saveMissions();saveCrates();}}
+ // Persist on any progress, not just a completed mission: otherwise a
+ // partial count is lost when the tab closes and the board looks stuck.
+ if(changed){saveMissions();if(gained)saveCrates();}}
 // Headshots/eliminations feed mission progress live during a match.
 function onKill(headshot){progressMissions('kills',1);if(headshot)progressMissions('headshots',1);}
-window.__bots=bots;window.progressMissions=progressMissions;window.saveMissions=saveMissions;
+window.__bots=bots;Object.defineProperty(window,'__match',{get:()=>match});Object.defineProperty(window,'__arena',{get:()=>arena});window.progressMissions=progressMissions;window.saveMissions=saveMissions;
 function openCareer(){ // Career reads real stats tracked during matches. A first-time
  // player sees a starter service record so the panel is not all zeros; the
  // grant is one-time (guarded by a localStorage key) and never overwrites
@@ -441,7 +489,7 @@ function hud(){const w=C.WEAPONS[weapon];
 $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=weapon==='knife'?0:ammo[weapon].mag;$('ammo').textContent=weapon==='knife'?'∞':rounds;
  // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
  const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=weapon==='knife'?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
- $('reserve').textContent=weapon==='knife'?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?`TRAINING · ${match.aliveBots().length} TARGETS READY`:`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'CLUTCH · ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';$('status').textContent=weapon!=='knife'&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':inspect>0?`INSPECT ${inspectVariant+1}/2`:A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
+ $('reserve').textContent=weapon==='knife'?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'CLUTCH · ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';$('status').textContent=weapon!=='knife'&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':inspect>0?`INSPECT ${inspectVariant+1}/2`:A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
  $('primarySlot').dataset.slot=primary;$('primarySlot').querySelector('b').textContent=dropped?'DROPPED':C.WEAPONS[primary].name;$('primarySlot').classList.toggle('empty',dropped);
@@ -466,7 +514,9 @@ function animateWeapon(dt){
  else if(u.mag)u.mag.position.copy(u.mag.userData.basePos);
  if(u.bolt){const duration=C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval;const t=bolt>0?1-bolt/duration:0;u.bolt.position.z=u.bolt.userData.basePos.z+Math.sin(Math.PI*t)*.11;u.bolt.rotation.z=u.bolt.userData.baseRot.z-Math.sin(Math.PI*t)*.55;}
  // Hands are siblings of the weapon, never carried through an airborne spin.
- for(const k of keys){const h=handRoots[k];h.visible=models[k].visible;h.position.copy(models[k].position);h.rotation.copy(models[k].rotation);}
+ // During an inspection the hands step out of frame so the weapon gets a full
+ // unobstructed 360-degree turn; they return once the inspect ends.
+ for(const k of keys){const h=handRoots[k];h.visible=models[k].visible&&(k!==weapon||inspect<=0);h.position.copy(models[k].position);h.rotation.copy(models[k].rotation);}
  let ip=PolyInspection.pose(weapon,inspect>0?1-inspect/PolyInspection.durations[weapon]:0,inspectVariant);if(inspect<=0&&inspectFade>0&&inspectRest){const f=inspectFade/.1;ip=Object.fromEntries(Object.entries(inspectRest).map(([k,v])=>[k,v*f]));}lastInspectPose={...ip};inspectFade=Math.max(0,inspectFade-dt);if(u.mag){u.mag.position.x=u.mag.userData.basePos.x+(ip.magX||0);u.mag.position.y=u.mag.userData.basePos.y+(ip.magY||0);u.mag.position.z=u.mag.userData.basePos.z+(ip.magZ||0);u.mag.rotation.copy(u.mag.userData.baseRot);u.mag.rotation.z+=ip.magR||0;}
  m.position.add(new T.Vector3(ip.dx,ip.dy,ip.dz));m.rotation.x+=ip.rx;m.rotation.y+=ip.ry;m.rotation.z+=ip.rz;
  if(weapon==='knife'){

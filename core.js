@@ -474,15 +474,35 @@
   }
 
   /* -------------------------------------------------------- training --- */
-  // Training range: no match pressure. Bots are static range targets that
-  // respawn shortly after being hit and never shoot back; the clock never
-  // ends the round and the score is not tracked.
+  // Training range: no match pressure. Bots start as static metal pop-up range
+  // targets that clang and fall when hit and never shoot back; the clock never
+  // ends the round and the score is not tracked. Shooting the red switch box in
+  // the arena flips the range to live moving bots, and back again.
   function createTrainingMatch(mapOrContext = MAP) {
     const base = createMatch(mapOrContext);
+    // Capture the base match's hostile-AI step before we override it, so
+    // active trainer mode can delegate to the real bot logic.
+    const hostileStep = base.step;
     base.training = true;
     base.roundClock = Infinity;
     base.respawnClock = [0, 0, 0, 0, 0];
-    base.step = function (dt, rng, sense) {
+    // 'static' = metal pop-up targets, 'active' = hostile moving bots.
+    base.mode = 'static';
+    base.switchFlash = 0;
+    // Static pop-up targets idle from the very first frame, before the first
+    // step runs, so the range never shows walking dummies on entry.
+    for (const b of base.bots) { b.cool = 999; b.speed = 0; }
+    base.toggleMode = function () {
+      this.mode = this.mode === 'static' ? 'active' : 'static';
+      this.switchFlash = 1;
+      // Live bots need real cooldowns/speed again; static targets idle.
+      for (const b of this.bots) {
+        b.cool = this.mode === 'active' ? 0.5 + Math.random() * 1.5 : 999;
+        b.speed = this.mode === 'active' ? 3 : 0;
+      }
+      return this.mode;
+    };
+    const staticStep = function (dt, rng, sense) {
       if (this.phase === 'buy') { this.buyClock = 0; this.phase = 'live'; }
       if (this.phase !== 'live') return;
       // Targets stay put; keep their nav node valid but idle.
@@ -517,6 +537,19 @@
         this.respawnClock[b.id] = 0;
       }
       return { dmg, killed };
+    };
+    // Dispatch on the current range mode: static pop-ups idle and respawn,
+    // active bots run the normal hostile AI (m.step).
+    base.step = function (dt, rng, sense) {
+      if (this.switchFlash > 0) this.switchFlash = Math.max(0, this.switchFlash - dt * 1.6);
+      if (this.mode === 'active') {
+        const prev = this.training;
+        this.training = false;                 // hostile AI only runs when not training-flagged
+        hostileStep.call(this, dt, rng, sense); // full hostile AI
+        this.training = prev;
+        return;
+      }
+      staticStep.call(this, dt, rng, sense);
     };
     return base;
   }

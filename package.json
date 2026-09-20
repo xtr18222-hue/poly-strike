@@ -1,1 +1,1 @@
-{"name":"poly-strike","version":"1.0.0","private":true,"scripts":{"test":"node --test tests/core.test.cjs tests/visuals.cjs tests/fieldops.test.cjs","serve":"node tests/serve.mjs 18959"}}
+{"name":"poly-strike","version":"1.0.0","private":true,"scripts":{"test":"node --test tests/core.test.cjs tests/visuals.cjs tests/fieldops.test.cjs tests/trainer.test.cjs","serve":"node tests/serve.mjs 18959"}}

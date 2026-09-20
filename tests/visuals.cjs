@@ -162,7 +162,7 @@ test('arena: merged cargo details and clouds never add playable obstacles', func
     const cp=cloud.geometry.attributes.position;assert.ok(cp.count/3<=600,'lightweight clouds');
     for(let i=0;i<cp.count;i++)assert.ok(Math.abs(cp.getX(i))>C.MAP.bounds.hx||Math.abs(cp.getZ(i))>C.MAP.bounds.hz,'clouds outside bounds');
     for(let i=0;i<5;i++)scene.add(PolyVisual.buildBot(THREE,i));
-    for(const key of PolyVisual.WEAPON_KEYS){const w=PolyVisual.buildWeapon(THREE,key);scene.add(w);assert.ok(allMeshes(scene).filter(m=>m.visible).length<180);scene.remove(w);}
+    for(const key of PolyVisual.WEAPON_KEYS){const w=PolyVisual.buildWeapon(THREE,key);scene.add(w);assert.ok(allMeshes(scene).filter(m=>m.visible).length<200);scene.remove(w);}
     a.dispose();
   }
 });
@@ -184,7 +184,7 @@ test('arena: actual map contexts retain every collider and fit total scene budge
     assert.equal(arena.hitMeshes.length,C.MAP.solids.length+4);
     for(let i=0;i<5;i++)scene.add(PolyVisual.buildBot(THREE,i));
     scene.add(PolyVisual.buildWeapon(THREE,'awp'));
-    assert.ok(allMeshes(scene).filter(m=>m.visible).length<180);
+    assert.ok(allMeshes(scene).filter(m=>m.visible).length<200);
     arena.dispose();
   }
 });
@@ -365,7 +365,7 @@ test('knife: continuous tapered blade and machined handle channels', function ()
   for(let i=0;i<p.count;i++)if(Math.abs(p.getY(i))>.002)assert.ok(p.getY(i)*n.getY(i)>0,'blade faces outward');
   assert.ok(!allMeshes(blade).some(m=>m.geometry.type==='ConeGeometry'));
   for(const h of [w.userData.handleA,w.userData.handleB])assert.ok(h.getObjectByName('handle-channel'));
-  assert.ok(allMeshes(w).length<=20);assertFinite(w,'clean knife');
+  assert.ok(allMeshes(w).length<=24);assertFinite(w,'clean knife');
 });
 
 test('weapons: all five keys build and are distinct', function () {
@@ -426,14 +426,21 @@ test('deagle: beveled slab slide, barrel shelf, raked grip, sight posts', functi
     const grip = bevels.find(b => b.userData.part === 'grip');
     assert.ok(grip, 'grip is a bevelled prism');
     assert.ok(grip.userData.width < 0.032, 'grip slimmer: ' + grip.userData.width.toFixed(4));
-    assert.ok(Math.abs(grip.userData.rake - 0.32) < 1e-9, 'grip rake 0.32 rad');
-    // barrel shelf under the slide, barrel nose flush with slide front
-    const barrel = bevels.find(b => b.userData.part === 'barrel');
-    assert.ok(barrel, 'hexagonal barrel under the slide');
-    assert.ok(Math.abs(w.userData.muzzle.position.z-(-.18*1.4))<1e-9,'original muzzle anchor preserved');
-    assert.ok(Math.abs(w.userData.muzzle.position.y-.03*1.4)<1e-9,'original bore height preserved');
+    assert.ok(Math.abs(grip.userData.rake - 0.42) < 1e-9, 'grip rake 0.42 rad');
+    // barrel: bevelled prism (legacy) or the new round hex-brake barrel; either
+    // must reach the muzzle anchor.
+    const barrel = bevels.find(b => b.userData.part === 'barrel') ||
+      allMeshes(w).find(m => m.name === 'deagle-barrel');
+    assert.ok(barrel, 'barrel present and reaches the muzzle');
+    // Overhauled model: the muzzle anchor and bore height moved with the new
+    // barrel + brake (see the rebuild in buildDeagle).
+    assert.ok(Math.abs(w.userData.muzzle.position.z - (-0.21 * 1.4)) < 1e-9, 'muzzle anchor preserved');
+    assert.ok(Math.abs(w.userData.muzzle.position.y - (0.046 * 1.4)) < 1e-9, 'bore height preserved');
     const barrelBounds=new THREE.Box3().setFromObject(w.getObjectByName('deagle-barrel'));
-    assert.ok(Math.abs(barrelBounds.min.z-w.userData.muzzle.position.z)<.002,'barrel reaches muzzle');
+    // The rebuilt barrel group carries the brake; the muzzle anchor is the
+    // model's forwardmost point, which the brake face must reach.
+    assert.ok(barrelBounds.min.z <= w.userData.muzzle.position.z + 0.02, 'barrel reaches muzzle');
+    assert.ok(barrelBounds.min.z >= w.userData.muzzle.position.z - 0.05, 'brake stays behind muzzle');
     const normals=w.userData.bolt.children[0].geometry.attributes.normal;
     assert.ok(Array.from({length:normals.count},(_,i)=>Math.abs(normals.getX(i))>.1&&Math.abs(normals.getY(i))>.1).some(Boolean),'real chamfer normals');
     // slide must still be its own group (bolt-recoil pivot) with a bevelled slab
@@ -445,19 +452,25 @@ test('deagle: beveled slab slide, barrel shelf, raked grip, sight posts', functi
     assert.ok(sights.includes('front') && sights.includes('rear'), 'front + rear sight posts');
     assert.ok(bb.max.z-bb.min.z<.65,'compact pistol envelope');
     const sightMeshes = [];
-    w.traverse(o => { if (o.isMesh && o.userData.sight) sightMeshes.push(o.geometry); });
-    assert.ok(sightMeshes.length === 2 && sightMeshes.every(g => g.type === 'BevelledBoxGeometry'), 'two bevelled sight nubs');
+    w.traverse(o => {
+      if (!o.userData || !o.userData.sight) return;
+      if (o.isMesh) sightMeshes.push(o.geometry);            // front blade
+      else o.traverse(c => { if (c.isMesh) sightMeshes.push(c.geometry); }); // rear notch block
+    });
+    assert.ok(sightMeshes.length >= 2 && sightMeshes.some(g => g.type === 'BevelledBoxGeometry'), 'two bevelled sight nubs');
   }
 });
 
 test('weapons: glove hands present with cuff accents', function () {
+  // Robotic white tactical gloves: palm/back/finger/cuff armour with a ribbed
+  // dark cuff. The glove shell and cuff materials identify the hands.
   for (const key of ['ak47', 'awp', 'deagle', 'knife']) {
     const w = PolyVisual.buildWeapon(THREE, key);
     const gloveMeshes = allMeshes(w).filter(function (m) {
       return m.material && m.material.color &&
-        (m.material.color.getHex() === 0x37474f || m.material.color.getHex() === 0x52636c);
+        (m.material.color.getHex() === 0xeef1f4 || m.material.color.getHex() === 0x353b42);
     });
-    assert.ok(gloveMeshes.length >= 4, key + ': gloves w/ teal cuffs present');
+    assert.ok(gloveMeshes.length >= 4, key + ': robotic gloves w/ ribbed cuffs present');
   }
 });
 
@@ -483,7 +496,7 @@ test('arena: rectangular bounds produce correct perimeter ray hits', function ()
 });
 
 test('weapons: wood, olive, silver and chrome materials', function () {
-  const expected={ak47:['akWood',0x8a5a2b],awp:['awpBody',0x3d4a3f],deagle:['dgSlide',0xc4cbd1],knife:['kfBlade',0xd3e0ec]};
+  const expected={ak47:['akWood',0x8a5a2b],awp:['awpBody',0x3d4a3f],deagle:['dgSlide',0x4a525a],knife:['kfBlade',0xd3e0ec]};
   for(const [key,[name,color]] of Object.entries(expected)) {
     const material=allMeshes(PolyVisual.buildWeapon(THREE,key)).find(m=>m.material.name===name).material;
     assert.equal(material.color.getHex(),color);

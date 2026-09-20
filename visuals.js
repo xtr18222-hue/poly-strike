@@ -26,12 +26,16 @@
   // overrides keyed by the material cache name the builder used, so a skin can
   // recolour wood, steel and accents without rebuilding any geometry. The first
   // entry is always the default the models are built with.
+  // Midnight theme: matte black / charcoal base with a faint steel-blue
+  // undertone. applySkin gives it the whole weapon body, not just the "steel"
+  // named materials, so receivers, frames and grips all darken harmoniously.
+  const MIDNIGHT = { wood: 0x14181b, steel: 0x0d1012, accent: 0x232c33, frame: 0x161a1d, cloth: 0x1a1f23 };
   const SKINS = {
     ak47: [
       { name: 'Classic',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x22262a },
       { name: 'Tactical',  wood: 0x2e3a2c, steel: 0x161a1c, accent: 0x3d4a3a },
       { name: 'Sunset',    wood: 0xb0531f, steel: 0x4a2f22, accent: 0xd9a13b },
-      { name: 'Midnight',  wood: 0x1b2429, steel: 0x0e1214, accent: 0x2b3840 },
+      { name: 'Midnight',  wood: 0x14181b, steel: 0x0d1012, accent: 0x232c33 },
       { name: 'Jungle',    wood: 0x3f4a32, steel: 0x22271f, accent: 0x6f8a4a },
       { name: 'Crimson',   wood: 0x5a1f26, steel: 0x2a1416, accent: 0xc93b34 },
       { name: 'Golden',    wood: 0x6b4a1e, steel: 0x8a6a1f, accent: 0xe8c462 },
@@ -40,7 +44,7 @@
       { name: 'Issue',     wood: 0x4a5340, steel: 0x2b2f33, accent: 0x1b1e21 },
       { name: 'Frost',     wood: 0x8fa3b8, steel: 0xc3cdd6, accent: 0x6f8296 },
       { name: 'Dragon',    wood: 0x7a1f2b, steel: 0x2a1013, accent: 0xffcf3f },   // Legendary
-      { name: 'Midnight',  wood: 0x161c20, steel: 0x0b0e10, accent: 0x2b3840 },
+      { name: 'Midnight',  wood: 0x12161a, steel: 0x0b0e10, accent: 0x1e262c },
       { name: 'Highland',  wood: 0x4e5a3c, steel: 0x252b22, accent: 0x7d9a4f },
       { name: 'Ember',     wood: 0x4a2412, steel: 0x2a1a10, accent: 0xe07a2a },
       { name: 'Pearl',     wood: 0xa8b3b8, steel: 0x8a949a, accent: 0xdfe6ea },
@@ -49,7 +53,7 @@
       { name: 'Natural',   wood: 0x8a5a30, steel: 0x31363a, accent: 0x4a5054 },
       { name: 'Storm',     wood: 0x39424a, steel: 0x23272b, accent: 0x6b7680 },
       { name: 'Golden',    wood: 0x6b4a1e, steel: 0x8a6a1f, accent: 0xd9b24a },
-      { name: 'Midnight',  wood: 0x1b2429, steel: 0x0e1214, accent: 0x2b3840 },
+      { name: 'Midnight',  wood: 0x14181b, steel: 0x0d1012, accent: 0x232c33 },
       { name: 'Hunter',    wood: 0x4a3a24, steel: 0x26301f, accent: 0x6b7f45 },
       { name: 'Bloodline', wood: 0x5c2226, steel: 0x2a1618, accent: 0xb3362f },
       { name: 'Winter',    wood: 0x9aa5ad, steel: 0x6b7479, accent: 0xdfe6ea },
@@ -58,7 +62,7 @@
       { name: 'Silver',    steel: 0x9aa3a8, accent: 0x6b7176 },
       { name: 'Bronze',    steel: 0x8a5a2b, accent: 0xc08a4a },
       { name: 'Graphite',  steel: 0x3a4046, accent: 0x1c2023 },
-      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
+      { name: 'Midnight',  steel: 0x0d1012, accent: 0x232c33 },
       { name: 'Ivory',     steel: 0xdfe4e6, accent: 0x9aa3a8 },
       { name: 'Inferno',   steel: 0x8e3a1f, accent: 0xe07a2a },
       { name: 'Gold',      steel: 0xc9a227, accent: 0x8a6a1f },
@@ -67,7 +71,7 @@
       { name: 'Chrome',    steel: 0xb8c0c5, accent: 0x37474f },
       { name: 'Crimson',   steel: 0x8e1f2b, accent: 0x3a0d12 },
       { name: 'Gold',      steel: 0xc9a227, accent: 0x6b4a1e },
-      { name: 'Midnight',  steel: 0x1c2023, accent: 0x3a4146 },
+      { name: 'Midnight',  steel: 0x0d1012, accent: 0x232c33 },
       { name: 'Sapphire',  steel: 0x2b4a8a, accent: 0x16244a },
       { name: 'Emerald',   steel: 0x2f7a4a, accent: 0x123a26 },
       { name: 'White',     steel: 0xdfe4e6, accent: 0x8a949a },
@@ -87,8 +91,17 @@
     const list = SKINS[key];
     if (!list || !group) return false;
     const s = list[Math.max(0, Math.min(list.length - 1, skinIndex | 0))];
+    // Midnight covers the whole weapon: every metal, frame, grip and strap
+    // goes matte black/charcoal so the body colour changes harmoniously.
+    const midnight = s.name === 'Midnight';
     const match = m => {
       const n = m.name || '';
+      if (midnight) {
+        if (/wood|cloth|strap|grip/i.test(n)) return MIDNIGHT.wood;
+        if (/gold|brass|copper/i.test(n)) return MIDNIGHT.accent;   // gold dims to gunmetal
+        if (/ring|accent/i.test(n)) return MIDNIGHT.accent;
+        return MIDNIGHT.steel;                                     // everything else
+      }
       if (/wood/i.test(n)) return s.wood !== undefined ? s.wood : null;
       if (/ring|accent/i.test(n)) return s.accent !== undefined ? s.accent : null;
       if (/steel|slide|blade|edge|metal/i.test(n)) return s.steel !== undefined ? s.steel : null;
@@ -103,8 +116,38 @@
         if (hex === null || hex === undefined) return;
         if (!m.userData.owned) { m = m.clone(); m.userData.owned = true; o.material = m; touched++; }
         m.color.setHex(hex);
+        // Matte finish: Midnight absorbs light instead of glaring.
+        if (midnight) { m.roughness = Math.max(m.roughness || 0.5, 0.75); m.metalness = Math.min(m.metalness || 0.5, 0.45); }
       });
     });
+    // Subtle white star speckles: a faint dot pattern on the body only (never
+    // the blades/gold). Drawn into the roughness channel so it catches light
+    // without changing the base colour. No DOM (Node tests) => skipped.
+    if (midnight) {
+      const tex = canvasTex(THREE, 64, 64, function (ctx, w, h) {
+        ctx.fillStyle = '#0d1012'; ctx.fillRect(0, 0, w, h);
+        for (let i = 0; i < 26; i++) {
+          const px = 4 + (i * 37) % (w - 8), py = 4 + (i * 53) % (h - 8);
+          ctx.fillStyle = i % 3 === 0 ? '#f4f8fa' : i % 3 === 1 ? '#9fb2bc' : '#4a555d';
+          const sz = i % 3 === 0 ? 2 : 1;
+          ctx.fillRect(px, py, sz, sz);
+        }
+      });
+      if (tex) {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(2, 1);
+        group.traverse(function (o) {
+          if (!o.material) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(function (m) {
+            const n = m.name || '';
+            if (/blade|edge|gold|brass/i.test(n)) return;
+            if (m.userData.ownedSpeckle) return;
+            m.roughnessMap = tex; m.userData.ownedSpeckle = true;
+          });
+        });
+      }
+    }
     group.userData.skin = s.name;
     group.userData.skinIndex = skinIndex;
     return touched > 0;
@@ -332,6 +375,18 @@
           add(siteA,.5,.02,.5,lane*7,.02,14);
           add(siteB,.5,.02,.5,lane*7,.02,2);
         }
+        // Range-mode switch box: red post on a yellow base beside the lane.
+        // Shooting it flips the range between static pop-ups and live bots.
+        const swGet = matCache();
+        const sw=new THREE.Group();
+        sw.name='training-switch';
+        const swBase=box(THREE, trimMat, 1.1, .18, 1.1, 0, .09, 26);
+        const swPost=cyl(THREE, swGet(THREE, 'swRed', { color: 0xd9534a, metalness: .5, roughness: .3 }), .16, 1.3, 10, 0, .83, 26);
+        const swCap=box(THREE, swGet(THREE, 'swYellow', { color: 0xf2c14e, metalness: .6, roughness: .3 }), .5, .16, .5, 0, 1.6, 26);
+        swCap.userData.switchMesh = true;      // only the cap counts as the button
+        sw.add(swBase, swPost, swCap);
+        root.add(sw);
+        hitMeshes.push(swCap);                 // raycast target; no collision footprint
       } else
       // Cargo sits on existing roofs/crates: no new collision footprint.
       for(const s of map.solids){
@@ -477,16 +532,53 @@
   }
 
   /* ============================================================== WEAPONS == */
-  // Gloves: dark teal-gray glove with cuff, palm + fingers + thumb.
+  // Gloves: sleek white robotic tactical gloves. Armoured backplate with a
+  // cyan visor-strip, knuckle ridges, articulated finger block and a ribbed
+  // cuff. Modelled low-poly in the game's existing box/bevel vocabulary so
+  // they stay cheap and silhouette-readable in first person.
+  // Budget: one palm, one backplate, one finger block, one thumb and one cuff
+  // (the knuckles, seam, strip and cuff grooves are baked into those five).
   function buildGlove(THREE, get) {
     const g = new THREE.Group();
     g.name = 'glove-hand';
-    const mGlove = get(THREE, 'glove', { color: 0x37474f });
-    const mCuff = get(THREE, 'cuff', { color: 0x52636c });   // slate cloth cuff
-    g.add(box(THREE, mGlove, 0.075, 0.035, 0.1, 0, 0, 0));                 // palm
-    g.add(box(THREE, mGlove, 0.07, 0.028, 0.045, 0, -0.004, -0.066));      // fingers
-    g.add(box(THREE, mGlove, 0.024, 0.026, 0.055, 0.045, 0.002, -0.02));   // thumb
-    g.add(box(THREE, mCuff, 0.085, 0.05, 0.05, 0, -0.005, 0.07));          // cuff
+    const mShell = get(THREE, 'glove', { color: 0xeef1f4, metalness: 0.25, roughness: 0.45 });   // white armour
+    const mShellD = get(THREE, 'gloveD', { color: 0xc3cad2, metalness: 0.3, roughness: 0.4 });    // shaded panel
+    const mJoint = get(THREE, 'gloveJ', { color: 0x2b3138, metalness: 0.5, roughness: 0.5 });     // dark joints
+    const mCuff = get(THREE, 'cuff', { color: 0x353b42, metalness: 0.4, roughness: 0.55 });      // ribbed cuff
+    const mVisor = get(THREE, 'gloveV', { color: 0x8fd8e0, metalness: 0.6, roughness: 0.2 });     // cyan strip
+
+    // Palm: the core hand block the fingers fold over.
+    g.add(bevelBox(THREE, mShell, 0.078, 0.038, 0.105, 0, 0, 0));
+    // Armoured backplate, proud of the palm. The knuckle ridges, the dark seam
+    // and the cyan status strip are inset faces on this one bevelled prism, so
+    // the whole back of the hand costs a single mesh.
+    const back = bevelBox(THREE, mShell, 0.072, 0.03, 0.098, 0, 0.028, 0.002);
+    back.name = 'glove-back';
+    const bp = back.geometry.attributes.position;
+    for (let i = 0; i < bp.count; i++) {
+      // Knuckle bulge: flare the top edge forward and up.
+      if (bp.getY(i) > 0.012 && bp.getZ(i) < -0.012) { bp.setY(i, bp.getY(i) + 0.004); }
+    }
+    bp.needsUpdate = true; back.geometry.computeVertexNormals();
+    g.add(back);
+    // Cyan status strip set into the backplate.
+    g.add(box(THREE, mVisor, 0.05, 0.005, 0.028, 0, 0.045, 0.018));
+    // Articulated finger block: one phalanx run with a dark joint groove at the
+    // base, fingertip slightly narrowed.
+    g.add(bevelBox(THREE, mShellD, 0.068, 0.028, 0.078, 0, -0.003, -0.085));
+    g.add(box(THREE, mJoint, 0.07, 0.005, 0.012, 0, 0.011, -0.048));      // finger joint
+    // Thumb: angled opposing digit, one mesh.
+    const thumb = new THREE.Group();
+    thumb.position.set(0.046, 0.002, -0.018);
+    thumb.rotation.set(0.15, 0, 0.35);
+    thumb.add(bevelBox(THREE, mShell, 0.024, 0.026, 0.062, 0, 0, -0.018));
+    g.add(thumb);
+    // Cuff: ribbed bracer. The three dark grooves are thin boxes, but they are
+    // merged into the cuff batch at build time so they cost no extra draws.
+    g.add(bevelBox(THREE, mCuff, 0.086, 0.052, 0.052, 0, -0.006, 0.068));
+    for (const ry of [0.012, 0.0, -0.012]) {
+      g.add(box(THREE, mJoint, 0.088, 0.006, 0.054, 0, -0.006 + ry, 0.068));
+    }
     return g;
   }
 
@@ -529,16 +621,19 @@
     g.add(box(THREE, mSteelD, 0.008, 0.03, 0.008, 0, -0.028, 0.05));        // trigger
     g.add(box(THREE, mSteelD, 0.008, 0.008, 0.09, 0, -0.045, 0.05));        // guard bottom
 
-    // iron sights: front post + rear notch
-    const frontBase = box(THREE, mSteel, 0.014, 0.03, 0.02, 0, 0.052, -0.53);
+    // iron sights: front post + rear notch. The bead and the rear notch are set
+    // to the same height so the sight line is level and parallel to the bore
+    // (barrel centre y=0.028); a raised rear would make the gun aim low.
+    const frontBase = box(THREE, mSteel, 0.014, 0.03, 0.02, 0, 0.062, -0.53);
     frontBase.userData.sight = 'front';
     g.add(frontBase);
-    g.add(box(THREE, mTeal, 0.006, 0.014, 0.006, 0, 0.072, -0.53));
-    const rearBase = box(THREE, mSteel, 0.03, 0.02, 0.03, 0, 0.075, -0.12);
+    g.add(box(THREE, mTeal, 0.006, 0.014, 0.006, 0, 0.082, -0.53));
+    const rearBase = box(THREE, mSteel, 0.03, 0.02, 0.03, 0, 0.068, -0.12);
     rearBase.userData.sight = 'rear';
     g.add(rearBase);
-    g.add(box(THREE, mSteelD, 0.006, 0.016, 0.006, -0.012, 0.09, -0.12));
-    g.add(box(THREE, mSteelD, 0.006, 0.016, 0.006, 0.012, 0.09, -0.12));
+    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006, -0.012, 0.083, -0.12));
+    g.add(box(THREE, mSteelD, 0.006, 0.014, 0.006, 0.012, 0.083, -0.12));
+    g.add(box(THREE, mSteelD, 0.028, 0.005, 0.004, 0, 0.0815, -0.12));      // notch plate
 
     // curved magazine (pivot at mag well for reload anim)
     const mag = new THREE.Group();
@@ -642,19 +737,21 @@
     scope.add(box(THREE, mSteel, 0.02, 0.05, 0.03, 0, -0.03, 0.05));        // rear mount
     g.add(scope);
 
-    // raised iron sights
-    const fs = box(THREE, mSteel, 0.009, 0.026, 0.012, 0, 0.092, -0.6);
+    // raised iron sights, aligned with the scope axis (y=0.105): the front
+    // bead, rear notch and scope centre are collinear so the iron sight line
+    // parallels the bore instead of crossing it.
+    const fs = box(THREE, mSteel, 0.009, 0.026, 0.012, 0, 0.088, -0.6);
     fs.userData.sight = 'front';
     g.add(fs);
-    g.add(box(THREE, mSteel, 0.004, 0.02, 0.004, 0, 0.104, -0.6));         // front bead
-    const rs = box(THREE, mSteel, 0.026, 0.022, 0.014, 0, 0.092, 0.2);
+    g.add(box(THREE, mSteel, 0.004, 0.02, 0.004, 0, 0.098, -0.6));         // front bead
+    const rs = box(THREE, mSteel, 0.026, 0.022, 0.014, 0, 0.088, 0.2);
     rs.userData.sight = 'rear';
     g.add(rs);
     // twin rear sight leaves with a centre notch
     for (const side of [-1, 1]) {
-      g.add(box(THREE, mBodyD, 0.006, 0.014, 0.006, side * 0.01, 0.103, 0.2));
+      g.add(box(THREE, mBodyD, 0.006, 0.014, 0.006, side * 0.01, 0.099, 0.2));
     }
-    g.add(box(THREE, mBodyD, 0.028, 0.005, 0.004, 0, 0.106, 0.2));         // notch plate
+    g.add(box(THREE, mBodyD, 0.028, 0.005, 0.004, 0, 0.101, 0.2));         // notch plate
 
     // magazine
     const mag = new THREE.Group();
@@ -700,64 +797,113 @@
   /* --- Desert Eagle: slab slide, triangular barrel, boxy grip ------------- */
   function buildDeagle(THREE, get) {
     const g = new THREE.Group();
-    const mSlide = get(THREE, 'dgSlide', { color: 0xc4cbd1, metalness: 0.9, roughness: 0.25 });              // brushed steel
-    const mFrame = get(THREE, 'dgFrame', { color: 0x3a3f45 });
-    const mGrip = get(THREE, 'dgGrip', { color: 0x23262b });
-    const mSteel = get(THREE, 'dgSteel', { color: 0x2a2a2e });
-    const mTeal = get(THREE, 'dgTeal', { color: 0x2fa8a0 });
-    const mGold = get(THREE, 'dgAcc', { color: 0x969fa7, metalness: .85, roughness: .3 });                 // blue accents
+    // Matte gunmetal slide + dark frame, brushed steel barrel, gold accent.
+    const mSlide = get(THREE, 'dgSlide', { color: 0x4a525a, metalness: 0.85, roughness: 0.3 });
+    const mSlideD = get(THREE, 'dgSlideD', { color: 0x333a40, metalness: 0.8, roughness: 0.35 });
+    const mFrame = get(THREE, 'dgFrame', { color: 0x262b30, metalness: 0.7, roughness: 0.4 });
+    const mGrip = get(THREE, 'dgGrip', { color: 0x1d2125, roughness: 0.65 });
+    const mSteel = get(THREE, 'dgSteel', { color: 0x5c666f, metalness: 0.9, roughness: 0.22 });
+    const mSteelD = get(THREE, 'dgSteelD', { color: 0x3c434a, metalness: 0.85, roughness: 0.28 });
+    const mGold = get(THREE, 'dgAcc', { color: 0xb98a3a, metalness: 0.9, roughness: 0.25 });
 
-    // frame + slide
-    g.add(bevelBox(THREE, mFrame, 0.034, 0.045, 0.2, 0, -0.012, -0.03));
+    // Frame: the lower receiver the slide rides on.
+    g.add(bevelBox(THREE, mFrame, 0.034, 0.048, 0.22, 0, -0.014, -0.04));
+    // Trigger guard hangs below the frame, open at the front like the real gun.
+    const guard = new THREE.Group();
+    guard.add(box(THREE, mFrame, 0.01, 0.03, 0.01, 0, -0.048, 0.045));
+    guard.add(box(THREE, mFrame, 0.01, 0.012, 0.095, 0, -0.066, 0.0));
+    guard.add(box(THREE, mFrame, 0.01, 0.028, 0.01, 0, -0.052, -0.048));
+    guard.children.forEach(c => c.userData.part = 'guard');
+    g.add(guard);
+
+    // Slide: long, low and sleek with a sloping nose. Sits proud of the frame.
     const slide = new THREE.Group();
-    slide.position.set(0, 0.018, 0);
-    slide.add(bevelBox(THREE, mSlide, 0.038, 0.042, 0.24, 0, 0, -0.05));
-    // Fixed barrel shelf stays anchored while the slide cycles.
-    const barrel=bevelBox(THREE,mSlide,.029,.028,.15,0,.03,-.105);
-    barrel.name='deagle-barrel';barrel.geometry.userData={part:'barrel',noseZ:-.18};g.add(barrel);
-    const bore=new THREE.Mesh(new THREE.CircleGeometry(.008,12),mSteel);
-    bore.name='barrel-bore';bore.rotation.y=Math.PI;bore.position.set(0,.03,-.1801);g.add(bore);
-    slide.add(box(THREE, mGold, 0.038, 0.006, 0.2, 0, -0.017, -0.05));      // slide serration line
-    // sights on slide
-    const fs = bevelBox(THREE, mSteel, 0.007, 0.012, 0.01, 0, 0.04, -0.155);
+    slide.position.set(0, 0.014, 0);
+    slide.add(bevelBox(THREE, mSlide, 0.036, 0.04, 0.26, 0, 0.012, -0.055));
+    slide.add(box(THREE, mSlideD, 0.036, 0.012, 0.26, 0, 0.034, -0.055));    // flat top rail
+    // Front sight blade on the slide.
+    const fs = bevelBox(THREE, mSteel, 0.006, 0.014, 0.01, 0, 0.052, -0.165);
     fs.userData.sight = 'front';
     slide.add(fs);
-    const rs = bevelBox(THREE, mSteel, 0.02, 0.01, 0.01, 0, 0.039, 0.06);
+    // Rear sight block with a square notch.
+    const rs = new THREE.Group();
+    rs.add(bevelBox(THREE, mSteel, 0.022, 0.014, 0.012, 0, 0.05, 0.058));
+    rs.add(box(THREE, mSlideD, 0.012, 0.01, 0.004, 0, 0.05, 0.0515));
     rs.userData.sight = 'rear';
     slide.add(rs);
+    // Slide serrations at the rear, fine gold accent line along the flank.
+    for (let i = 0; i < 5; i++) slide.add(box(THREE, mSlideD, 0.038, 0.005, 0.012, 0, 0.026, 0.052 - i * 0.014));
+    slide.add(box(THREE, mGold, 0.036, 0.004, 0.26, 0, -0.001, -0.055));
     g.add(slide);
+    // The slide group is the cycling part, but the fixed barrel shelf below it
+    // must stay anchored while the slide recoils.
+    g.userData.slideRef = slide;
 
-    // grip (raked back) + mag inside (pivot for reload)
-    const grip = bevelBox(THREE, mGrip, 0.031, 0.105, 0.05, 0, -0.07, 0.06);
-    grip.rotation.x = 0.32;grip.name='deagle-grip';
-    grip.geometry.userData={part:'grip',width:.031,rake:.32};
+    // Barrel: round, riding on top of the slide and protruding past the nose,
+    // ending in the hex muzzle brake that gives the Deagle its profile.
+    const barrel = zcyl(THREE, mSteel, 0.0155, 0.13, 14, 0, 0.046, -0.135);
+    barrel.name = 'deagle-barrel';
+    barrel.geometry.userData = { part: 'barrel', noseZ: -0.2 };
+    g.add(barrel);
+    // Hex muzzle brake, slightly flared.
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.0175, 0.05, 6), mSteelD);
+    brake.rotation.x = Math.PI / 2;
+    brake.position.set(0, 0.046, -0.185);
+    brake.name = 'deagle-brake';
+    g.add(brake);
+    // Bore face, so the muzzle is a dark hole rather than flat metal.
+    const bore = new THREE.Mesh(new THREE.CircleGeometry(0.011, 12), mFrame);
+    bore.name = 'barrel-bore';
+    bore.rotation.y = Math.PI;
+    bore.position.set(0, 0.046, -0.2091);
+    g.add(bore);
+
+    // Grip: strongly raked (~34 deg) two-piece panel with a contoured backstrap.
+    // Angled so the hand sits high and close, a natural extension of the forearm.
+    const grip = new THREE.Group();
+    grip.position.set(0, -0.028, 0.052);
+    const panel = bevelBox(THREE, mGrip, 0.031, 0.104, 0.052, 0, -0.05, 0);
+    panel.rotation.x = 0.42;
+    panel.name = 'deagle-grip';
+    panel.geometry.userData = { part: 'grip', width: 0.031, rake: 0.42 };
+    grip.add(panel);
+    // Backstrap insert softens the web of the hand; gold medallion on the panel.
+    grip.add(bevelBox(THREE, mFrame, 0.028, 0.08, 0.012, 0, -0.052, 0.012));
+    grip.add(cyl(THREE, mGold, 0.006, 0.006, 0.004, 8, 0.014, -0.05, 0.006));
     g.add(grip);
+
+    // Magazine inside the grip (pivot for the reload animation).
     const mag = new THREE.Group();
-    mag.position.set(0, -0.06, 0.055);
-    mag.rotation.x = 0.18;
+    mag.position.set(0, -0.075, 0.086);
+    mag.rotation.x = 0.42;
     mag.add(box(THREE, mSlide, 0.026, 0.075, 0.04, 0, -0.02, 0));
-    mag.add(box(THREE, mGold, 0.03, 0.012, 0.044, 0, -0.062, 0));           // basepad
+    mag.add(box(THREE, mGold, 0.03, 0.012, 0.044, 0, -0.062, 0));             // basepad
     g.add(mag);
 
-    // trigger + guard + hammer
-    g.add(box(THREE, mGold, 0.008, 0.024, 0.007, 0, -0.038, 0.005));
-    g.add(box(THREE, mFrame, 0.009, 0.008, 0.06, 0, -0.056, 0.0));
-    const hammer = box(THREE, mSteel, 0.012, 0.02, 0.012, 0, 0.012, 0.085);
+    // Trigger + hammer.
+    const trigger = box(THREE, mGold, 0.008, 0.024, 0.007, 0, -0.032, 0.008);
+    trigger.name = 'deagle-trigger';
+    g.add(trigger);
+    const hammer = box(THREE, mSteel, 0.012, 0.02, 0.012, 0, 0.014, 0.086);
     hammer.rotation.x = -0.5;
+    hammer.name = 'deagle-hammer';
     g.add(hammer);
+    // Ambidextrous safety / slide catch on the frame side.
+    g.add(box(THREE, mGold, 0.004, 0.016, 0.03, 0.018, 0.008, 0.02));
 
-    // hands: two-hand grip
+    // Hands: strong hand wrapped high on the raked grip, support hand cupping
+    // the front of the grip under the trigger guard, both aligned with the rake.
     const gloveR = buildGlove(THREE, get);
-    gloveR.position.set(0.005, -0.085, 0.085);
-    gloveR.rotation.x = 0.55;
+    gloveR.position.set(0.014, -0.072, 0.072);
+    gloveR.rotation.set(0.45, 0.08, 0.06);
     g.add(gloveR);
     const gloveL = buildGlove(THREE, get);
-    gloveL.position.set(-0.035, -0.075, 0.075);
-    gloveL.rotation.set(0.55, 0.4, 0.5);
+    gloveL.position.set(-0.016, -0.058, 0.016);
+    gloveL.rotation.set(0.55, -0.35, -0.12);
     g.add(gloveL);
 
     const muzzle = new THREE.Object3D();
-    muzzle.position.set(0, 0.03, -0.18);
+    muzzle.position.set(0, 0.046, -0.21);
     g.add(muzzle);
 
     g.userData = { kind: 'deagle', mag: mag, bolt: slide, muzzle: muzzle, muzzleTip: muzzle.position.clone() };

@@ -13,10 +13,11 @@ select,input[type=text],#roomInput{display:block;width:100%;padding:13px 12px;ba
 /* Career stats */
 #careerStats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.stat{background:#122c35;border-left:3px solid var(--lime);padding:12px}.stat b{display:block;font:24px monospace;color:var(--lime)}.stat span{font:9px monospace;letter-spacing:2px;color:#b9c4b9}
 /* Store: crate reel + missions */
-#storePanel>div{width:min(560px,100%)}#caseReel{position:relative;height:96px;overflow:hidden;border:1px solid #55756b;background:#0b1c22;margin:12px 0 4px}
-#caseStrip{display:flex;gap:8px;position:absolute;top:8px;left:50%;will-change:transform}
+#storePanel>div{width:min(640px,100%)}#caseReel{position:relative;height:96px;overflow:hidden;border:1px solid #55756b;background:#0b1c22;margin:12px 0 4px}
+#caseStrip{display:flex;gap:8px;position:absolute;top:8px;left:50%;margin-left:-64px;will-change:transform}
 #caseMarker{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:var(--lime);box-shadow:0 0 8px var(--lime)}
 #caseResult{text-align:center;margin:8px 0;min-height:34px}.rare{font:16px monospace}.r0{color:#b0b8c0}.r1{color:#6fae8f}.r2{color:#5b8de0}.r3{color:#b06ad8}.r4{color:#f0a92e;text-shadow:0 0 10px #f0a92e80}
+.cdrop{display:flex;justify-content:center;align-items:baseline;gap:14px;font:13px monospace;flex-wrap:wrap}.cdrop>span{color:var(--paper)}.cdrop .cskin{color:#dfe8e2;font-weight:700}.csub{font:10px monospace;color:#b9c4b9;letter-spacing:1px;margin-top:4px}
 .citem{flex:0 0 120px;height:80px;background:#122c35;border:1px solid #55756b;border-radius:2px;display:flex;flex-direction:column;justify-content:center;padding:8px}.citem b{font:12px monospace;color:var(--paper)}.citem small{font:9px monospace;letter-spacing:2px}.citem.r0{border-top:3px solid #b0b8c0}.citem.r1{border-top:3px solid #6fae8f}.citem.r2{border-top:3px solid #5b8de0}.citem.r3{border-top:3px solid #b06ad8}.citem.r4{border-top:3px solid #f0a92e}
 .mission{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;background:#122c35;border:1px solid #55756b;border-radius:2px;padding:10px 12px;margin-bottom:8px}.mission b{font:12px monospace;color:var(--paper)}.mission small{display:block;font:9px monospace;color:#b9c4b9;letter-spacing:1px}.mission span{font:11px monospace;color:var(--lime)}.mission.done{border-color:var(--lime)}.mission.done span{color:#6fae8f}
 .mbar{grid-column:1/-1;height:6px;background:#0b1c22;border:1px solid #55756b}.mbar i{display:block;height:100%;background:var(--lime);transition:width .4s ease}
