@@ -144,12 +144,12 @@
     return THREE;
   }
 
+  // bind() is idempotent. The ES-module shim in index.html attaches the
+  // GLB loaders to window.THREE after this classic script parses, so ready()
+  // rebinds once they are present.
   function bind(t) {
-    THREE = t;
-    // The addons attach themselves to the global THREE when loaded as classic
-    // scripts via the import map; if that has not happened yet (module build),
-    // fall back to importing them on demand.
-    if (!global.THREE) global.THREE = t;
+    THREE = t || global.THREE || null;
+    if (THREE && !global.THREE) global.THREE = THREE;
   }
 
   // Classic-script addons pollute global.THREE; module imports need a fetch.
@@ -325,8 +325,35 @@
     return { weapons: [...weapons.keys()], rigs: [...rigs.keys()], soldier: !!soldierGLB };
   }
 
+  // Auto-boot: bind to the global THREE, then load everything. ready()
+  // resolves once, and weapon()/soldier() return null until it does so the
+  // game can render the menu while the GLBs stream in.
+  let readyP = null;
+  function ready() {
+    if (!readyP) {
+      readyP = (async () => {
+        try {
+          // The GLB loaders are attached by an ES-module shim in index.html,
+          // which resolves after this classic script parses. Poll for it so
+          // loadAll never runs before GLTFLoader exists.
+          for (let i = 0; i < 200; i++) {
+            if (global.THREE && global.THREE.GLTFLoader && global.THREE.FBXLoader) break;
+            await new Promise(r => setTimeout(r, 60));
+          }
+          bind();
+          await loadAll();
+        } catch (e) {
+          // A failed asset must not take the whole game down: the caller can
+          // still play with whatever did load.
+          console.error('PolyAsset: asset load failed', e);
+        }
+      })();
+    }
+    return readyP;
+  }
+
   global.PolyAsset = {
-    bind, loadAll, weapon, rig, soldier, weaponDef, hasWeapon, progress,
+    bind, loadAll, ready, weapon, rig, soldier, weaponDef, hasWeapon, progress,
     WEAPON_KEYS, ROSTER, WEAPON_DEFS,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

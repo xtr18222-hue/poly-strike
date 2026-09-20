@@ -38,11 +38,43 @@ window.PolyAudio = (() => {
     }
   } catch (_) {} }
   function tone(hz,duration,level,type='sine',delay=0){const now=ctx.currentTime+delay,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(hz,now);g.gain.setValueAtTime(level,now);g.gain.exponentialRampToValueAtTime(.0001,now+duration);o.connect(g);g.connect(master);o.start(now);o.stop(now+duration+.01);o.onended=()=>{o.disconnect();g.disconnect();};}
-  function announce(kind){if(!ctx||muted||ctx.state!=='running')return;const words={double:'Double kill',triple:'Triple kill',multi:'Multi kill',clutch:'Clutch'};if(!words[kind])return;try{const n=kind==='double'?2:kind==='triple'?3:4;for(let i=0;i<n;i++)tone(440+i*160,.15,.12,'sine',i*.12);
-    // Prefer installed local voices, never request cloud speech for offline play.
-    const synth=window.speechSynthesis,voice=synth&&synth.getVoices().find(v=>v.localService&&v.lang.startsWith('en'));
-    if(voice&&window.SpeechSynthesisUtterance){synth.cancel();const u=new window.SpeechSynthesisUtterance(words[kind]);u.voice=voice;u.rate=.95;u.pitch=.85;u.volume=.65;synth.speak(u);}
-  }catch(_){} }
+  const PACKS = {
+    male: ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-06-54-Triple-Kill!','Mortal-Kombat-Announcer-2026-09-20-06-54-Multi-Kill!','[audio]Mega-......ill !','Mortal-Kombat-Announcer-2026-09-20-06-57-Ultra-Kill!','Mortal-Kombat-Announcer-2026-09-20-06-59-Unstoppable!','Mortal-Kombat-Announcer-2026-09-20-07-00-Rampage!','Mortal-Kombat-Announcer-2026-09-20-07-01-Dominating!','Mortal-Kombat-Announcer-2026-09-20-07-03-Unreal!','Mortal-Kombat-Announcer-2026-09-20-07-06-Devastation!','Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation'],
+    female: ['[UT Sexy Female Announcer]First......Blood','[UT Sexy Female Announcer]Doubl......-Kill','[UT Sexy Female Announcer]Tripl......Kill','[UT Sexy Female Announcer]Multi......ill !','[UT Sexy Female Announcer]Mega-......ill!!','[UT Sexy Female Announcer]Ultra......ll!!!','[UT Sexy Female Announcer]Unbel......able!','[UT Sexy Female Announcer]holy ......op!!! (1)'],
+  };
+  let voicePack = 'male';
+  const clipCache = new Map();
+  // Loaded on first use, not at boot: 22 clips of speech nobody needs on the
+  // menu, and decoding them eagerly would stall first paint.
+  function loadClip(name) {
+    if (clipCache.has(name)) return clipCache.get(name);
+    const p = fetch('assets/audio/' + encodeURIComponent(name) + '.mp3')
+      .then(r => r.ok ? r.arrayBuffer() : null)
+      .then(b => b && ctx ? ctx.decodeAudioData(b) : null)
+      .catch(() => null);
+    clipCache.set(name, p);
+    return p;
+  }
+  function playClip(buf) {
+    if (!ctx || muted || ctx.state !== 'running' || !buf) return;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = 0.75;
+    src.connect(g); g.connect(master);
+    src.start();
+    src.onended = () => { src.disconnect(); g.disconnect(); };
+  }
+  function announce(kind, kills) {
+    if (!ctx) return;
+    const list = PACKS[voicePack] || PACKS.male;
+    let name = null;
+    if (kind === 'clutch') name = voicePack === 'female' ? 'Clutch' : 'Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch';
+    else if (kind === 'firstblood') name = list[0];
+    else if (Number.isInteger(kills) && kills >= 1) name = list[Math.min(kills - 1, list.length - 1)];
+    if (!name) return;
+    loadClip(name).then(playClip);
+  }
+  function setVoicePack(p) { if (PACKS[p]) voicePack = p; }
+  function getVoicePack() { return voicePack; }
   function toggle() {muted=!muted;if(muted&&window.speechSynthesis)window.speechSynthesis.cancel();if(master)master.gain.setTargetAtTime(muted?0:.28,ctx.currentTime,.02);return muted;}
-  return {start,sound,announce,toggle,get muted(){return muted;},get ready(){return !!ctx;}};
+  return {start,sound,announce,setVoicePack,getVoicePack,toggle,get muted(){return muted;},get ready(){return !!ctx;}};
 })();

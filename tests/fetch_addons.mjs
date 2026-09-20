@@ -17,6 +17,10 @@ const NEED = [
   ['examples/jsm/curves/NURBSUtils.js', 'curves'],
   ['examples/jsm/curves/NURBSSurface.js', 'curves'],
   ['examples/jsm/libs/fflate.module.js', 'libs'],
+  // KTX2 texture decoding (not used by this asset set, but the loader imports
+  // it eagerly so it must be present or the module graph fails to load).
+  ['examples/jsm/libs/ktx-parse.module.js', 'libs'],
+  ['examples/jsm/libs/zstddec.module.js', 'libs'],
   // SkeletonUtils is an addon, not part of the core namespace.
   ['examples/jsm/utils/SkeletonUtils.js', 'utils'],
   ['examples/jsm/utils/WorkerPool.js', 'utils'],

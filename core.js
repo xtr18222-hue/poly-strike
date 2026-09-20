@@ -24,53 +24,30 @@
   }
 
   /* ------------------------------------------------------------ weapons -- */
-  const WEAPONS = {
-    ak47: {
-      key: 'ak47', name: 'AK-47', slot: 'primary', auto: true,
-      mag: 30, reserve: 90, damage: 36, headMult: 4, legMult: 0.75,
-      fireInterval: 0.1, reloadTime: 1.35,
-      spreadBase: 0.0065, spreadScoped: 0.0042, zoomFov: null, ads: true,
-      price: 2700, killAward: 300, falloff: 0.004, recoil: 1.0,
+  // The new low-poly weapon suite from poly-strike-assets. Stats live in
+  // assets.js (PolyAsset.WEAPON_DEFS) so a weapon's balance and its model are
+  // defined in one place; core re-exports them so the rest of the game keeps
+  // reading C.WEAPONS.
+  // Resolved lazily: core.js parses before assets.js, so PolyAsset is not
+  // defined yet at module scope. WEAPON_DEFS is stable after first load.
+  let _weapons = null;
+  const WEAPONS = new Proxy({}, {
+    get(_, k) {
+      if (!_weapons && globalThis.PolyAsset) _weapons = globalThis.PolyAsset.WEAPON_DEFS || {};
+      return _weapons ? _weapons[k] : undefined;
     },
-    awp: {
-      key: 'awp', name: 'AWP', slot: 'primary', auto: false,
-      mag: 10, reserve: 30, damage: 115, headMult: 2.5, legMult: 0.75,
-      fireInterval: 1.45, reloadTime: 1.9,
-      spreadBase: 0.05, spreadScoped: 0.0012, zoomFov: 20,
-      price: 4750, killAward: 100, falloff: 0.001, recoil: 2.6,
-    },
-    kar98: {
-      key: 'kar98', name: 'Kar98k', slot: 'primary', auto: false,
-      mag: 5, reserve: 40, damage: 110, headMult: 2.5, legMult: 0.75,
-      fireInterval: 1.2, reloadTime: 2.4,
-      // Iron sights only: no scope overlay and no zoom (zoomFov null), so ADS
-      // behaves like the AK-47 -- fast, unzoomed, tactical.
-      spreadBase: 0.03, spreadScoped: 0.0015, zoomFov: null, ads: true,
-      price: 3400, killAward: 100, falloff: 0.0014, variance: 0.12, recoil: 2.2,
-    },
-    deagle: {
-      key: 'deagle', name: 'Desert Eagle', slot: 'secondary', auto: false,
-      mag: 7, reserve: 35, damage: 53, headMult: 4, legMult: 0.75,
-      fireInterval: 0.25, reloadTime: 1.05,
-      spreadBase: 0.011, spreadScoped: 0.0065, zoomFov: null, ads: true,
-      price: 700, killAward: 300, falloff: 0, recoil: 1.4,
-    },
-    knife: {
-      key: 'knife', name: 'Butterfly Knife', slot: 'melee', auto: true,
-      mag: 0, reserve: 0, damage: 55, headMult: 1, legMult: 1,
-      fireInterval: 0.5, reloadTime: 0,
-      spreadBase: 0, spreadScoped: 0, zoomFov: null,
-      price: 0, killAward: 1500, falloff: 0, recoil: 0,
-    },
-  };
-  const BUY_ITEMS = ['ak47', 'awp', 'kar98', 'deagle', 'armor'];
+  });
+  const BUY_ITEMS = ['akm', 'l96', 'mosin', 'mx', 'hecate', 'deagle', 'armor'];
+
+
 
   /* ------------------------------------------------------------- spread -- */
   // moveFactor: 0 standing .. 1 full sprint. crouch tightens, air wrecks,
   // scoped collapses AWP spread. Returns {yaw, pitch} aim offsets in radians.
   function pickSpread(weaponKey, moveFactor, crouch, air, scoped, rng) {
     const w = WEAPONS[weaponKey];
-    if (!w || w.key === 'knife') return { yaw: 0, pitch: 0 };
+    // Melee weapons have no spread at all.
+    if (!w || w.slot === 'melee') return { yaw: 0, pitch: 0 };
     let s;
     if (air) s = w.spreadBase * 6;
     else {
@@ -556,7 +533,7 @@
 
   const api = {
     MAPS, forMap, NAVGRAPH: graphFor(MAP),
-    mulberry32, WEAPONS, ECON, BUY_ITEMS: ['ak47', 'awp', 'kar98', 'deagle', 'armor'],
+    mulberry32, WEAPONS, ECON, BUY_ITEMS,
     buildSprayPattern, pickSpread, shotDamage, rollVariance,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
     createMatch, createTrainingMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
