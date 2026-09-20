@@ -68,60 +68,10 @@
 
   // Game balance for the new suite. Firearm identity maps to the old slots so
   // the inventory code keeps working: primary / secondary / melee.
-  const WEAPON_DEFS = {
-    akm: {
-      key: 'akm', name: 'AKM', slot: 'primary', auto: true,
-      mag: 30, reserve: 90, damage: 36, headMult: 4, legMult: 0.75,
-      fireInterval: 0.1, reloadTime: 1.35,
-      spreadBase: 0.0065, spreadScoped: 0.0042, zoomFov: null, ads: true,
-      price: 2700, killAward: 300, falloff: 0.004, recoil: 1.0,
-    },
-    l96: {
-      key: 'l96', name: 'L96 A1', slot: 'primary', auto: false,
-      mag: 5, reserve: 40, damage: 110, headMult: 2.5, legMult: 0.75,
-      fireInterval: 1.5, reloadTime: 3.2,
-      spreadBase: 0.0009, spreadScoped: 0.0002, zoomFov: 12, ads: true,
-      price: 4750, killAward: 300, falloff: 0.001, recoil: 1.6,
-    },
-    mosin: {
-      key: 'mosin', name: 'Mosin Nagant', slot: 'primary', auto: false,
-      mag: 5, reserve: 40, damage: 88, headMult: 3.2, legMult: 0.75,
-      fireInterval: 1.2, reloadTime: 2.9,
-      spreadBase: 0.0015, spreadScoped: 0.0005, zoomFov: 20, ads: true,
-      price: 3300, killAward: 300, falloff: 0.0015, recoil: 1.3,
-    },
-    mx: {
-      key: 'mx', name: 'MX', slot: 'primary', auto: true,
-      mag: 30, reserve: 90, damage: 30, headMult: 4, legMult: 0.75,
-      fireInterval: 0.085, reloadTime: 1.5,
-      spreadBase: 0.005, spreadScoped: 0.0035, zoomFov: null, ads: true,
-      price: 2900, killAward: 300, falloff: 0.004, recoil: 0.9,
-    },
-    hecate: {
-      key: 'hecate', name: 'PGM Hecate II', slot: 'primary', auto: false,
-      mag: 7, reserve: 35, damage: 140, headMult: 2.5, legMult: 0.75,
-      fireInterval: 1.7, reloadTime: 3.6,
-      spreadBase: 0.0008, spreadScoped: 0.0001, zoomFov: 10, ads: true,
-      price: 5500, killAward: 300, falloff: 0.001, recoil: 1.8,
-    },
-    deagle: {
-      key: 'deagle', name: 'Desert Eagle', slot: 'secondary', auto: false,
-      mag: 7, reserve: 35, damage: 63, headMult: 3, legMult: 0.75,
-      fireInterval: 0.25, reloadTime: 1.1,
-      spreadBase: 0.005, spreadScoped: 0.004, zoomFov: null, ads: true,
-      price: 700, killAward: 300, falloff: 0.003, recoil: 1.4,
-    },
-    bayonet: {
-      key: 'bayonet', name: 'FA-03 Bayonet', slot: 'melee', auto: true,
-      mag: 0, reserve: 0, damage: 55, headMult: 1.5, legMult: 0.85,
-      fireInterval: 0.4, reloadTime: 0,
-      spreadBase: 0, spreadScoped: 0, zoomFov: null, ads: false,
-      price: 0, killAward: 300, falloff: 0, recoil: 0.6,
-    },
-  };
 
-  const WEAPON_KEYS = Object.keys(WEAPON_ASSETS);
   const ROSTER = ['akm', 'l96', 'mosin', 'mx', 'hecate', 'deagle', 'bayonet'];
+  // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
+  const WEAPON_KEYS = ROSTER.slice();
 
   const SOLDIER_FILE = 'Soldier by madtrollstudio - UL46oXeZYK.glb';
 
@@ -276,7 +226,10 @@
     base = base || (global.location ? global.location.pathname.replace(/[^/]*$/, '') : './');
     const report = [];
 
-    for (const key of WEAPON_KEYS) {
+    // Roster comes from PolyCore so the simulation and the asset loader can
+    // never disagree about which weapons exist.
+    const roster = (global.POLY_CORE && Object.keys(global.POLY_CORE.WEAPONS)) || ROSTER;
+    for (const key of roster) {
       try {
         const w = await loadWeapon(key, base);
         weapons.set(key, w);
@@ -311,7 +264,12 @@
     return cloneGLB(w, false);
   }
 
-  function weaponDef(key) { return WEAPON_DEFS[key] || null; }
+  // Balance stats live in PolyCore.WEAPONS (single source of truth); assets.js
+  // owns only the model file + fit transform.
+  function weaponDef(key) {
+    const core = globalThis.POLY_CORE;
+    return (core && core.WEAPONS && core.WEAPONS[key]) || null;
+  }
   function hasWeapon(key) { return weapons.has(key); }
 
   function rig(key) {
@@ -354,6 +312,6 @@
 
   global.PolyAsset = {
     bind, loadAll, ready, weapon, rig, soldier, weaponDef, hasWeapon, progress,
-    WEAPON_KEYS, ROSTER, WEAPON_DEFS,
+    WEAPON_KEYS, ROSTER,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

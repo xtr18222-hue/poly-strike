@@ -265,7 +265,7 @@ for(const k of Object.keys(loadoutModels)){const p=loadoutModels[k];p.matrixAuto
 // Visibility is inherited down a THREE scene graph, so toggling only the pivot
 // leaves the weapon mesh inside it hidden and the preview renders nothing.
 // setLoadoutVisible flips the whole subtree.
-function setLoadoutVisible(pivot,on){pivot.visible=on;pivot.traverse(n=>{if(n!==pivot)n.visible=on;});}
+function setLoadoutVisible(pivot,on){if(!pivot)return;pivot.visible=on;pivot.traverse(n=>{if(n!==pivot)n.visible=on;});}
 // Dedicated renderer on #loadoutCanvas itself. The preview must not be drawn
 // into the shared #game buffer: the panel stacks above it with an opaque stage
 // background, so the scissor render is painted over and reads as a black box.
@@ -364,8 +364,8 @@ $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(mat
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);rc.fillStyle='#b5baa650';for(const s of C.MAP.solids)rc.fillRect(85+(s.x-s.w/2)*2,85+(s.z-s.d/2)*2,s.w*2,s.d*2);rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85+x*2,85+z*2,3,0,Math.PI*2);rc.fill();rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85+x*2,85+z*2);rc.lineTo(85+x*2-Math.sin(yaw)*10,85+z*2-Math.cos(yaw)*10);rc.stroke();rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive){rc.beginPath();rc.arc(85+b.pos.x*2,85+b.pos.z*2,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
- for(const k of keys)models[k].visible=k===weapon&&!scoped;
- const m=models[weapon],u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
+ for(const k of keys)if(models[k])models[k].visible=k===weapon&&!scoped;
+ const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
  m.position.set(.32*(1-adsBlend)+Math.sin(walk*1.7)*.006*moving*(1-adsBlend),-.3*(1-adsBlend)-.09*adsBlend-equip*.5,-.65+recoil*.06);
  m.rotation.set(recoil*.09,0,0);
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
@@ -381,7 +381,7 @@ function animateWeapon(dt){
  // Hands are siblings of the weapon, never carried through an airborne spin.
  // During an inspection the hands step out of frame so the weapon gets a full
  // unobstructed 360-degree turn; they return once the inspect ends.
- for(const k of keys){const h=handRoots[k];h.visible=models[k].visible&&(k!==weapon||inspect<=0);h.position.copy(models[k].position);h.rotation.copy(models[k].rotation);}
+ for(const k of keys){const h=handRoots[k];if(!h||!models[k])continue;h.visible=models[k].visible&&(k!==weapon||inspect<=0);h.position.copy(models[k].position);h.rotation.copy(models[k].rotation);}
  let ip=PolyInspection.pose(weapon,inspect>0?1-inspect/PolyInspection.durations[weapon]:0,inspectVariant);if(inspect<=0&&inspectFade>0&&inspectRest){const f=inspectFade/.1;ip=Object.fromEntries(Object.entries(inspectRest).map(([k,v])=>[k,v*f]));}lastInspectPose={...ip};inspectFade=Math.max(0,inspectFade-dt);if(u.mag){u.mag.position.x=u.mag.userData.basePos.x+(ip.magX||0);u.mag.position.y=u.mag.userData.basePos.y+(ip.magY||0);u.mag.position.z=u.mag.userData.basePos.z+(ip.magZ||0);u.mag.rotation.copy(u.mag.userData.baseRot);u.mag.rotation.z+=ip.magR||0;}
  m.position.add(new T.Vector3(ip.dx,ip.dy,ip.dz));m.rotation.x+=ip.rx;m.rotation.y+=ip.ry;m.rotation.z+=ip.rz;
  if(C.WEAPONS[weapon].slot==='melee'){

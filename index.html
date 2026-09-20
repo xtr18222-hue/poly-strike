@@ -1,5 +1,30 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#102128"><meta name="description" content="POLY-STRIKE: an offline-ready low-poly tactical FPS. Four iconic weapons. Five opponents. One courtyard."><title>POLY-STRIKE — Field Operations</title><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,"></head>
+<html lang="en"><head><meta charset="utf-8">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+<script type="module">
+  // The GLB/FBX loaders are ES modules. They attach their classes onto the
+  // THREE they import, so we import the same module and then copy the loader
+  // classes onto the UMD global the rest of the game uses. Without this the
+  // game sees two separate THREE instances and PolyAsset cannot find a loader.
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+  import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+  import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+  import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+  import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+  // The game runs on the UMD build; the addons are ES modules that only
+  // `export`. Bridge them onto the shared global so PolyAsset can find them.
+  const g = window.THREE;
+  if (g) {
+    g.GLTFLoader = GLTFLoader;
+    g.DRACOLoader = DRACOLoader;
+    g.KTX2Loader = KTX2Loader;
+    g.FBXLoader = FBXLoader;
+    g.SkeletonUtils = { clone: skeletonClone };
+    window.__psAddonsBound = true;
+  }
+</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#102128"><meta name="description" content="POLY-STRIKE: an offline-ready low-poly tactical FPS. Four iconic weapons. Five opponents. One courtyard."><title>POLY-STRIKE — Field Operations</title><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,"></head>
 <body><canvas id="game" aria-label="3D first-person arena"></canvas>
 <div id="hud" hidden>
  <div class="topline"><span class="brand">P/S <small>SANDLINE</small></span><div id="score">00 <span>ROUND 01</span> 00</div><span id="fps">60 FPS</span></div>
@@ -30,29 +55,6 @@
 <div id="careerPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="careerTitle" hidden><div><div class="eyebrow">SERVICE RECORD</div><h2 id="careerTitle">CAREER</h2><div id="careerStats"></div><button id="careerClose" class="secondary">CLOSE</button></div></div>
 <div id="onlinePanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="onlineTitle" hidden><div><div class="eyebrow">DIRECT CONNECTION / 1V1</div><h2 id="onlineTitle">PLAY ONLINE</h2><p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p><button id="hostRoom">CREATE ROOM</button><label>Room code<input id="roomInput" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Paste room code"></label><button id="joinRoom" class="secondary">JOIN ROOM</button><output id="roomCode" aria-live="polite"></output><p id="netStatus" role="status">Ready to connect.</p><button id="cancelOnline" class="secondary">CANCEL / BACK</button><p class="subtle">Public PeerJS signaling + WebRTC. No custom server or account. NAT/firewall restrictions can prevent a connection; no TURN relay is bundled.</p></div></div>
 <div id="error" class="panel" hidden><div><h2>Unable to start WebGL</h2><p id="errorText">Enable hardware acceleration and use a current desktop browser.</p></div></div>
-<script src="vendor/three.min.js"></script><script src="maps.js"></script><script src="core.js"></script><script src="visuals.js"></script><script src="audio.js"></script><script src="settings.js"></script><script src="vendor/peerjs.min.js"></script><script src="net.js"></script><script src="duel.js"></script><script src="online.js"></script><script type="importmap">
-{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
-</script>
-<script type="module">
-  // The GLB/FBX loaders are ES modules. They attach their classes onto the
-  // THREE they import, so we import the same module and then copy the loader
-  // classes onto the UMD global the rest of the game uses. Without this the
-  // game sees two separate THREE instances and PolyAsset cannot find a loader.
-  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-  import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-  import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
-  import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
-  import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
-  // The game runs on the UMD build; the addons are ES modules that only
-  // `export`. Bridge them onto the shared global so PolyAsset can find them.
-  const g = window.THREE;
-  if (g) {
-    g.GLTFLoader = GLTFLoader;
-    g.DRACOLoader = DRACOLoader;
-    g.KTX2Loader = KTX2Loader;
-    g.FBXLoader = FBXLoader;
-    g.SkeletonUtils = { clone: skeletonClone };
-    window.__psAddonsBound = true;
-  }
-</script>
+<script src="vendor/three.min.js"></script><script src="maps.js"></script><script src="core.js"></script><script src="visuals.js"></script><script src="audio.js"></script><script src="settings.js"></script><script src="vendor/peerjs.min.js"></script><script src="net.js"></script><script src="duel.js"></script><script src="online.js"></script>
+
 <script src="assets.js"></script><script src="inspection.js"></script><script src="game.js"></script></body></html>

@@ -30,13 +30,18 @@
   // reading C.WEAPONS.
   // Resolved lazily: core.js parses before assets.js, so PolyAsset is not
   // defined yet at module scope. WEAPON_DEFS is stable after first load.
-  let _weapons = null;
-  const WEAPONS = new Proxy({}, {
-    get(_, k) {
-      if (!_weapons && globalThis.PolyAsset) _weapons = globalThis.PolyAsset.WEAPON_DEFS || {};
-      return _weapons ? _weapons[k] : undefined;
-    },
-  });
+  // The balance table is the single source of truth: assets.js reads it for
+  // weaponDef(), and the game reads C.WEAPONS. Stats and model live together so
+  // a weapon cannot drift out of sync with its own file.
+  const WEAPONS = {
+    akm: { key:'akm', name:'AKM', slot:'primary', auto:true, mag:30, reserve:90, damage:36, headMult:4, legMult:0.75, fireInterval:0.1, reloadTime:1.35, spreadBase:0.0065, spreadScoped:0.0042, zoomFov:null, ads:true, price:2700, killAward:300, falloff:0.004, recoil:1.0 },
+    l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
+    mosin: { key:'mosin', name:'Mosin Nagant', slot:'primary', auto:false, mag:5, reserve:40, damage:88, headMult:3.2, legMult:0.75, fireInterval:1.2, reloadTime:2.9, spreadBase:0.0015, spreadScoped:0.0005, zoomFov:20, ads:true, price:3300, killAward:300, falloff:0.0015, recoil:1.3 },
+    mx: { key:'mx', name:'MX', slot:'primary', auto:true, mag:30, reserve:90, damage:30, headMult:4, legMult:0.75, fireInterval:0.085, reloadTime:1.5, spreadBase:0.005, spreadScoped:0.0035, zoomFov:null, ads:true, price:2900, killAward:300, falloff:0.004, recoil:0.9 },
+    hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
+    deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:true, price:700, killAward:300, falloff:0.006, recoil:0.85 },
+    bayonet: { key:'bayonet', name:'Bayonet', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:2, legMult:1, fireInterval:0.6, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0.5 },
+  };
   const BUY_ITEMS = ['akm', 'l96', 'mosin', 'mx', 'hecate', 'deagle', 'armor'];
 
 

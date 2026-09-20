@@ -7,23 +7,24 @@ const path = require('path');
 const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
-test('arsenal contains the five weapons with consistent stats', () => {
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['ak47', 'awp', 'deagle', 'kar98', 'knife']);
+test('arsenal contains the seven weapons with consistent stats', () => {
+  // The new asset suite: 7 weapons (5 primaries, Deagle, bayonet melee).
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','bayonet','deagle','hecate','l96','mosin','mx']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
-    if (k !== 'knife') {
+    if (k !== 'bayonet') {
       assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
       assert.ok(w.damage > 0 && w.reloadTime > 0);
       assert.equal(typeof w.auto, 'boolean');
     }
   }
-  assert.equal(C.WEAPONS.awp.damage >= 100, true, 'AWP one-shot body damage');
-  assert.equal(C.WEAPONS.ak47.auto, true, 'AK is automatic');
+  assert.equal(C.WEAPONS.l96.damage >= 100, true, 'L96 one-shot body damage');
+  assert.equal(C.WEAPONS.akm.auto, true, 'AKM is automatic');
   assert.equal(C.WEAPONS.deagle.auto, false, 'Deagle is semi-auto');
-  assert.equal(C.WEAPONS.awp.zoomFov < 40, true, 'AWP has scope zoom');
-  assert.equal(C.WEAPONS.kar98.zoomFov, null, 'Kar98k is unscoped (iron sights only)');
-  assert.equal(C.WEAPONS.kar98.ads, true, 'Kar98k uses ADS like the AK-47');
+  assert.equal(C.WEAPONS.l96.zoomFov < 40, true, 'L96 has scope zoom');
+  assert.equal(C.WEAPONS.mx.zoomFov, null, 'MX is unscoped (iron sights only)');
+  assert.equal(C.WEAPONS.mx.ads, true, 'MX uses ADS like the AKM');
 });
 
 /* ---------- 2. Spray pattern ---------- */
@@ -47,17 +48,20 @@ test('spray pattern is deterministic and shaped like an AK climb', () => {
 test('spread model: crouch tightens, movement loosens, AWP unscoped is wild', () => {
   const rng = C.mulberry32(7);
   const acc = (fn, n = 400) => { let s = 0; for (let i = 0; i < n; i++) { const v = fn(); s += Math.hypot(v.yaw, v.pitch); } return s / n; };
-  const stand = acc(() => C.pickSpread('ak47', 0, false, false, false, rng));
-  const crouch = acc(() => C.pickSpread('ak47', 0, true, false, false, rng));
-  const moving = acc(() => C.pickSpread('ak47', 1, false, false, false, rng));
-  const air = acc(() => C.pickSpread('ak47', 0, false, true, false, rng));
+  const stand = acc(() => C.pickSpread('akm', 0, false, false, false, rng));
+  const crouch = acc(() => C.pickSpread('akm', 0, true, false, false, rng));
+  const moving = acc(() => C.pickSpread('akm', 1, false, false, false, rng));
+  const air = acc(() => C.pickSpread('akm', 0, false, true, false, rng));
   assert.ok(crouch < stand, 'crouched spread < standing');
   assert.ok(moving > stand, 'moving spread > standing');
   assert.ok(air > moving, 'airborne spread is worst');
-  const scoped = acc(() => C.pickSpread('awp', 0, false, false, true, rng));
-  const noscope = acc(() => C.pickSpread('awp', 0, false, false, false, rng));
-  assert.ok(noscope > scoped * 20, 'AWP noscope wildly inaccurate');
-  const knife = acc(() => C.pickSpread('knife', 1, false, true, false, rng));
+  const scoped = acc(() => C.pickSpread('l96', 0, false, false, true, rng));
+  // A scoped rifle fired from the hip: its base spread is wide by design.
+  const noscope = acc(() => C.pickSpread('l96', 0, false, false, false, rng));
+  // The L96's hipfire base is 4.5x its scoped spread, so an unscoped sniper
+  // is genuinely wild rather than merely loose.
+  assert.ok(noscope > scoped * 4, 'sniper noscope is wildly inaccurate');
+  const knife = acc(() => C.pickSpread('bayonet', 1, false, true, false, rng));
   assert.equal(knife, 0, 'knife has no spread');
 });
 
@@ -114,7 +118,7 @@ test('round flow: buy freeze -> live; killing all bots wins the round', () => {
   assert.equal(m.score.player, 0); assert.equal(m.score.enemy, 0);
   stepToLive(m, rng);
   const before = m.round;
-  for (const b of m.bots) m.playerShot('ak47', b.id, 'head', 10);
+  for (const b of m.bots) m.playerShot('akm', b.id, 'head', 10);
   m.step(0.1, rng); // flush
   assert.equal(m.phase, 'end', 'round ends when all bots die');
   assert.equal(m.lastWinner, 'player');
@@ -145,7 +149,7 @@ test('match ends at five round wins', () => {
   const m = C.createMatch();
   m.score.player = 4; m.score.enemy = 4;
   stepToLive(m, rng);
-  for (const b of m.bots) m.playerShot('awp', b.id, 'body', 5);
+  for (const b of m.bots) m.playerShot('l96', b.id, 'body', 5);
   m.step(0.1, rng);
   assert.equal(m.phase, 'end');
   for (let i = 0; i < 60 && m.phase !== 'matchover'; i++) m.step(0.1, rng);
@@ -160,7 +164,7 @@ test('economy: kill awards per weapon, win/loss bonuses, loss-streak cap', () =>
   const rng = C.mulberry32(5);
   const m = C.createMatch();
   assert.equal(m.money, C.ECON.start);
-  const ak = C.WEAPONS.ak47, awp = C.WEAPONS.awp, de = C.WEAPONS.deagle, kn = C.WEAPONS.knife;
+  const ak = C.WEAPONS.akm, awp = C.WEAPONS.l96, de = C.WEAPONS.deagle, kn = C.WEAPONS.bayonet;
   // Each award requires a fresh, alive target and a lethal hit.
   for (const w of [ak, awp, de, kn]) {
     const fresh = C.createMatch(); fresh.money = 0;
@@ -184,11 +188,11 @@ test('economy: kill awards per weapon, win/loss bonuses, loss-streak cap', () =>
 test('buy: prices, funds check, once per weapon type', () => {
   const m = C.createMatch();
   m.money = 5000;
-  assert.equal(m.buy('ak47'), true);
-  assert.equal(m.money, 5000 - C.WEAPONS.ak47.price);
-  assert.equal(m.buy('ak47'), false, 'cannot re-buy owned primary');
-  assert.equal(m.money, 5000 - C.WEAPONS.ak47.price);
-  assert.equal(m.buy('awp'), false, 'primary slot occupied');
+  assert.equal(m.buy('akm'), true);
+  assert.equal(m.money, 5000 - C.WEAPONS.akm.price);
+  assert.equal(m.buy('akm'), false, 'cannot re-buy owned primary');
+  assert.equal(m.money, 5000 - C.WEAPONS.akm.price);
+  assert.equal(m.buy('l96'), false, 'primary slot occupied');
   assert.equal(m.buy('deagle'), false, 'starter Deagle already owned');
   m.owned.secondary = null;
   assert.equal(m.buy('deagle'), true);
@@ -202,18 +206,18 @@ test('buy: prices, funds check, once per weapon type', () => {
 test('playerShot: headshot multiplier, falloff with distance, kill finalizes', () => {
   const m = C.createMatch();
   const b = m.bots[0];
-  const ak = C.WEAPONS.ak47;
-  const near = m.playerShot('ak47', b.id, 'body', 2);
-  const far = m.playerShot('ak47', b.id, 'body', 40);
+  const ak = C.WEAPONS.akm;
+  const near = m.playerShot('akm', b.id, 'body', 2);
+  const far = m.playerShot('akm', b.id, 'body', 40);
   assert.ok(far.dmg < near.dmg, 'falloff reduces damage');
-  const hs = m.playerShot('ak47', b.id, 'head', 2);
+  const hs = m.playerShot('akm', b.id, 'head', 2);
   assert.ok(hs.dmg > near.dmg * 2, 'headshots hurt');
   // finish the bot
-  while (b.alive) m.playerShot('awp', b.id, 'body', 10);
+  while (b.alive) m.playerShot('l96', b.id, 'body', 10);
   assert.equal(b.alive, false);
   assert.equal(m.aliveBots().length, m.bots.length - 1);
   // shooting a dead bot is a miss
-  const dead = m.playerShot('awp', b.id, 'head', 1);
+  const dead = m.playerShot('l96', b.id, 'head', 1);
   assert.equal(dead.dmg, 0);
   assert.equal(dead.killed, false);
 });

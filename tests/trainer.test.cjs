@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
+const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
 const THREE = require(path.join(ROOT, 'vendor', 'three.min.js'));
 global.window = global.window || global;
@@ -89,39 +90,31 @@ test('trainer: switch box mesh is present in the arena and raycastable', functio
   arena.dispose();
 });
 
-test('sights: AK-47 front bead and rear notch are level (parallel to the bore)', function () {
-  const g = PolyVisual.buildWeapon(THREE, 'ak47');
-  g.updateMatrixWorld(true);
-  const front = sightTop(g, 'front');
-  const rear = sightTop(g, 'rear');
-  assert.ok(Math.abs(front - rear) < 0.004, 'AK sight line level: front=' + front.toFixed(4) + ' rear=' + rear.toFixed(4));
-  assert.ok(front > 0.028, 'sights sit above the barrel axis');
+test('ragdoll fall state is gone from the bot sync path', function () {
+  const src = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf-8');
+  assert.ok(!src.includes('userData.fall'), 'no fall/tip-over state remains');
+  assert.ok(!/function onKill/.test(src), 'the mission kill bridge is gone');
+});
+test('store, crates and missions are fully purged', function () {
+  const src = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf-8');
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf-8');
+  const css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf-8');
+  for (const sym of ['openCase','rollCase','saveCrates','refreshCaseCount','CASE_ITEMS',
+                     'MISSIONS','progressMissions','renderMissions','missionState',
+                     'weaponSkins','applySkin','ownedSkins'])
+    assert.ok(!src.includes(sym), 'game.js no longer defines ' + sym);
+  for (const id of ['storePanel','storeButton','caseStrip','caseMarker','caseResult',
+                    'missionList','missionClock','skinSelect','charSkinSelect'])
+    assert.ok(!html.includes('id="' + id + '"'), 'index.html no longer has #' + id);
+  for (const rule of ['#caseReel','#caseStrip','#caseMarker','#caseResult','.citem','.mission','.mbar'])
+    assert.ok(!css.includes(rule), 'style.css no longer styles ' + rule);
+});
+test('announcer voice toggle is wired in options', function () {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf-8');
+  const src = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf-8');
+  const audio = fs.readFileSync(path.join(ROOT, 'audio.js'), 'utf-8');
+  assert.ok(html.includes('id="announcerVoice"'), 'options has the voice select');
+  assert.ok(src.includes('setVoicePack'), 'game binds the pack switch');
+  assert.ok(audio.includes('voicePack'), 'audio exposes the pack state');
 });
 
-test('sights: AWP front bead, rear notch and scope centre are collinear', function () {
-  const g = PolyVisual.buildWeapon(THREE, 'awp');
-  g.updateMatrixWorld(true);
-  const front = sightTop(g, 'front');
-  const rear = sightTop(g, 'rear');
-  const scope = g.getObjectByName('scope-clamp-ring');
-  const scopeY = scope ? scope.getWorldPosition(new THREE.Vector3()).y : null;
-  assert.ok(Math.abs(front - rear) < 0.004, 'AWP iron sight line level');
-  if (scopeY !== null) {
-    assert.ok(Math.abs(scopeY - front) < 0.02, 'scope axis near the iron sight line');
-  }
-});
-
-test('skins: Midnight darkens the entire weapon body, not just named steel', function () {
-  for (const key of ['ak47', 'awp', 'kar98', 'deagle', 'knife']) {
-    const g = PolyVisual.buildWeapon(THREE, key);
-    PolyVisual.applySkin(THREE, g, key, 3); // Midnight is slot 3 on every weapon
-    let dark = 0, light = 0;
-    g.traverse(o => {
-      if (!o.material || !o.material.color) return;
-      const c = o.material.color;
-      const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-      if (lum > 0.16) light++; else dark++;
-    });
-    assert.ok(dark >= light, key + ': Midnight covers the body, dark=' + dark + ' light=' + light);
-  }
-});

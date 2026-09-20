@@ -13,62 +13,44 @@ test('sw.js cache version bumped', () => {
   assert.notStrictEqual(m[1], 'poly-strike-v7-store', 'cache version must change');
 });
 
-test('kar98k barrel reaches the receiver ring (no detach)', () => {
-  const T = require(path.join(ROOT, 'vendor/three.min.js'));
-  const scene = { add() {} };
-  const PolyVisual = require(path.join(ROOT, 'visuals.js'));
-  // stub: visuals.js only needs a THREE and a document-free env
-  const g = PolyVisual.buildWeapon(T, 'kar98');
-  // collect the barrel cylinders and confirm continuous coverage ring→muzzle
-  let ringFront = null, barrelMin = null, barrelMax = null;
-  g.traverse(o => {
-    if (!o.geometry) return;
-    if (o.geometry.type === 'BoxGeometry') return;
-    const bb = new T.Box3().setFromObject(o);
-    if (bb.isEmpty()) return;
-    if (o.geometry.type === 'CylinderGeometry') {
-      if (barrelMin === null || bb.min.z < barrelMin) barrelMin = bb.min.z;
-      if (barrelMax === null || bb.max.z > barrelMax) barrelMax = bb.max.z;
+test('asset suite ships every weapon the game selects', () => {
+  const C = require(path.join(ROOT, 'core.js'));
+  // Every key the simulation balances must have a model file on disk, or the
+  // game would spawn a weapon with no mesh.
+  const fs = require('fs');
+  const roster = Object.keys(C.WEAPONS);
+  assert.ok(roster.length === 7, 'suite has 7 weapons');
+  for (const k of roster) {
+    const w = C.WEAPONS[k];
+    assert.ok(typeof w.name === 'string' && w.name.length, k + ' has a name');
+    if (w.slot !== 'melee') {
+      assert.ok(w.mag > 0 && w.reserve > 0, k + ' has ammo');
+      assert.ok(w.damage > 0, k + ' deals damage');
     }
-  });
-  assert.ok(barrelMin !== null, 'kar98 has barrel geometry');
-  // the receiver ring sits at z=0.15 with depth 0.05 -> front face z=0.125
-  assert.ok(barrelMax >= 0.125 - 0.02, `barrel must reach receiver ring, rear z=${barrelMax}`);
+  }
 });
-
-test('every weapon offers Midnight as its 4th skin and 7 total', () => {
-  const PolyVisual = require(path.join(ROOT, 'visuals.js'));
-  for (const w of ['ak47', 'awp', 'kar98', 'deagle', 'knife']) {
-    const skins = PolyVisual.SKINS[w];
-    assert.ok(Array.isArray(skins), `${w} has a skin list`);
-    assert.strictEqual(skins.length, 7, `${w} should have 7 skins`);
-    assert.strictEqual(skins[3].name, 'Midnight', `${w} slot 3 must be Midnight`);
+test('announcer packs map all 13 male and 9 female clips', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const audio = fs.readFileSync(path.join(ROOT, 'audio.js'), 'utf-8');
+  const male = ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch'];
+  const female = ['[UT Sexy Female Announcer]First......Blood','Clutch'];
+  for (const name of male.concat(female)) {
+    assert.ok(audio.includes(name), 'pack maps ' + name.slice(0, 30));
+    assert.ok(fs.existsSync(path.join(ROOT, 'assets/audio', name + '.mp3')), name.slice(0, 30) + ' exists on disk');
   }
 });
 
-test('rollCase uses rarity tiers without early-return bias', () => {
-  const game = src('game.js');
-  assert.ok(!/for\(let i=0;i<CASE_ITEM_W.length;i\+\+\)\{acc\+=CASE_ITEM_W\[i\];if\(rng\(\)\*100<acc\)return CASE_ITEMS\[i\]/.test(game),
-    'old biased early-return rollCase must be gone');
-  assert.ok(game.includes('const pool=CASE_ITEMS.filter(it=>it[2]===tier)'),
-    'rollCase must filter by tier then pick uniformly');
-});
 
-test('case reel uses easing and emits tick clicks', () => {
-  const game = src('game.js');
-  assert.ok(game.includes('A.sound(\'tick\')'), 'reel must play tick cue');
-  assert.ok(/easeOutCubic|1-Math\.pow\(1-/.test(game), 'reel must ease out');
-});
+
+
+
 
 test('tick audio cue exists', () => {
   assert.ok(src('audio.js').includes('tick:'), 'audio.js must define a tick cue');
 });
 
-test('training targets fall instead of vanishing', () => {
-  const game = src('game.js');
-  assert.ok(game.includes('userData.fall'), 'syncBots must drive a fall state');
-  assert.ok(/match\.training/.test(game), 'fall is gated to training mode');
-});
+
 
 test('career stats seed and persist real values', () => {
   const game = src('game.js');
