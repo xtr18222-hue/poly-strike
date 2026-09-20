@@ -8,9 +8,12 @@ const PORT = Number(process.argv[2] || 18959);
 const ROOT = resolve(process.argv[3] || './');
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  // ES modules must be served as JavaScript or browsers reject them outright.
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown',
+  '.glb': 'model/gltf-binary', '.mp3': 'audio/mpeg',
 };
 const started = new Set();
 createServer(async (req, res) => {
