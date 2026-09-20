@@ -12,24 +12,24 @@ with sync_playwright() as p:
     assert page.locator('#error').is_hidden()
     assert page.locator('#loadoutButton').count()==1,'loadout hub button missing'
     page.click('#loadoutButton');page.wait_for_timeout(250)
-    page.click('.wcard[data-weapon="kar98"]');page.wait_for_timeout(150)
-    assert page.evaluate('Game.state().primary')=='kar98'
+    page.click('.wcard[data-weapon="mosin"]');page.wait_for_timeout(150)
+    assert page.evaluate('Game.state().primary')=='mosin'
     page.click('#loadoutClose');page.wait_for_timeout(150)
     page.check('#fallback');page.click('#start');page.wait_for_timeout(500)
-    assert page.evaluate('Game.state().weapon')=='kar98'
+    assert page.evaluate('Game.state().weapon')=='mosin'
     page.keyboard.press('Digit2');assert page.evaluate('Game.state().weapon')=='deagle'
-    page.keyboard.press('Digit3');assert page.evaluate('Game.state().weapon')=='knife'
-    page.keyboard.press('Digit1');assert page.evaluate('Game.state().weapon')=='kar98'
-    page.keyboard.press('KeyQ');assert page.evaluate('Game.state().weapon')=='knife'
+    page.keyboard.press('Digit3');assert page.evaluate('Game.state().weapon')=='bayonet'
+    page.keyboard.press('Digit1');assert page.evaluate('Game.state().weapon')=='mosin'
+    page.keyboard.press('KeyQ');assert page.evaluate('Game.state().weapon')=='bayonet'
     page.mouse.move(640,400);page.mouse.wheel(0,100);page.wait_for_timeout(100)
-    assert page.evaluate('Game.state().weapon')=='kar98'
+    assert page.evaluate('Game.state().weapon')=='mosin'
     page.evaluate("Game.test.fixture('target',1000)");page.wait_for_timeout(300)
     page.keyboard.press('KeyG');page.wait_for_timeout(100)
     assert page.evaluate('Game.state().dropped'),'G drops primary'
     assert page.evaluate('Game.state().weapon')=='deagle'
     page.keyboard.press('Digit1');assert page.evaluate('Game.state().weapon')=='deagle'
     page.keyboard.press('KeyE');page.wait_for_timeout(300)
-    assert page.evaluate('Game.state().weapon')=='kar98'
+    assert page.evaluate('Game.state().weapon')=='mosin'
     page.keyboard.press('KeyF');page.wait_for_timeout(500)
     page.keyboard.down('KeyW');page.wait_for_timeout(30)
     assert page.evaluate('Game.state().inspect')==0,'movement immediately cancels inspect'
@@ -58,7 +58,7 @@ with sync_playwright() as p:
     page.click('#applySettings');page.reload();page.wait_for_timeout(300)
     assert page.locator('#sensitivity').input_value()=='1.23'
     assert page.locator('#adsSensitivity').input_value()=='0.67'
-    assert page.evaluate('localStorage.getItem("poly-primary")')=='kar98','loadout persists'
+    assert page.evaluate('localStorage.getItem("poly-primary")')=='mosin','loadout persists'
     assert not errors,errors
     print('PASS expansion inventory and loadout; zero errors')
     b.close()

@@ -38,9 +38,35 @@ window.PolyAudio = (() => {
     }
   } catch (_) {} }
   function tone(hz,duration,level,type='sine',delay=0){const now=ctx.currentTime+delay,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(hz,now);g.gain.setValueAtTime(level,now);g.gain.exponentialRampToValueAtTime(.0001,now+duration);o.connect(g);g.connect(master);o.start(now);o.stop(now+duration+.01);o.onended=()=>{o.disconnect();g.disconnect();};}
+  // Kill streak -> clip, indexed from 1. Male pack is 13 files, female 9.
+  // Clutch is a separate special callout (round-winning ace), not a streak tier.
   const PACKS = {
-    male: ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-06-54-Triple-Kill!','Mortal-Kombat-Announcer-2026-09-20-06-54-Multi-Kill!','[audio]Mega-......ill !','Mortal-Kombat-Announcer-2026-09-20-06-57-Ultra-Kill!','Mortal-Kombat-Announcer-2026-09-20-06-59-Unstoppable!','Mortal-Kombat-Announcer-2026-09-20-07-00-Rampage!','Mortal-Kombat-Announcer-2026-09-20-07-01-Dominating!','Mortal-Kombat-Announcer-2026-09-20-07-03-Unreal!','Mortal-Kombat-Announcer-2026-09-20-07-06-Devastation!','Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation'],
-    female: ['[UT Sexy Female Announcer]First......Blood','[UT Sexy Female Announcer]Doubl......-Kill','[UT Sexy Female Announcer]Tripl......Kill','[UT Sexy Female Announcer]Multi......ill !','[UT Sexy Female Announcer]Mega-......ill!!','[UT Sexy Female Announcer]Ultra......ll!!!','[UT Sexy Female Announcer]Unbel......able!','[UT Sexy Female Announcer]holy ......op!!! (1)'],
+    male: [
+      '[audio]First......lood!',
+      'Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill',
+      'Mortal-Kombat-Announcer-2026-09-20-06-54-Triple-Kill!',
+      'Mortal-Kombat-Announcer-2026-09-20-06-54-Multi-Kill!',
+      '[audio]Mega-......ill !',
+      'Mortal-Kombat-Announcer-2026-09-20-06-57-Ultra-Kill!',
+      'Mortal-Kombat-Announcer-2026-09-20-06-59-Unstoppable!',
+      'Mortal-Kombat-Announcer-2026-09-20-07-00-Rampage!',
+      'Mortal-Kombat-Announcer-2026-09-20-07-01-Dominating!',
+      'Mortal-Kombat-Announcer-2026-09-20-07-03-Unreal!',
+      'Mortal-Kombat-Announcer-2026-09-20-07-06-Devastation!',
+      'Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation',
+      'Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch',
+    ],
+    female: [
+      '[UT Sexy Female Announcer]First......Blood',
+      '[UT Sexy Female Announcer]Doubl......-Kill',
+      '[UT Sexy Female Announcer]Tripl......Kill',
+      '[UT Sexy Female Announcer]Multi......ill !',
+      '[UT Sexy Female Announcer]Mega-......ill!!',
+      '[UT Sexy Female Announcer]Ultra......ll!!!',
+      '[UT Sexy Female Announcer]Unbel......able!',
+      '[UT Sexy Female Announcer]holy ......op!!! (1)',
+      'Clutch',
+    ],
   };
   let voicePack = 'male';
   const clipCache = new Map();
@@ -76,5 +102,10 @@ window.PolyAudio = (() => {
   function setVoicePack(p) { if (PACKS[p]) voicePack = p; }
   function getVoicePack() { return voicePack; }
   function toggle() {muted=!muted;if(muted&&window.speechSynthesis)window.speechSynthesis.cancel();if(master)master.gain.setTargetAtTime(muted?0:.28,ctx.currentTime,.02);return muted;}
-  return {start,sound,announce,setVoicePack,getVoicePack,toggle,get muted(){return muted;},get ready(){return !!ctx;}};
+  function packFilenames(){
+    // Verification accessor: the exact audio file each kill streak resolves to.
+    return { male: PACKS.male.slice(0,13), female: PACKS.female.slice(0,9) };
+  }
+
+  return {start,sound,announce,setVoicePack,getVoicePack,toggle,get muted(){return muted;},get ready(){return !!ctx;},packFilenames};
 })();

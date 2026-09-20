@@ -32,10 +32,10 @@ with sync_playwright() as p:
     host.wait_for_function("window.__in && window.__in.length", timeout=10000)
     got=host.evaluate("JSON.stringify(window.__in)")
     assert '"state"' in got and json.loads(got)[0]['state']['x']==2.5, got
-    host.evaluate("__out.send({type:'shot',weapon:'awp',origin:{x:0,y:1.7,z:34},dir:{x:0,y:0,z:-1},seq:1})")
+    host.evaluate("__out.send({type:'shot',weapon:'l96',origin:{x:0,y:1.7,z:34},dir:{x:0,y:0,z:-1},seq:1})")
     guest.wait_for_function("window.__data && window.__data.some(d=>d.type==='shot')", timeout=10000)
     shot=guest.evaluate("JSON.stringify(window.__data.find(d=>d.type==='shot'))")
-    assert json.loads(shot)['weapon']=='awp', shot
+    assert json.loads(shot)['weapon']=='l96', shot
     guest.evaluate("__gnet.close()")
     host.wait_for_function("window.__out.connected===false", timeout=10000)
     closed=host.evaluate("window.__closed||''")

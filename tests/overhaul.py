@@ -24,8 +24,8 @@ with sync_playwright() as p:
 
     # --- strict main menu order: Play Offline / Play Online / Loadout / Store / Settings
     order = page.locator('#mainActions button').all_text_contents()
-    check(order == ['Play Offline (vs Bots)', 'Play Online', 'Loadout', 'Store', 'Settings'],
-          'menu order is Play Offline / Play Online / Loadout / Store / Settings %s' % order)
+    check(order == ['Play Offline (vs Bots)', 'Play Online', 'Loadout', 'Settings'],
+          'menu order is Play Offline / Play Online / Loadout / Settings %s' % order)
     check(page.locator('#primarySelect').count() == 0, 'legacy primary loadout select removed')
 
     # --- Loadout hub: previews render, primary + secondary selection persist
@@ -35,16 +35,16 @@ with sync_playwright() as p:
     check(page.locator('#primaryCards .wcard').count() == 3, 'three primary cards (AK/AWP/Kar98k)')
     check(page.locator('#secondaryCards .wcard').count() == 2, 'two secondary cards (Deagle/Knife)')
 
-    for key in ['ak47', 'awp', 'kar98']:
+    for key in ['akm', 'l96', 'mosin']:
         page.click('.wcard[data-weapon="%s"]' % key)
         page.wait_for_timeout(200)
         check(page.evaluate('Game.state().primary') == key, 'primary set to %s' % key)
         check(page.evaluate('document.querySelector("#loadoutCanvas") !== null'),
               'loadout preview canvas present for %s' % key)
 
-    page.click('.wcard[data-weapon="knife"]')
+    page.click('.wcard[data-weapon="bayonet"]')
     page.wait_for_timeout(150)
-    check(page.evaluate('localStorage.getItem("poly-secondary")') == 'knife',
+    check(page.evaluate('localStorage.getItem("poly-secondary")') == 'bayonet',
           'secondary persists to localStorage')
 
     # inspection inside the hub drives the preview pose
@@ -70,7 +70,7 @@ with sync_playwright() as p:
     # --- Career stats: play a match so the tab has data to render
     page.click('#loadoutButton')
     page.wait_for_timeout(200)
-    page.click('.wcard[data-weapon="kar98"]')
+    page.click('.wcard[data-weapon="mosin"]')
     page.wait_for_timeout(150)
     page.click('#loadoutClose')
     page.wait_for_timeout(200)
@@ -113,7 +113,7 @@ with sync_playwright() as p:
     # Fast switch back to the primary while the match is still live.
     page.keyboard.press('Digit1')
     page.wait_for_timeout(300)
-    check(page.evaluate('Game.state().weapon') == 'kar98', 'fast switch back to Kar98k')
+    check(page.evaluate('Game.state().weapon') == 'mosin', 'fast switch back to Kar98k')
 
     # --- Career tab records the finished match.
     page.evaluate('Game.test.fixture("match")')

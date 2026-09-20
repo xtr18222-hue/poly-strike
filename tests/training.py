@@ -36,7 +36,7 @@ with sync_playwright() as p:
     page.locator('#applySettings').click()
     page.click('#loadoutButton')
     page.wait_for_timeout(200)
-    page.click('.wcard[data-weapon="kar98"]')
+    page.click('.wcard[data-weapon="mosin"]')
     page.wait_for_timeout(150)
     page.click('#loadoutClose')
     page.wait_for_timeout(150)
@@ -62,7 +62,7 @@ with sync_playwright() as p:
 
     # Full weapon handling: switch to the Kar98k, ADS, reload with a mag drop.
     page.wait_for_timeout(300)
-    check(state()['weapon'] == 'kar98', 'Kar98k is the equipped primary in training')
+    check(state()['weapon'] == 'mosin', 'Kar98k is the equipped primary in training')
 
     page.mouse.down(button='right')
     page.wait_for_timeout(250)
@@ -90,7 +90,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     check(state()['reload'] > 0, 'reload starts on R')
     page.wait_for_timeout(3200)
-    check(state()['ammo']['kar98']['mag'] == 5, 'reload seats a fresh 5-round magazine')
+    check(state()['ammo']['mosin']['mag'] == 5, 'reload seats a fresh 5-round magazine')
 
     # Inspections still play in training.
     page.keyboard.press('KeyF')

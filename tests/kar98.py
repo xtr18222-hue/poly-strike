@@ -22,25 +22,25 @@ with sync_playwright() as p:
     page.wait_for_timeout(700)
     check(not errors, 'no load errors')
     check(page.evaluate('Object.keys(Game.state().ammo).length') == 5, 'ammo registry has 5 weapons')
-    check(page.evaluate('Game.state().weapon') == 'ak47', 'starts with AK primary')
+    check(page.evaluate('Game.state().weapon') == 'akm', 'starts with AK primary')
 
     page.click('#loadoutButton')
     page.wait_for_timeout(300)
-    page.click('.wcard[data-weapon="kar98"]')
+    page.click('.wcard[data-weapon="mosin"]')
     page.wait_for_timeout(200)
-    check(page.evaluate('Game.state().primary') == 'kar98', 'loadout hub selects Kar98k')
+    check(page.evaluate('Game.state().primary') == 'mosin', 'loadout hub selects Kar98k')
     page.click('#loadoutClose')
     page.wait_for_timeout(200)
     page.check('#fallback')
     page.click('#start')
     page.wait_for_timeout(600)
-    check(page.evaluate('Game.state().weapon') == 'kar98', 'spawns holding Kar98k')
+    check(page.evaluate('Game.state().weapon') == 'mosin', 'spawns holding Kar98k')
 
     # --- inspections run to completion with zero errors. Only slots present in
     # this session are asserted here (primary is kar98); ak47/awp pose math and
     # durations are covered by tests/inspection.cjs in Node. ---
-    for w, dur in [('kar98', 3.8), ('deagle', 2.6), ('knife', 1.5)]:
-        page.keyboard.press('Digit1' if w == 'kar98' else ('Digit2' if w == 'deagle' else 'Digit3'))
+    for w, dur in [('mosin', 3.8), ('deagle', 2.6), ('knife', 1.5)]:
+        page.keyboard.press('Digit1' if w == 'mosin' else ('Digit2' if w == 'deagle' else 'Digit3'))
         page.wait_for_timeout(300)
         check(page.evaluate('Game.state().weapon') == w, 'selected ' + w)
         page.keyboard.press('KeyF')
@@ -73,7 +73,7 @@ with sync_playwright() as p:
     # Primary is already kar98; Digit1 selects it.
     page.keyboard.press('Digit1')
     page.wait_for_timeout(300)
-    check(page.evaluate('Game.state().weapon') == 'kar98', 'back to Kar98k for damage tests')
+    check(page.evaluate('Game.state().weapon') == 'mosin', 'back to Kar98k for damage tests')
 
     # Place the player so the roll lands just under lethal: a full-health bot
     # survives the body shot. Computed from POLY_CORE.shotDamage so the test
@@ -126,7 +126,7 @@ with sync_playwright() as p:
     check(page.evaluate("PolyInspection.durations.ak47 === 3.4"), 'AK inspect duration 3.4s')
     check(page.evaluate("PolyInspection.durations.deagle === 2.6"), 'Deagle inspect duration 2.6s')
     check(page.evaluate("typeof POLY_CORE.shotDamage === 'function'"), 'shotDamage exported')
-    check(page.evaluate("POLY_CORE.shotDamage('kar98','head',110) > 100"), 'Kar98k headshot > 100 damage')
+    check(page.evaluate("POLY_CORE.shotDamage('mosin','head',110) > 100"), 'Kar98k headshot > 100 damage')
 
     b.close()
 

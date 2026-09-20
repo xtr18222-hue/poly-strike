@@ -6,7 +6,9 @@
  * position. Endpoints are exactly identity so the blend back to aim is
  * seamless. */
 (function (root, f) { if (typeof module === 'object' && module.exports) module.exports = f(); else root.PolyInspection = f(); })(globalThis, () => {
-  const durations = { ak47: 3.4, deagle: 2.6, awp: 3.6, kar98: 3.8, knife: 1.5 };
+  // New low-poly asset suite; every weapon needs an explicit duration or
+// inspect() is undefined and the key does nothing.
+const durations = { akm: 3.4, l96: 3.6, mosin: 3.8, mx: 3.2, hecate: 4.0, deagle: 2.6, bayonet: 1.5 };
   const smooth = t => t * t * t * (10 + t * (-15 + 6 * t));
   const TAU = Math.PI * 2;
 
@@ -15,7 +17,7 @@
     t = Math.max(0, Math.min(1, t));
     const e = smooth(t), w = Math.sin(Math.PI * e), b = w * w;
     const p = { dx: 0, dy: 0, dz: 0, rx: 0, ry: 0, rz: 0, handleA: 0, handleB: 0, blade: 0, magX: 0, magY: 0, magZ: 0, magR: 0 };
-    if (key === 'knife') {
+    if (key === 'bayonet') {
       // Butterfly knife: preserved exactly, two alternating flip variants.
       const sign = variant === 0 ? 1 : -1;
       p.dx = -0.07 * b;
@@ -26,7 +28,7 @@
       p.handleB = -sign * TAU * b;
       p.blade = sign * 0.35 * b;
     } else {
-      const isRifle = key === 'ak47' || key === 'awp' || key === 'kar98';
+      const isRifle = ['akm','l96','mosin','mx','hecate'].includes(key);
       /* Cinematic presentation. The weapon lifts and moves out to the support
        * side, then rolls through a slow three-beat tilt — receiver, chamber,
        * sides — carried by a continuous sweep so the camera travels the
@@ -42,7 +44,7 @@
       p.rx = 0.26 * amp * b + 0.1 * beat * b;
       p.ry = -0.36 * amp * b + sweep * 0.24 * amp;
       p.rz = 0.45 * amp * beat * b;
-      if (key === 'ak47') {
+      if (key === 'akm') {
         // Tactical magazine handling: detach, carry alongside, reseat.
         const lift = t < 0.25 ? smooth(t / 0.25) : t > 0.75 ? smooth((1 - t) / 0.25) : 1;
         p.magY = -0.13 * lift;
