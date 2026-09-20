@@ -290,7 +290,8 @@ const loadoutRenderer=new T.WebGLRenderer({canvas:$('loadoutCanvas'),antialias:t
 loadoutRenderer.setPixelRatio(Math.min(2,devicePixelRatio||1));loadoutRenderer.autoClear=true;loadoutRenderer.outputEncoding=T.sRGBEncoding;
 function resizeLoadout(){const cv=$('loadoutCanvas');const w=cv.clientWidth||360;const h=cv.clientHeight||240;if(w>4&&h>4){loadoutRenderer.setSize(w,h,false);loadoutCam.aspect=w/h;loadoutCam.updateProjectionMatrix();}}
 window.__loadoutModels=loadoutModels;window.__loadoutCam=loadoutCam;window.__loadoutSelected=()=>loadoutSelected;window.__loadoutScene=loadoutScene;window.__resizeLoadout=resizeLoadout;window.__loadoutRenderer=loadoutRenderer;
-function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);const m=loadoutModels[key];m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
+function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);// The card can fire for a weapon whose GLB is still loading or failed to load.
+const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
  for(const el of document.querySelectorAll('.wcard'))el.classList.toggle('active',el.dataset.weapon===key);
  // Rebuild the skin selector for the newly selected weapon.
  }
@@ -298,7 +299,7 @@ function renderLoadoutCards(){
  const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else secondary=key;try{localStorage.setItem(primaries.includes(key)?'poly-primary':'poly-secondary',key);}catch(_){}A.sound('equip');};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
  $('secondaryCards').replaceChildren(...['deagle','bayonet'].map(k=>mk(k,k==='deagle'?'Semi-auto pistol':'Bayonet / melee')));}
-$('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);refreshSkinSelects();};
+$('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutButton').focus();};
 $('loadoutInspect').onclick=()=>{loadoutInspectTime=PolyInspection.durations[loadoutSelected];loadoutInspectVar=(loadoutInspectVar+1)%2;A.sound('magout');};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
