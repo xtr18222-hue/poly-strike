@@ -11,10 +11,8 @@ with sync_playwright() as p:
  # the headshot produces the amber kill feed entry.
  page.evaluate("Game.test.fixture('target', 60)");page.wait_for_timeout(150)
  page.keyboard.press('Digit1');page.wait_for_timeout(300)
- page.evaluate('Game.test.aim(0)');page.wait_for_timeout(50)
- page.mouse.move(640,400);page.mouse.down(button='right');page.wait_for_timeout(40)
- page.mouse.move(640,370,steps=3);page.wait_for_timeout(40)
- page.mouse.up(button='right');page.wait_for_timeout(40)
+ # The Soldier rig's head is at y=1.93, not the old 1.5m centre.
+ page.evaluate('Game.test.bot(0,0,12); Game.test.aim(0)');page.wait_for_timeout(50)
  page.mouse.click(640,400);page.wait_for_timeout(200)
  assert page.locator('#feed .skull.headshot').count()==1,'amber headshot kill feed entry'
  assert 'headshot' in page.evaluate('sounds'),'headshot ding'

@@ -204,11 +204,12 @@ function shoot(){const w=C.WEAPONS[weapon];if(running)cancelInspect();if(!runnin
 // block point-blank shots at bots standing above it.
 const hits=ray.intersectObjects(rayMeshes,true);let end=origin.clone().addScaledVector(dir,80);// Skip non-bot scenery that lands first (floor at distance 0, walls) and
 // take the first hit that is actually a target or the switch box.
-const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;
+// The Soldier is a single mesh, so classify head/body by impact height.
+const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;let part=h.object.userData.part||'body';if(part==='body'){const g=bots[h.object.userData.botId];if(g&&h.point.y-g.position.y>1.45)part='head';}
   if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
    const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
   }
-  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,h.object.userData.part||'body',h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;
+  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,part,h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;
    const stationary=match.training&&match.mode!=='active';
    A.sound(h.object.userData.part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
    if(result.killed)addKill(`${h.object.userData.part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,h.object.userData.part==='head');}}
@@ -453,13 +454,14 @@ requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
 });
 let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,inspectVariant,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,inspect,ammo:JSON.parse(JSON.stringify(ammo)),inspectFade,bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// syncBots() writes the group transform; the nested Soldier pivot needs its
 // own world matrix refreshed or raycasts still see the pre-move position.
-bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
+select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
 // Camera forward is -Z at yaw 0, so the bearing to a target is atan2(dx,-dz).
 // The old (dx,dz) form pointed away from bots behind the player and made
 // every trainer shot hit scenery instead.
 // Camera forward is -Z at yaw 0. Bearing to target: atan2(dx, -dz) puts a
 // target straight ahead (-Z) at yaw 0, which is what the trainer needs.
-aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.85-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
+// The Soldier's head box tops at y=1.93; aim there for a clean headshot.
+aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.88-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 } catch(e){$('error').hidden=false;$('errorText').textContent=e.message;console.error(e);}
 })();

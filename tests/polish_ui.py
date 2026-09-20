@@ -9,7 +9,7 @@ with sync_playwright() as p:
  page.locator('#username').fill('<XTR & tester>');page.locator('#username').dispatch_event('change');page.reload();assert page.locator('#username').input_value()=='<XTR & tester>'
  assert 'Made by XTR' in page.locator('#menu footer').inner_text()
  assert page.locator('#mainActions button').all_text_contents()==['Play Offline (vs Bots)','Play Online','Loadout','Settings']
- page.locator('#fallback').check();page.locator('#start').click();page.keyboard.down('Tab');page.wait_for_timeout(200)
+ page.locator('#fallback').check();page.locator('#start').click();page.wait_for_function('Game.state().running');page.wait_for_timeout(1500);page.keyboard.down('Tab');page.wait_for_timeout(200)
  assert page.locator('#scoreboard th').all_text_contents()==['Name','Kills','Deaths','Score']
  assert '<XTR & tester>' in page.locator('#scoreboard').inner_text();assert page.locator('#scoreboard script').count()==0
  page.keyboard.up('Tab');assert page.locator('#scoreboard').is_hidden()

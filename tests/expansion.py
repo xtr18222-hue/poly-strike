@@ -30,6 +30,7 @@ with sync_playwright() as p:
     page.keyboard.press('Digit1');assert page.evaluate('Game.state().weapon')=='deagle'
     page.keyboard.press('KeyE');page.wait_for_timeout(300)
     assert page.evaluate('Game.state().weapon')=='mosin'
+    page.evaluate("Game.test.select('mosin')");page.wait_for_timeout(300)
     page.keyboard.press('KeyF');page.wait_for_timeout(500)
     page.keyboard.down('KeyW');page.wait_for_timeout(30)
     assert page.evaluate('Game.state().inspect')==0,'movement immediately cancels inspect'

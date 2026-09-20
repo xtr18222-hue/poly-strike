@@ -31,7 +31,7 @@ with sync_playwright() as p:
  assert variants==[0,1,0],('exactly two alternate bayonet animations',variants)
  page.keyboard.press('Digit1');page.wait_for_timeout(400);page.evaluate("Game.test.fixture('target',1000)");page.wait_for_timeout(100)
  page.mouse.down();page.wait_for_timeout(600);page.mouse.up();s=page.evaluate('Game.state()');assert s['ammo']['akm']['mag']<=25,('reliable automatic fire',s)
- page.keyboard.press('KeyR');page.wait_for_timeout(1500);assert page.evaluate('Game.state().ammo.ak47.mag')==30,'fast reload'
+ page.keyboard.press('KeyR');page.wait_for_timeout(1500);assert page.evaluate('Game.state().ammo.akm.mag')==30,'fast reload'
  assert not errors,errors
  print('PASS upgrade menu/order, 3 maps, graphics budgets, sprint slide, rifle/pistol ADS, two knife animations, AK sustained fire and faster reload; zero runtime errors')
  b.close()
