@@ -12,6 +12,8 @@ with sync_playwright() as p:
  page.evaluate("Game.test.fixture('target', 60)");page.wait_for_timeout(150)
  page.keyboard.press('Digit1');page.wait_for_timeout(300)
  # The Soldier rig's head is at y=1.93, not the old 1.5m centre.
+ # One headshot with the AK must drop the target outright, so stage a low-HP bot.
+ page.evaluate("Game.test.fixture('target', 30)");page.wait_for_timeout(150)
  page.evaluate('Game.test.bot(0,0,12); Game.test.aim(0)');page.wait_for_timeout(50)
  page.mouse.click(640,400);page.wait_for_timeout(200)
  assert page.locator('#feed .skull.headshot').count()==1,'amber headshot kill feed entry'

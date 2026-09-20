@@ -116,7 +116,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(100)
         if page.evaluate('Game.state().reload') == 0:
             break
-    after = page.evaluate('Game.state().ammo.kar98')
+    after = page.evaluate('Game.state().ammo.mosin')
     check(after['mag'] == 5, 'reload restores 5 rounds')
     check(after['reserve'] == before['reserve'] - (5 - before['mag']), 'reserve consumed correctly (%d -> %d)' % (before['reserve'], after['reserve']))
 

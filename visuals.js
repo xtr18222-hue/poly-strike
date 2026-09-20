@@ -1118,6 +1118,12 @@
   // View model: fires down -Z, origin at the grip so the parent can place it
   // at (0.32, -0.3, -0.65) with a fixed 65 FOV camera.
   function buildWeapon(THREE, key) {
+    // The new low-poly suite comes from PolyAsset; the procedural builders below
+    // only serve any key PolyAsset cannot.
+    if (window.PolyAsset && PolyAsset.hasWeapon(key)) {
+      const fitted = PolyAsset.weapon(key);
+      if (fitted) { fitted.userData.key = key; return fitted; }
+    }
     const builder = Object.prototype.hasOwnProperty.call(WEAPON_BUILDERS, key) && WEAPON_BUILDERS[key];
     if (!builder) throw new Error('buildWeapon: unknown weapon "' + key + '"');
     const g = builder(THREE, matCache());
