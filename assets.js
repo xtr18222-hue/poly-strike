@@ -123,6 +123,11 @@
   // ~16m off the rig, so a bot at waypoint (0,12) renders its mesh elsewhere
   // and the hit ray lands on empty air. Wrap the clone in a pivot and offset
   // that pivot by the rig's own bounding-box centre.
+  //
+  // The GLB is fine as exported: a single mesh with a uniform 100x node scale
+  // and the upright rotation baked onto the node, giving a 1.93m rig in world
+  // space. Do not bake that scale into the geometry — the local 0.01m bounds
+  // are exactly what the centring math below expects.
   function cloneSoldier() {
     if (!soldierGLB) return null;
     const g = cloneGLB(soldierGLB, true);

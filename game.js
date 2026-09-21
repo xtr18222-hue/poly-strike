@@ -38,7 +38,10 @@ $('username').value=username;$('username').onchange=()=>{username=cleanName($('u
 // helpers such as applyCharSkinToView can see them; the try only guards init.
 const models={};
 try {
-const renderer=new T.WebGLRenderer({canvas:$('game'),antialias:false,powerPreference:'high-performance'});
+// preserveDrawingBuffer is required so the compositor screenshot path and
+// readPixels-based diagnostics can see the rendered frame. The default
+// (false) returns only the cleared buffer in headless captures.
+const renderer=new T.WebGLRenderer({canvas:$('game'),antialias:false,powerPreference:'high-performance',preserveDrawingBuffer:true});
 renderer.setPixelRatio(1);renderer.info.autoReset=false; renderer.outputEncoding=T.sRGBEncoding; renderer.autoClear=false;
 const scene=new T.Scene();scene.background=new T.Color(0xa9c6ca);scene.fog=new T.Fog(0xa9c6ca,35,110);
 scene.add(new T.HemisphereLight(0xe5f4ff,0x756042,1.25));const sun=new T.DirectionalLight(0xffeccb,1.7);sun.position.set(-20,40,15);scene.add(sun);
@@ -57,7 +60,7 @@ const readyAll = () => Promise.all([
     const t = setInterval(() => { if (window.__psAddonsBound) { clearInterval(t); r(); } }, 60);
   }),
 ]);
-readyAll().then(()=>{
+readyAll().then(()=>{bindModels();
   arena=PolyVisual.buildArena(T,scene,C,preset);
   worldNodes=scene.children.filter(o=>!o.isLight);
   // The Soldier replaces the placeholder rig outright. Nesting it would
@@ -79,16 +82,23 @@ readyAll().then(()=>{
   };
   bots.forEach((g, i) => { if (!g.userData.soldierAttached) { g.userData.soldierAttached = true; attachSoldier(g, i); } });
 });
- // Weapons now come from the GLB asset suite; the procedural builder is gone.
-for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
- viewScene.add(src);models[key]=src;src.visible=false;
- src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});}
-// Weapons are pure-asset now; no skin application step.
-const handRoots={};for(const k of keys){const h=new T.Group();handRoots[k]=h;
+// Weapons now come from the GLB asset suite; the procedural builder is gone.
+// The models MUST resolve after PolyAsset.ready(): the suite loads
+// asynchronously and weapon() returns null before it resolves, which left
+// every viewScene weapon group empty and the in-game weapon invisible.
+const handRoots={};for(const k of keys){const h=new T.Group();handRoots[k]=h;viewScene.add(h);}
+let modelsBound=false;
+const bindModels=()=>{
+ if(modelsBound)return;modelsBound=true;
+ for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
+  viewScene.add(src);models[key]=src;src.visible=false;
+  src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});}
+ // Weapons are pure-asset now; no skin application step.
  // The FPS rigs carry baked arms+weapon; standalone guns get the arm rig.
- const rig=PolyAsset.rig(k==='bayonet'?'deagle':k)||PolyAsset.rig('AKM');
- if(rig){h.add(rig);rig.visible=true;rig.position.set(0,0,0);}
- viewScene.add(h);}
+ for(const k of keys){const h=handRoots[k];
+  const rig=PolyAsset.rig(k==='bayonet'?'deagle':k)||PolyAsset.rig('AKM');
+  if(rig){h.add(rig);rig.visible=true;rig.position.set(0,0,0);}}
+};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
@@ -244,6 +254,13 @@ function loadMap(id){
  mapId=['desert','industrial','urban','training'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
+ // disposeWorld() pulled the bot groups out of the scene along with the arena
+ // nodes; nothing in the load path re-adds them, so every match rendered
+ // against bots that were detached from the scene graph — they still raycast
+ // (the hit test uses the raw bot list, not scene membership) and still appear
+ // on the radar, but never draw. Re-attach them here and keep the arena's
+ // frozen-matrix convention off the rig: bots move every frame via syncBots().
+ for(const b of bots){if(!b.parent)scene.add(b);b.traverse(n=>{n.matrixAutoUpdate=true;});}
  // Rebuild the bot models if this arena needs a different count.
  rebuildBots();
  document.querySelector('.brand small').textContent=C.MAP.name||mapId.toUpperCase();cam.far=budget.far;cam.updateProjectionMatrix();
@@ -288,14 +305,20 @@ const loadoutScene=new T.Scene();loadoutScene.background=new T.Color(0x0b1c22);l
 const loadoutCam=new T.PerspectiveCamera(45,1.5,.02,10);loadoutCam.position.set(0,.12,1.15);loadoutCam.lookAt(0,.03,0);
 const loadoutModels={};
 // Asset-backed weapons: every model comes from PolyAsset now, skins stripped.
-for(const k of keys){const src=PolyAsset.weapon(k);if(!src)continue;const pivot=new T.Group();pivot.add(src);loadoutScene.add(pivot);loadoutModels[k]=pivot;fitLoadoutModel(k,src);}
+// Deferred until the asset suite resolves: weapon() returns null before
+// PolyAsset.ready(), which left every loadout preview empty.
+const bindLoadoutModels=()=>{
+ for(const k of keys){if(loadoutModels[k])continue;const src=PolyAsset.weapon(k);if(!src)continue;const pivot=new T.Group();pivot.add(src);loadoutScene.add(pivot);loadoutModels[k]=pivot;fitLoadoutModel(k,src);
+  pivot.matrixAutoUpdate=true;pivot.traverse(n=>{n.matrixAutoUpdate=true;});}
+};
+PolyAsset.ready().then(bindLoadoutModels,bindLoadoutModels);
 // Weapon previews start hidden (the loadout hub selects one on open); visibility
 // is set on the whole subtree, never just the wrapper pivot.
 // Loadout models must keep updating their world matrices: loadMap freezes
 // matrixAutoUpdate on the arena's world nodes and that flag is inherited by
 // any Object3D parented underneath them, but these pivots live in their own
 // scene. Keep them explicit so the render never sees a stale transform.
-for(const k of Object.keys(loadoutModels)){const p=loadoutModels[k];p.matrixAutoUpdate=true;p.traverse(n=>{n.matrixAutoUpdate=true;});}
+// (Applied per-model in bindLoadoutModels, which runs after the assets land.)
 // Visibility is inherited down a THREE scene graph, so toggling only the pivot
 // leaves the weapon mesh inside it hidden and the preview renders nothing.
 // setLoadoutVisible flips the whole subtree.
@@ -308,7 +331,7 @@ const loadoutRenderer=new T.WebGLRenderer({canvas:$('loadoutCanvas'),antialias:t
 loadoutRenderer.setPixelRatio(Math.min(2,devicePixelRatio||1));loadoutRenderer.autoClear=true;loadoutRenderer.outputEncoding=T.sRGBEncoding;
 function resizeLoadout(){const cv=$('loadoutCanvas');const w=cv.clientWidth||360;const h=cv.clientHeight||240;if(w>4&&h>4){loadoutRenderer.setSize(w,h,false);loadoutCam.aspect=w/h;loadoutCam.updateProjectionMatrix();}}
 window.__loadoutModels=loadoutModels;window.__loadoutCam=loadoutCam;window.__loadoutSelected=()=>loadoutSelected;window.__loadoutScene=loadoutScene;window.__resizeLoadout=resizeLoadout;window.__loadoutRenderer=loadoutRenderer;
-function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);// The card can fire for a weapon whose GLB is still loading or failed to load.
+function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;bindLoadoutModels();for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);// The card can fire for a weapon whose GLB is still loading or failed to load.
 const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
  for(const el of document.querySelectorAll('.wcard'))el.classList.toggle('active',el.dataset.weapon===key);
  // Rebuild the skin selector for the newly selected weapon.
@@ -340,6 +363,8 @@ try{const saved=JSON.parse(localStorage.getItem('poly-career'));if(saved&&typeof
 function saveCareer(){try{localStorage.setItem('poly-career',JSON.stringify(career));}catch(_){}}
 function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=match.kills||0;career.deaths+=match.deaths||0;career.headshots+=match.headshots||0;career.shotsFired+=match.shotsFired||0;career.shotsHit+=match.shotsHit||0;career.roundsWon+=match.score.player||0;saveCareer();}
 window.__bots=bots;Object.defineProperty(window,'__match',{get:()=>match});Object.defineProperty(window,'__arena',{get:()=>arena});
+/* DIAGNOSTIC: expose the view scene graph so tests can verify the viewmodel. */
+window.__viewScene=viewScene;window.__models=models;window.__handRoots=handRoots;
 function openCareer(){ // Career reads real stats tracked during matches. A first-time
  // player sees a starter service record so the panel is not all zeros; the
  // grant is one-time (guarded by a localStorage key) and never overwrites
@@ -451,7 +476,7 @@ function resize(){const res=PolySettings.resolution(innerWidth,innerHeight,devic
 // The roster resolves from PolyAsset, so the first refill has to wait until the
 // asset pipeline has the weapon definitions available.
 let booted=false;
-const boot=()=>{ if(booted) return; booted=true; refill(); requestAnimationFrame(tick); };
+const boot=()=>{ if(booted) return; booted=true; bindModels(); refill(); requestAnimationFrame(tick); };
 PolyAsset.ready().then(boot, boot);
 requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
   if(!booted) { resize(); }

@@ -90,3 +90,61 @@ Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 - inspection.js circular glitch fixed: roll was driven by a signed `Math.sin` so it flipped sign mid-animation; now a one-sided easing with exact identity endpoints. Knife flips untouched.
 - tests/overhaul2.py added: 17 checks — canvas size/viewport, 360 drag, 3 skins + Dragon, applySkin colour change, 5-item menu, 3 crates, reel scroll + crate consumed + rarity result, mission progress + crate reward, two independent hip pivots. ALL PASS, zero errors.
 - Gotcha (cost 2h): `const models={}` was declared inside the `try {` block, making it block-scoped and invisible to `applyCharSkinToView` in the IIFE scope — TDZ `ReferenceError` killed the whole game init. Hoist such declarations out of the try.
+
+## Agent-skills + Blender-MCP expansion (2026-09-21) — DONE
+15 repos cloned to `C:/Users/xtr18/agent-skills-src`; 960 skills installed under `%LOCALAPPDATA%/hermes/skills/`.
+HERMES_HOME = `C:\Users\xtr18\AppData\Local\hermes` (NOT `~/.hermes` on this box).
+- URL corrections (3 requested repos were 404): `mission-control`→agent37-platform/**minions**;
+  resemble-ai/detect→resemble-ai/**detect-skill**; ZeroPointRepo/youtube-full→ZeroPointRepo/**youtube-skills**.
+  Typo fixed: mattpo**c**k/skills.
+- Installed: agent-reach, resemble-detect, composio + skill-creator, make-interfaces-feel-better,
+  10× omh-*, 25× addyosmani, 13× youtube, 818× Anthropic-Cybersecurity (`research/cybersecurity/`),
+  89× OpenMontage Layer-3 (`.agents/skills` → `media/openmontage/`). Total loadable in profile: 1,013.
+- 4 repos are NOT skill repos, installed as CLI tools instead: **defuddle** `npm i -g defuddle`
+  (CLI works: `defuddle parse <url>`); **minions** `npm i -g minionsai` but the command is **`minions`**
+  (v0.1.27, bin `C:\Users\xtr18\AppData\Roaming\npm`); **SkillClaw** in its own venv
+  (`SkillClaw/.venv/Scripts/skillclaw.exe`, works) — **deliberately NOT activated** because
+  `skillclaw setup`/`start --daemon` rewrites `hermes/config.yaml` to route the model through its proxy;
+  **humanizer** skipped — a newer bundled port (`creative/humanizer` v2.5.1) already won the name collision.
+- Blender MCP fully operational: Blender 5.2 at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`;
+  addon installed+enabled in `%APPDATA%\Blender Foundation\Blender\5.2\scripts\addons\blender_mcp_addon.py`;
+  MCP registered in config.yaml as `blender` (`uv run --project C:/Users/xtr18/agent-skills-src/Blender-mcp blender-mcp`,
+  13/13 tools). Verified end-to-end: `get_scene_info` returned the live scene, `execute_blender_code` created a sphere.
+  Do NOT `uvx blender-mcp` from PyPI — that package is now a stub redirecting to ahujasid/mcp-for-blender.
+- Load-bearing gotchas: Hermes keys a skill by frontmatter `name:` not dir name (dup names silently drop one);
+  `hermes skills install` rejects `file://` (registry ids or https SKILL.md only), but manual copy into a
+  category subdir registers as `local`; a skill dir at the skills ROOT is not discovered;
+  `hermes mcp add` auto-Cancels the tool-enable prompt without a TTY — pipe `yes |`;
+  Blender addon socket server only replies while the GUI event loop pumps (headless `--background` accepts
+  connections but never responds, since `bpy.app.timers` don't fire);
+  `api.github.com` is unreachable (TLS revocation-check failure) but git over https to github.com works;
+  the local model at localhost:20128 sometimes returns empty responses on long prompts — not a tool failure.
+- Needs a human: `TRANSCRIPT_API_KEY` (youtube skills), `RESEMBLE_API_KEY` (resemble-detect),
+  `agent-reach doctor --json` channel config, and the go-ahead to activate SkillClaw.
+
+## Shooting-range asset pack (Blender MCP, 2026-09-21) — DONE
+Built entirely in Blender 5.2 via `execute_blender_code`, exported to
+`assets/models/shooting-range.glb` (113 KB) + `shooting-range.blend` source.
+Flat/unshaded: every material is an Emission shader + pure-white world, so the pack
+renders with zero lighting cost in Three.js.
+- Hierarchy: Floor / Walls / LaneLines / Barrier / Target_1..5 / RangeCamera. 5 meshes,
+  11 materials, 4708 verts, 2714 tris, 32 draw calls. Camera at (0, 6.4, 1.65), 40mm, +Y.
+- Floor grid crosses (+) are real geometry: 66 recessed dark boxes per tile, not a texture.
+- Targets: one shared mesh data block, origin at the base pivot. Bullseye is 4 concentric
+  annulus rings (red/white/red/white-centre) built as quads, not decals, +0.015 in front
+  of the plate so it never z-fights. All materials `use_backface_culling=False`.
+- Fall: one `TargetFall_N` action per target, rotation_euler X 0→0 (f1-20) → +90° (f44),
+  BEZIER/EASE_OUT. Verified in Blender render (targets land face-down, back up) and in
+  the exported GLB (node Target_3 up-vector [0,0,1] → [0,-1,0], animation drives the
+  correct node). Duration 1.83 s each, 1 track.
+- Blender 5.2 API gotchas hit here: `bmesh.faces.new(verts[, source])` takes NO material
+  arg — set `face.material_index` after; objects are made via `bpy.data.objects.new()`
+  + `scene.collection.objects.link()` (no `collection.objects.new`); `Material.shadow_method`
+  and `export_colors` on glTF export do not exist. A `bpy.ops.render.render()` MCP call
+  times out with "No data received" but the render still lands on disk — poll the file.
+- Blender closed once mid-session; relaunch with
+  `blender.exe --python <autostart that calls bpy.ops.blendermcp.start_server()>`.
+  A .py passed as a positional arg is refused as an unsupported file format.
+- Verification: new `tests/load_range_glb.mjs` (needs `--loader tests/three-shim.mjs`,
+  which maps `three`/`three/addons/` onto the vendored r149 build) loads the GLB and
+  asserts the fall tips the target. `npm test` still 58/58 green.
