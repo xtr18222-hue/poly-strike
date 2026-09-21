@@ -208,3 +208,60 @@ renders with zero lighting cost in Three.js.
 - Verification: new `tests/load_range_glb.mjs` (needs `--loader tests/three-shim.mjs`,
   which maps `three`/`three/addons/` onto the vendored r149 build) loads the GLB and
   asserts the fall tips the target. `npm test` still 58/58 green.
+
+## Second overhaul (2026-09-21) — DONE, pushed f451639, SW v14
+- Viewmodel is the weapon alone: hand roots and the FPS arm rig binding deleted
+  from game.js. `inspection.js` and `tests/inspection.cjs` deleted; the KeyF bind,
+  all `inspect*` state, the loadout inspect feature/button/script tag/precache
+  entry are gone. `#loadoutInspect` stays `hidden` in index.html.
+- Weapon parts re-separated in Blender (`tests/separate2.py`, deleted after use):
+  the take-1 `attachment` pivot over-captured whole-model geometry on
+  Mosin/AKM, which was the floating mags/rounds. Take 2 classifies by strict
+  name regex. `fitWeapon` was also broken — it applied an orientation Euler then
+  overwrote it, so fitted Z extent was ~0.03–0.08 m (weapons rendered as slivers);
+  now axis-guess orientation + real-world length scaling + muzzle anchor from
+  the fitted box.
+- CRITICAL: the separation renames pivots to `mag_Object_19` etc. The old
+  `NAME_HINTS = { mag: /^mag$/ }` no longer matched, so `root.userData.mag` was
+  undefined and reload crashed with "Cannot read properties of undefined
+  (reading 'copy')" (861 page errors). Hints now match by prefix (`/^mag/`) and
+  `relinkParts` picks the heaviest pivot, same as fitWeapon.
+- CRITICAL: game.js module-level `C` is the bare `window.POLY_CORE` facade — it
+  has `forMap` but NO `.MAP`. `loadMap()` reassigns `C = POLY_CORE.forMap(id)`.
+  Any `C.MAP.*` read in game.js is always undefined; gate camera/training
+  behaviour on `mapId` or `match.training` instead.
+- Pro FPS bots: `CLIP_FILES` registers the full Pro Rifle Pack (33 clips), each
+  verified to parse with a real AnimationClip by `tests/probe_clips.mjs`
+  (`node --import ./tests/three-importmap.mjs tests/probe_clips.mjs`).
+  Two legacy Mixamo files (`male_laying_pose.fbx`, `running_slide.fbx`) only
+  load with a `window` shim and were replaced by pack clips `death from the
+  back.fbx` / `jump down.fbx`. Range spawn pads play idleAim/run/walkRight/
+  slide/crouchAim/lay so the whole suite is visible at once; live run shows all
+  6 bots armed with advancing clip times.
+- Top-down camera: `KeyT` toggles an overhead view on any non-default map
+  (`mapId!=='desert'`). Applies position + downward pitch + eased fov, exposed
+  as `topDown` in `Game.state()`. Live verified: cam moves to [0,34,34] and
+  toggles back off.
+- Training: the `if(C.MAP.training&&primaries.includes('mosin'))primary='mosin'`
+  lock in `deploy()` is removed; primary/secondary/melee switch freely via
+  Digit1/2/3 and wheel. Inventory is `[primary,'deagle','bayonet']`.
+- Audio: per-weapon firing PROFILES added — `sound()` previously only knew
+  ak47/awp/kar98/deagle, so akm/l96/mosin/hecate/mx/bayonet fired silently.
+  First Blood is once per match via a `firstBlood` flag (reset in `spawn()`)
+  plus an `announce()` guard so `'streak'` can never resolve to `list[0]`.
+  `TIER_CAP = 9`: kill lines play to 9 kills then go silent (known, unchanged).
+- Sniper bolt strokes along the bore axis with a sin(π·t) pull/return instead
+  of the outward-popping rotation on the wrong axis.
+- sw.js: `assets.js` was MISSING from the precache list (it is load-bearing —
+  CLIP_FILES/fitWeapon/bindPart live there) and is now included; cache v14.
+  The FILES list now matches index.html's script tags exactly.
+- `npm test` is 70/70 green (`tests/overhaul.cjs` added: 12 tests for clip
+  registration, training freedom, First Blood, top-down, no-hands viewmodel).
+  Live browser run: 0 console/page errors, 6 animating bots, top-down verified.
+- Headless Playwright note: `?test=1` still hits the old SW cache because the
+  fetch handler uses `ignoreSearch:true` — unregister the service worker in an
+  `add_init_script` before first navigation. `deploy()` calls
+  `document.activeElement?.blur()`, which dispatches a window blur and pauses
+  the match via the `blur→pause()` listener, so synthetic keydown events never
+  reach the handler; click the canvas first, then use `pg.keyboard.press`.
+
