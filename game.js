@@ -113,7 +113,7 @@ readyAll().then(()=>{bindModels();
     }});
     g.add(m);
   };
-  bots.forEach((g, i) => { if (!g.userData.soldierAttached) { g.userData.soldierAttached = true; attachSoldier(g, i); } });
+  bots.forEach((g, i) => { if (!g.userData.soldierAttached && typeof attachSoldier==='function') { g.userData.soldierAttached = true; attachSoldier(g, i); } });
 });
 // Weapons now come from the GLB asset suite; the procedural builder is gone.
 // The models MUST resolve after PolyAsset.ready(): the suite loads
@@ -288,9 +288,12 @@ function rebuildBots(){
  for(const b of bots)scene.remove(b);
  bots.length=0;
  for(let i=0;i<want;i++){const g=new T.Group();scene.add(g);bots.push(g);}
- if(window.PolyAsset&&PolyAsset.progress().soldier){
+ if(window.PolyAsset&&PolyAsset.progress().soldier&&typeof attachSoldier==='function'){
   // Fresh bot groups still need the real Soldier rig; rebuildBots runs after
   // the asset boot, so the swap above never sees these groups.
+  // The readyAll() promise can resolve mid-module-parse (the asset fetch
+  // completes before this module finishes evaluating), in which case
+  // attachSoldier is still null — skip then; the boot pass attaches instead.
   bots.forEach((g, i) => { g.userData.soldierAttached = false; attachSoldier(g, i); });
  }
 }
