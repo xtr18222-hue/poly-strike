@@ -122,6 +122,43 @@ HERMES_HOME = `C:\Users\xtr18\AppData\Local\hermes` (NOT `~/.hermes` on this box
 - Needs a human: `TRANSCRIPT_API_KEY` (youtube skills), `RESEMBLE_API_KEY` (resemble-detect),
   `agent-reach doctor --json` channel config, and the go-ahead to activate SkillClaw.
 
+## Rigged soldier character (Blender MCP, 2026-09-21) — DONE & PUSHED
+`assets/models/soldier-rigged.glb` (110 KB) + `.blend` source, commit 9f78a64
+(follow-up 94e4f5f reverts 23 unrelated pre-staged test-file deletions that the
+soldier commit accidentally picked up — always check `git status --short`
+before committing).
+- Reference asset `Soldier by madtrollstudio - UL46oXeZYK.glb` inspected ONLY for
+  scale: it is a static (unrigged) mesh, 1.93 m tall, 0.53 m wide, 0.5 MB. The
+  new character is a completely distinct design: combat helmet + visor, tac vest
+  with tan pouches, backpack, knee pads, team armband, held rifle, 1.95 m tall.
+- Ultra-light: 939 verts, 457 tris, 10 draw calls, 10 flat Emission materials
+  in a pure-white world (zero lighting cost). Rigged, so heavier per-vertex than
+  the static reference, but still trivially small for WebGL.
+- Rig: 19-bone humanoid — Hips -> Spine -> Chest -> Neck -> Head, Shoulder.L/R
+  -> UpperArm -> LowerArm -> Hand, UpperLeg -> LowerLeg -> Foot. Hard 1.0
+  vertex weights (one group per part) = clean rigid low-poly deformation.
+- 3 clips: `SoldierIdle` 2.5 s breathing sway, `SoldierWalk` 1.25 s gait cycle
+  with counter-swinging arms, `SoldierFall` 1.25 s collapse to prone (knees
+  buckle, Hips pitch -100 deg, ends low with the head near the ground).
+- Verified: `tests/load_soldier_rigged.mjs` (r149 + three-shim loader) parses
+  the GLB, confirms 19 bones + 3 clips, and that the fall drives 1.36 m of
+  head-bone displacement with the skinned mesh following. Blender renders of
+  T-pose, mid-walk and fall-end confirmed clean by vision review.
+  `npm test` still 58/58.
+- Blender 5.2 rigging gotchas (all hit, all worked around): `scn.objects.active`
+  does not exist — set `bpy.context.view_layer.objects.active`; bmesh vertex
+  indices go stale across `b2.bmesh` ops (clip/delete) so weight assignment by
+  `.index` assigns nothing — match vertices by rounded 3D position instead;
+  after deleting bmesh verts call `bm.verts.index_update()` + `ensure_lookup_table()`
+  before reading indices; `bpy.ops.object.calculate_roll` is unavailable headless
+  (Blender 5.2 bone `roll` is read-only from RNA) — set roll manually with
+  `arm.edit_bones[name].align_roll(vec)`.
+- glTF export leak: `export_format='GLB'` with `use_selection=False` still
+  exported orphan datablocks from other scenes, and a duplicated mesh. Fix:
+  `use_selection=True` with only the target objects selected, then
+  `bpy.data.batch_remove(...)` the orphans and re-export. The first clean export
+  still kept a duplicated `SoldierFall.001` action — delete those before export.
+
 ## Custom tactical map "Depot" (Blender MCP, 2026-09-21) — DONE & PUSHED
 New map built in a separate Blender scene `TacticalMap` (the shooting-range scene was
 left untouched). Exported to `assets/models/map-depot.glb` (44 KB) + `map-depot.blend`.
