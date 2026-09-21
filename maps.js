@@ -113,5 +113,48 @@
       { x: 11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
     ],
   };
-  return { desert, industrial, urban, training };
+  // Test maps: gated behind the 116791 code entered in Settings. Both load
+  // their real authored GLB geometry (see PolyVisual.buildArena, which reads
+  // map.model) instead of the procedural box arena. Bots on these maps are
+  // peaceful demonstrators: they never shoot back and only loop animations.
+  const range = {
+    id: 'test_range', name: 'Shooting Range', theme: 'test',
+    size: 76, bounds: { hx: 25, hz: 50 }, nav: [],
+    spawnPlayer: { x: 0, z: 34 },
+    spawnOpponent: { x: 0, z: -34 },
+    test: true, peaceful: true,
+    // Authored geometry: theking1322's target range (50 x 7.2 x 100).
+    model: { file: 'theking1322_range.glb', scale: 0.5 },
+    spawnBots: [
+      { x: 0, z: 14, anim: 'idle' }, { x: -8, z: 6, anim: 'run' },
+      { x: 8, z: 6, anim: 'walk' }, { x: -16, z: -10, anim: 'slide' },
+      { x: 16, z: -10, anim: 'crouch' }, { x: 0, z: -24, anim: 'lay' },
+    ],
+    solids: [
+      // Keep a low collision shell so stray shots still hit something and the
+      // player cannot walk off the GLB into the void.
+      { x: 0, z: 0, w: 50, d: 1, h: 0.4, kind: 'wall' },
+      { x: 0, z: 0, w: 1, d: 100, h: 0.4, kind: 'wall' },
+    ],
+  };
+  const depot = {
+    id: 'test_depot', name: 'Tactical Depot', theme: 'test',
+    size: 76, bounds: { hx: 20, hz: 15 }, nav: [],
+    spawnPlayer: { x: 0, z: 12 },
+    spawnOpponent: { x: 0, z: -14 },
+    test: true, peaceful: true,
+    // Authored geometry: the low-poly tactical depot (40.6 x 5.1 x 28.6,
+    // centered at z=-14, so shift it to sit inside the bounds).
+    model: { file: 'map-depot.glb', scale: 1, offset: [0, 0, 1] },
+    spawnBots: [
+      { x: -6, z: 2, anim: 'idle' }, { x: 6, z: 2, anim: 'run' },
+      { x: 0, z: -4, anim: 'crouch' }, { x: -8, z: -10, anim: 'lay' },
+      { x: 8, z: -10, anim: 'slide' },
+    ],
+    solids: [
+      { x: 0, z: 0, w: 40, d: 1, h: 0.4, kind: 'wall' },
+      { x: 0, z: 0, w: 1, d: 30, h: 0.4, kind: 'wall' },
+    ],
+  };
+  return { desert, industrial, urban, training, range, depot };
 });

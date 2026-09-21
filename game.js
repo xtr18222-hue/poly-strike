@@ -2,6 +2,14 @@
 (() => { 'use strict';
 const $=id=>document.getElementById(id), T=window.THREE, A=window.PolyAudio;
 let C=window.POLY_CORE, mapId='desert', preset='medium';
+// Test-map access code. Entered in Settings → "Map code"; when it matches,
+// offline play overrides standard map selection and cycles the two test maps
+// on each deploy, so one code gives access to both new battlegrounds.
+const TEST_MAP_CODE='116791';
+const TEST_MAPS=['range','depot'];
+let testMapIndex=0;
+function testMapUnlocked(){return $('mapCode')&&$('mapCode').value.trim()===TEST_MAP_CODE;}
+function nextTestMap(){const id=TEST_MAPS[testMapIndex%TEST_MAPS.length];testMapIndex++;return id;}
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
 const primaries=['akm','l96','mosin','mx','hecate'];let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();
@@ -50,6 +58,9 @@ const viewScene=new T.Scene(),viewCam=new T.PerspectiveCamera(65,1,.02,10);viewS
 // The asset suite loads asynchronously. Everything that depends on it is
 // deferred until ready() resolves; the menu renders immediately either way.
 const bots=C.MAP.spawnBots.map((sp)=>{const s=new T.Group();s.position.set(sp.x,0,sp.z);scene.add(s);return s;});
+// Hoisted to module scope: rebuildBots() (which runs from deploy()) must be
+// able to reach it. Assigned once assets resolve in readyAll().then() below.
+let attachSoldier=null;
 let arena=null,worldNodes=[];
 // The addon shim in index.html is a module and loads asynchronously; wait
 // for both it and the assets before building anything mesh-shaped.
@@ -69,7 +80,29 @@ readyAll().then(()=>{bindModels();
   // Only attach once: rebuildBots() re-rigs on every spawn cycle, and a second
   // pass would stack two Soldier clones in one group, doubling draw cost and
   // giving raycasts two meshes with mismatched botId tags.
-  const attachSoldier = (g, i) => {
+  attachSoldier = (g, i) => {
+    // Test maps give each bot a Mixamo animation. The Soldier GLB is a static
+    // mesh with no bones, so the clip cannot drive it; the clip's own skinned
+    // rig is displayed instead, with its own AnimationMixer. Falls back to
+    // the static Soldier when the clip is missing or unavailable.
+    const anim = C.MAP.peaceful ? (C.MAP.spawnBots[i] && C.MAP.spawnBots[i].anim) : null;
+    let mixer = null;
+    if (anim && PolyAsset.clipRig) {
+      const rig = PolyAsset.clipRig(anim);
+      if (rig) {
+        g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
+        rig.traverse(n => { if (n.isMesh) {
+          n.userData.botId = i;
+          n.userData.part = (n.geometry && n.geometry.boundingBox && n.geometry.boundingBox.max.y > 1.5) ? 'head' : 'body';
+        }});
+        g.add(rig);
+        mixer = new T.AnimationMixer(rig);
+        const act = mixer.clipAction(PolyAsset.clip(anim));
+        if (act) { act.reset(); act.setLoop(T.LoopRepeat, Infinity); act.play(); }
+        g.userData.mixer = mixer;
+        return;
+      }
+    }
     const m = PolyAsset.soldier(); if (!m) return;
     g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
     m.traverse(n => { if (n.isMesh) {
@@ -111,7 +144,9 @@ function cancelInspect(){if(inspect>0){inspectRest=lastInspectPose?{...lastInspe
 function damageFrom(sx,sz){damageSource={x:sx,z:sz};hurt=.65;A.sound('enemy');}
 function addKill(text,headshot=false){feed.unshift({text,headshot});feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
 // 2=Double, 3=Triple, 4=Multi, then Mega/Ultra/Unstoppable/... up the pack.
-if(killCount===1)A.announce?.('firstblood',1);else if(killCount>1)A.announce?.('streak',killCount);
+// Kill-count voice lines cap at 9 kills: tiers 1-9 play normally, beyond that
+// the announcer goes silent (the HUD kill counter keeps counting visually).
+if(killCount===1)A.announce?.('firstblood',1);else if(killCount>1&&killCount<=9)A.announce?.('streak',killCount);
 }
 let onlineMode=false,netRound=0,lastNetEvent='',netHp=100;
 function pose(){return {x,y,z,yaw,pitch,weapon,primary,name:username};}
@@ -135,7 +170,7 @@ const online=PolyOnline.create(C,{
   for(const k of keys)ammo[k]={...p.ammo[k]};reload=p.reload;reloadKey=p.reloadKey;
   match.bots.forEach((b,i)=>{b.alive=i===0&&q.alive;b.pos={x:q.x,z:q.z};b.hp=q.hp;});
   const e=s.events[s.events.length-1];if(e){const tag=e.player+':'+e.seq;if(tag!==lastNetEvent){lastNetEvent=tag;if(e.player===id){hit=.18;A.sound(e.part==='head'?'headshot':e.killed?'kill':'hit');match.shotsHit++;if(e.killed)addKill((e.part==='head'?'HEADSHOT · ':'')+C.WEAPONS[e.weapon].name+' → '+(q.name||'Opponent'),e.part==='head');}}}
-  if(s.phase==='end'&&roundNotice!==s.round){roundNotice=s.round;if(s.lastWinner===id)A.announce?.('clutch');}
+  if(s.phase==='end'&&roundNotice!==s.round){roundNotice=s.round;}
   if(s.phase==='matchover')finishMatch(s.matchWinner===id);
  }
 });
@@ -148,7 +183,11 @@ function refill(){for(const k of keys)ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WE
 function spawn(){killCount=0;roundNotice=0;inspectFade=0;inspectRest=null;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='bayonet';ads=false;slide=0;slideCool=0;equip=.2;burst=0;inspect=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
-function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}loadMap($('mapSelect').value);if(C.MAP.training&&primaries.includes('mosin'))primary='mosin';match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
+function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}
+ // Test-map code: overrides standard map selection in offline play only,
+ // cycling through both 116791 battlegrounds on each deploy.
+ const target=testMapUnlocked()?nextTestMap():$('mapSelect').value;
+ loadMap(target);if(C.MAP.training&&primaries.includes('mosin'))primary='mosin';match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;previous=weapon;weapon=k;bolt=0;inspectFade=0;inspectRest=null;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;inspect=0;equip=.35;cool=.15;A.sound('switch');}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
@@ -223,14 +262,19 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
    const stationary=match.training&&match.mode!=='active';
    A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
    // part is the height-classified hit zone (the Soldier is a single mesh).
-if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,part==='head');}}
+if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,part==='head');
+   // Clutch: offline standard mode only. The kill must eliminate the very last
+   // remaining hostile and thereby win the round/match. A training-range
+   // target, an online opponent, or any kill with other hostiles still up
+   // must never trigger it.
+   if(result.killed&&!onlineMode&&!match.training&&match.lastClutch){A.announce?.('clutch');match.lastClutch=false;}}}
   else if(C.WEAPONS[weapon].slot!=='melee'&&budget.effects)spawnDecal(h);}}
  shotEffects();if(C.WEAPONS[weapon].slot!=='melee')tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(C.WEAPONS[weapon].slot!=='melee')pitch=Math.min(1.45,pitch+w.recoil*.013);
  if(scopedOnly(weapon)){scoped=false;ads=false;}
 }
 function disposeWorld(){
- if(arena.dispose){arena.dispose();for(const o of worldNodes)scene.remove(o);worldNodes.length=0;return;}
+ if(arena){if(arena.dispose){arena.dispose();}else{for(const o of worldNodes)scene.remove(o);}worldNodes.length=0;return;}
  const geo=new Set(),mats=new Set(),textures=new Set();
  for(const o of worldNodes){o.traverse(n=>{if(n.geometry)geo.add(n.geometry);if(n.material)for(const m of (Array.isArray(n.material)?n.material:[n.material])){mats.add(m);if(m.map)textures.add(m.map);}});scene.remove(o);}
  geo.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());worldNodes.length=0;
@@ -251,7 +295,7 @@ function rebuildBots(){
  }
 }
 function loadMap(id){
- mapId=['desert','industrial','urban','training'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
+ mapId=['desert','industrial','urban','training','range','depot'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
  // disposeWorld() pulled the bot groups out of the scene along with the arena
@@ -456,7 +500,7 @@ function animateWeapon(dt){
 }
 function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
- if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}else if(match.phase==='end'&&roundNotice!==match.round){roundNotice=match.round;if(match.lastWinner==='player')A.announce?.('clutch');}
+ if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
  killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);inspect=Math.max(0,inspect-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}
 // The reload timer counts down here; the purge had removed the only decrement,
 // leaving every reload permanently mid-swap with an empty magazine.
@@ -465,7 +509,10 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // Full-auto only: semi-auto weapons fire once per trigger pull (shoot() is
  // already called on mousedown), so re-firing here would break their cadence.
  if(trigger&&running&&match.phase==='live'&&cool<=0&&reload<=0&&bolt<=0&&C.WEAPONS[weapon].auto)shoot();
- syncBots();syncDrops();animateWeapon(dt);for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
+ syncBots();syncDrops();animateWeapon(dt);
+ // Test-map bots loop their Mixamo clips: the mixer owns the rig's bone
+ // transforms, so update it after syncBots() has placed the group.
+ for(const g of bots){const mx=g.userData.mixer;if(mx){mx.update(dt);g.updateMatrixWorld(true);}}for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
  renderer.info.reset();renderer.clear();renderer.render(scene,cam);if(started){renderer.clearDepth();renderer.render(viewScene,viewCam);}
  // Loadout hub: the preview renders into its own WebGL context on
  // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main

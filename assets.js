@@ -75,6 +75,28 @@
 
   const SOLDIER_FILE = 'Soldier by madtrollstudio - UL46oXeZYK.glb';
 
+  // Mixamo clips for the test maps' animated bots. FBX, so they load through
+  // FBXLoader and each carry their own skeleton. The Soldier GLB is a static
+  // mesh with no bones, so a clip cannot be retargeted onto it — the clip's
+  // own skinned rig is what the bot displays.
+  const CLIP_FILES = {
+    idle:   'anims/idle.fbx',
+    walk:   'anims/walk forward.fbx',
+    run:    'anims/run forward.fbx',
+    sprint: 'anims/sprint forward.fbx',
+    crouch: 'anims/idle crouching.fbx',
+    lay:    'male_laying_pose.fbx',
+    slide:  'running_slide.fbx',
+    jump:   'anims/jump loop.fbx',
+  };
+
+  // Authored arena geometry. Loaded eagerly in loadAll() so buildArena() can
+  // read them synchronously at deploy time.
+  const MAP_MODELS = {
+    'theking1322_range.glb': 'theking1322_range.glb',
+    'map-depot.glb': 'map-depot.glb',
+  };
+
   /* ------------------------------------------------------------ loader ---- */
   let THREE = null;
   let gltf = null;
@@ -84,6 +106,8 @@
   // resolved assets, keyed by weapon key
   const weapons = new Map();
   const rigs = new Map();
+  const clips = new Map();   // Mixamo FBX clips for the test map's animated bots
+  const mapModels = new Map();   // authored arena GLBs, keyed by filename
   let soldierGLB = null;
   // The packs export one clip per FBX; loaded lazily on first use.
   const clipPacks = new Map();
@@ -117,6 +141,11 @@
   const loadGLB = (url) => new Promise((res, rej) => {
     getLoaders();
     gltf.load(url, res, undefined, rej);
+  });
+
+  const loadFBX = (url) => new Promise((res, rej) => {
+    getLoaders();
+    fbx.load(url, res, undefined, rej);
   });
 
   // Soldier clones must be re-centred like weapons: the raw export origin sits
@@ -266,6 +295,27 @@
       report.push('soldier ok');
     } catch (e) { console.error('[assets] soldier failed', e.message); report.push('soldier FAIL ' + e.message); }
 
+    // Mixamo animation clips for the test map's animated bots. These are FBX,
+    // so they go through FBXLoader; failures are non-fatal (the bots simply
+    // fall back to the static soldier pose).
+    for (const [key, file] of Object.entries(CLIP_FILES)) {
+      try {
+        const clip = await loadFBX(base + 'assets/models/' + file);
+        clips.set(key, clip);
+        report.push('clip:' + key + ' ok ' + (clip.animations ? clip.animations.length : 0) + ' clips');
+      } catch (e) { console.error('[assets] clip failed', key, e.message); report.push('clip:' + key + ' FAIL ' + e.message); }
+    }
+
+    // Authored arena GLBs for the 116791 test maps, loaded eagerly so
+    // buildArena() can read them synchronously at deploy time.
+    for (const file of Object.keys(MAP_MODELS)) {
+      try {
+        const g = await loadGLB(base + 'assets/models/' + file);
+        mapModels.set(file, g);
+        report.push('map:' + file + ' ok');
+      } catch (e) { console.error('[assets] map model failed', file, e.message); report.push('map:' + file + ' FAIL ' + e.message); }
+    }
+
     for (const [key, file] of Object.entries(FPS_RIGS)) {
       try {
         const g = await loadGLB(base + 'assets/models/' + file);
@@ -300,8 +350,46 @@
 
   function soldier() { return cloneSoldier(); }
 
+  // Mixamo FBX for a named animation (see CLIP_FILES), or null if it failed
+  // to load. The Soldier GLB is a static mesh with zero bones, so the clip
+  // cannot be retargeted onto it; instead we return the clip's own skinned
+  // rig root, which the bot group displays directly. Scale is normalised to
+  // metres (Mixamo exports in centimetres) and the rig is re-centred so its
+  // feet sit on the bot's spawn point.
+  function clipRig(key) {
+    const src = clips.get(key);
+    if (!src) return null;
+    const rig = cloneGLB(src, true);
+    // Mixamo FBX is in cm; the Soldier is ~1.9m, so match that height.
+    const box = new THREE.Box3().setFromObject(rig);
+    const size = box.getSize(new THREE.Vector3());
+    const s = size.y > 0 ? 1.9 / size.y : 1;
+    rig.scale.setScalar(s);
+    // Feet on the ground, centred on the origin the bot group expects.
+    const after = new THREE.Box3().setFromObject(rig);
+    const c = after.getCenter(new THREE.Vector3());
+    rig.position.x -= c.x; rig.position.z -= c.z;
+    rig.position.y -= after.min.y;
+    rig.name = 'clip:' + key;
+    return rig;
+  }
+
+  // The AnimationClip for a named animation, for callers that already have a
+  // skinned rig of their own.
+  function clip(key) {
+    const c = clips.get(key);
+    if (!c || !c.animations || !c.animations.length) return null;
+    return c.animations[0];
+  }
+
+  // Cached authored arena GLB, or null if it has not loaded (yet / ever).
+  function gltfFor(file) {
+    return mapModels.get(file) || null;
+  }
+
   function progress() {
-    return { weapons: [...weapons.keys()], rigs: [...rigs.keys()], soldier: !!soldierGLB };
+    return { weapons: [...weapons.keys()], rigs: [...rigs.keys()], soldier: !!soldierGLB,
+      clips: [...clips.keys()], mapModels: [...mapModels.keys()] };
   }
 
   // Auto-boot: bind to the global THREE, then load everything. ready()
@@ -332,7 +420,7 @@
   }
 
   global.PolyAsset = {
-    bind, loadAll, ready, weapon, rig, soldier, weaponDef, hasWeapon, progress,
+    bind, loadAll, ready, weapon, rig, soldier, clip, clipRig, gltfFor, weaponDef, hasWeapon, progress,
     WEAPON_KEYS, ROSTER,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

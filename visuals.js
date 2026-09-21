@@ -285,13 +285,15 @@
     if (!map || !Array.isArray(map.solids)) throw new Error('buildArena: C.MAP.solids missing');
     if (!['performance', 'medium', 'high'].includes(preset)) preset = 'medium';
     const performance = preset === 'performance', high = preset === 'high';
-    const theme = ['desert', 'industrial', 'urban', 'training'].includes(map.theme) ? map.theme : 'desert';
+    const theme = ['desert', 'industrial', 'urban', 'training', 'test'].includes(map.theme) ? map.theme : 'desert';
     const palette = {
       desert: [0xd2b183,0xdcb98a,0xb8946a,0x8a5a33,0x2f8a86,0x395875,0xd8c9a8],
       industrial: [0x647076,0x9aa6a8,0x495860,0x426c73,0xe4b24e,0x34434c,0xa6b9bf],
       urban: [0x666d76,0xa5a6ad,0x727883,0x71716b,0xacc6d4,0x435c70,0xbac7d5],
       // Clean purpose-built range: green floor, white lanes, red accents.
-      training: [0x4a6b5c,0x8fae9d,0x6b8f7a,0x39564a,0xd9534a,0x2b3a33,0xbfd8c8]
+      training: [0x4a6b5c,0x8fae9d,0x6b8f7a,0x39564a,0xd9534a,0x2b3a33,0xbfd8c8],
+      // Proving Grounds: slate-steel range with hi-vis orange target accents.
+      test: [0x4a5560,0x7d8a96,0x5d6873,0x333d47,0xff8c1a,0x2a3138,0xb9c4cc]
     }[theme];
     const root = new THREE.Group(); root.name = 'arena-' + theme; scene.add(root);
     const hitMeshes = [], objects = [], materials = [];
@@ -332,6 +334,31 @@
       }
     }
     map.solids.forEach(solid);
+    // Authored map geometry: when a map declares model.file, load the GLB and
+    // merge its meshes into the arena the same way as the procedural boxes.
+    // The clip rigs on test maps are skinned, so they must never be frozen.
+    if (map.model && map.model.file) {
+      try {
+        const A = root.PolyAsset || (typeof window !== 'undefined' && window.PolyAsset);
+        const glb = A && A.gltfFor ? A.gltfFor(map.model.file) : null;
+        if (glb) {
+          const mroot = glb.scene.clone();
+          mroot.name = 'arena-model';
+          const ms = map.model.scale != null ? map.model.scale : 1;
+          const off = map.model.offset || [0, 0, 0];
+          mroot.scale.setScalar(ms);
+          mroot.position.set(off[0], off[1], off[2]);
+          mroot.updateMatrixWorld(true);
+          mroot.traverse(o => {
+            if (o.isMesh) {
+              o.userData.solid = null;   // GLB meshes are visual only; the map's solids handle collision
+              objects.push(o);
+            }
+          });
+          root.add(mroot);
+        }
+      } catch (e) { console.warn('PolyVisual: map model failed', e.message); }
+    }
     const t=1.5;
     [{x:0,z:hz+t/2,w:2*hx+2*t,d:t},{x:0,z:-hz-t/2,w:2*hx+2*t,d:t},
       {x:hx+t/2,z:0,w:t,d:2*hz},{x:-hx-t/2,z:0,w:t,d:2*hz}].forEach(s=>solid(Object.assign({h:5,kind:'perimeter'},s)));

@@ -355,7 +355,10 @@
       this.lastVictim = b.name;
         this.events.push({ type: 'kill', who: 'player', weapon: weaponKey, head: part === 'head', name: b.name });
         if (this.phase === 'live' && this.aliveBots().length === 0) {
-          this.lastClutch = this.bots.length > 1;   // 1v5: last kill of a full team is clutch
+          // Clutch: this kill eliminated the final remaining hostile and ended
+          // the round. Only meaningful offline against a team (not the static
+          // training range, where "last target" is not a clutch).
+          this.lastClutch = !this.training && this.bots.length > 1;
           this.endRound('player');
         }
       }
@@ -426,8 +429,10 @@
             b.pos.x += (tdx / tdist) * stepLen;
             b.pos.z += (tdz / tdist) * stepLen;
           }
-          // --- firing: only when the game layer reports LOS and range
-          if (perBot && perBot.los && perBot.dist < 34) {
+          // --- firing: only when the game layer reports LOS and range.
+          // Test maps are peaceful demonstrators: bots there never shoot
+          // back, so the player can study animations and target practice.
+          if (perBot && perBot.los && perBot.dist < 34 && !MAP.peaceful) {
             b.cool -= dt;
             if (b.cool <= 0) {
               b.shots++;
