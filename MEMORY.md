@@ -122,6 +122,29 @@ HERMES_HOME = `C:\Users\xtr18\AppData\Local\hermes` (NOT `~/.hermes` on this box
 - Needs a human: `TRANSCRIPT_API_KEY` (youtube skills), `RESEMBLE_API_KEY` (resemble-detect),
   `agent-reach doctor --json` channel config, and the go-ahead to activate SkillClaw.
 
+## Custom tactical map "Depot" (Blender MCP, 2026-09-21) — DONE & PUSHED
+New map built in a separate Blender scene `TacticalMap` (the shooting-range scene was
+left untouched). Exported to `assets/models/map-depot.glb` (44 KB) + `map-depot.blend`.
+Commit `8f6e525` on main.
+- CS-style de_ layout: T spawn (tan) at y=0..6 -> three lanes: shortB (x=-20..-8),
+  mid (x=-8..8), longA (x=8..20) -> bombsite A (red pad, x>0, y=18..28) and
+  bombsite B (amber pad, x<0, y=18..28), CT spawn (steel) at y=20..28 behind both sites.
+- Walls are built by a `wall_x`/`wall_y` helper that takes a list of doorway gaps and
+  emits only the solid segments — so a doorway is guaranteed by construction, not by
+  hoping two walls don't overlap. Outer boundary 40x28 m, wall height 4 m.
+- Ultra-light: 1344 verts, 672 tris, 11 draw calls, 11 flat emission materials,
+  all double-sided. No animations (static geometry).
+- Cover crates are deliberately offset from the 4m nav grid (mirrors the repo's own
+  training-map fix in maps.js so bots never clip a corner).
+- Verified 3 ways: (1) top-down + 3/4 renders inspected — zones, doorways, cover all
+  readable, no z-fighting/floating/ground gaps; (2) flood fill on a 0.5m grid over the
+  authoritative geometry reaches all 7 named zones from T spawn, 3169 walkable cells
+  (`tests/map_depot_check.py`); (3) Three.js r149 load test
+  (`tests/load_map_depot.mjs`, needs `--loader tests/three-shim.mjs`).
+- Blender 5.2 gotcha: a newly created scene has `world == None`, so any
+  `scn.world.use_nodes` call raises AttributeError — assign
+  `scn.world = bpy.data.worlds.new('X')` first.
+
 ## Shooting-range asset pack (Blender MCP, 2026-09-21) — DONE
 Built entirely in Blender 5.2 via `execute_blender_code`, exported to
 `assets/models/shooting-range.glb` (113 KB) + `shooting-range.blend` source.
