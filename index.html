@@ -60,11 +60,11 @@
 <div id="primaryCards"></div>
 <div class="eyebrow" style="margin-top:18px">SECONDARY</div>
 <div id="secondaryCards"></div>
-<button id="loadoutInspect" class="secondary">INSPECT WEAPON (F)</button>
+<button id="loadoutInspect" class="secondary" hidden>INSPECT WEAPON (F)</button>
 <button id="loadoutClose" class="secondary">CONFIRM &amp; CLOSE</button></div></div>
 <div id="careerPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="careerTitle" hidden><div><div class="eyebrow">SERVICE RECORD</div><h2 id="careerTitle">CAREER</h2><div id="careerStats"></div><button id="careerClose" class="secondary">CLOSE</button></div></div>
 <div id="onlinePanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="onlineTitle" hidden><div><div class="eyebrow">DIRECT CONNECTION / 1V1</div><h2 id="onlineTitle">PLAY ONLINE</h2><p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p><button id="hostRoom">CREATE ROOM</button><label>Room code<input id="roomInput" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Paste room code"></label><button id="joinRoom" class="secondary">JOIN ROOM</button><output id="roomCode" aria-live="polite"></output><p id="netStatus" role="status">Ready to connect.</p><button id="cancelOnline" class="secondary">CANCEL / BACK</button><p class="subtle">Public PeerJS signaling + WebRTC. No custom server or account. NAT/firewall restrictions can prevent a connection; no TURN relay is bundled.</p></div></div>
 <div id="error" class="panel" hidden><div><h2>Unable to start WebGL</h2><p id="errorText">Enable hardware acceleration and use a current desktop browser.</p></div></div>
 <script src="vendor/three.min.js"></script><script src="maps.js"></script><script src="core.js"></script><script src="visuals.js"></script><script src="audio.js"></script><script src="settings.js"></script><script src="vendor/peerjs.min.js"></script><script src="net.js"></script><script src="duel.js"></script><script src="online.js"></script>
 
-<script src="assets.js"></script><script src="inspection.js"></script><script src="game.js"></script></body></html>
+<script src="assets.js"></script><script src="game.js"></script></body></html>

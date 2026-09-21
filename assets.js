@@ -25,37 +25,39 @@
   const log = (...a) => console.log('%c[assets]', 'color:#5b8de0', ...a);
 
   /* ------------------------------------------------------------- tables --- */
-  // key -> { file, scale, rot:[x,y,z] (deg), stats overrides }
-  // scale is chosen so the longest axis lands near the real weapon length in
-  // metres; the loader also auto-normalises as a safety net.
+  // key -> { file, length (metres), rot (deg, composed after the auto axis fix) }
+  // Every model in this pack exports with the barrel along +X and the sights up
+  // (+Y), so the auto axis guess (rotate -90 around Z) is already correct and
+  // rot is [0,0,0]. Length is the real weapon length; the loader scales the
+  // longest fitted axis to match.
   const WEAPON_ASSETS = {
     akm: {
       file: 'low-poly_akm.glb',
-      length: 0.90, rot: [0, 0, 90],
+      length: 0.90, rot: [0, 0, 0],
     },
     deagle: {
       file: 'low-poly_desert_eagle_xix.glb',
-      length: 0.27, rot: [0, 0, 90],
+      length: 0.27, rot: [0, 0, 0],
     },
     l96: {
       file: 'low-poly_l96_a1_precision_marksman.glb',
-      length: 1.18, rot: [0, 0, 90],
+      length: 1.18, rot: [0, 0, 0],
     },
     mosin: {
       file: 'low-poly_mosin_nagant_189130.glb',
-      length: 1.23, rot: [0, 0, 90],
+      length: 1.23, rot: [0, 0, 0],
     },
     mx: {
       file: 'low-poly_mx-8054.glb',
-      length: 0.75, rot: [0, 0, 90],
+      length: 0.75, rot: [0, 0, 0],
     },
     hecate: {
       file: 'low-poly_pgm_hecate_ii.glb',
-      length: 1.30, rot: [0, 0, 90],
+      length: 1.30, rot: [0, 0, 0],
     },
     bayonet: {
       file: 'low-poly_fa-03_bayonet.glb',
-      length: 0.30, rot: [0, 0, 90],
+      length: 0.30, rot: [0, 0, 0],
     },
   };
 
@@ -79,15 +81,43 @@
   // FBXLoader and each carry their own skeleton. The Soldier GLB is a static
   // mesh with no bones, so a clip cannot be retargeted onto it — the clip's
   // own skinned rig is what the bot displays.
+  // The Pro Rifle Pack (see assets/models/anims). Every clip the test maps
+  // reference must be registered here or the bot silently falls back to the
+  // static soldier pose. Kept as a superset so spawn tables can pick freely.
   const CLIP_FILES = {
     idle:   'anims/idle.fbx',
+    idleAim:'anims/idle aiming.fbx',
     walk:   'anims/walk forward.fbx',
+    walkLeft:'anims/walk left.fbx',
+    walkRight:'anims/walk right.fbx',
+    walkBack:'anims/walk backward.fbx',
     run:    'anims/run forward.fbx',
+    runLeft:'anims/run left.fbx',
+    runRight:'anims/run right.fbx',
+    runBack:'anims/run backward.fbx',
     sprint: 'anims/sprint forward.fbx',
+    sprintLeft:'anims/sprint left.fbx',
+    sprintRight:'anims/sprint right.fbx',
     crouch: 'anims/idle crouching.fbx',
-    lay:    'male_laying_pose.fbx',
-    slide:  'running_slide.fbx',
+    crouchAim:'anims/idle crouching aiming.fbx',
+    crouchWalk:'anims/walk crouching forward.fbx',
+    crouchWalkLeft:'anims/walk crouching left.fbx',
+    crouchWalkRight:'anims/walk crouching right.fbx',
+    turnLeft:'anims/turn 90 left.fbx',
+    turnRight:'anims/turn 90 right.fbx',
+    crouchTurnLeft:'anims/crouching turn 90 left.fbx',
+    crouchTurnRight:'anims/crouching turn 90 right.fbx',
+    jumpUp: 'anims/jump up.fbx',
     jump:   'anims/jump loop.fbx',
+    jumpDown:'anims/jump down.fbx',
+    deathFront:'anims/death from the front.fbx',
+    deathBack:'anims/death from the back.fbx',
+    deathRight:'anims/death from right.fbx',
+    deathFrontHead:'anims/death from front headshot.fbx',
+    deathBackHead:'anims/death from back headshot.fbx',
+    deathCrouchHead:'anims/death crouching headshot front.fbx',
+    lay:    'anims/death from the back.fbx',
+    slide:  'anims/jump down.fbx',
   };
 
   // Authored arena geometry. Loaded eagerly in loadAll() so buildArena() can
@@ -189,14 +219,27 @@
   // (root.userData.mag) and their basePos/baseRot caches, so the reload
   // animation then crashed reading .copy() off undefined. Walk the clone in
   // lockstep with the source and restore the real cloned node.
-  const NAME_HINTS = { mag: /^mag$/, bolt: /bolt|slide|charging/i };
+  // The Blender separation pass names pivots by kind with the source mesh
+  // suffix attached ("mag_Object_19"), so match by prefix, not exact name.
+  const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i };
   function relinkParts(cloneRoot, srcRoot) {
     if (!cloneRoot || !srcRoot) return;
     const byName = new Map();
     cloneRoot.traverse(o => { if (o.name) byName.set(o.name, o); });
+    // Pick the same pivot fitWeapon chose: the heaviest match of each kind,
+    // so a spare magazine never wins over the primary one.
+    const meshes = (root) => { let n = 0; root.traverse(o => { if (o.isMesh) n++; }); return n; };
+    const pick = (re) => {
+      let best = null, bestN = -1;
+      srcRoot.traverse(o => {
+        if (!re.test(o.name || '')) return;
+        const n = meshes(o);
+        if (n > bestN) { best = o; bestN = n; }
+      });
+      return best;
+    };
     for (const [field, re] of Object.entries(NAME_HINTS)) {
-      let ref = null;
-      srcRoot.traverse(o => { if (!ref && re.test(o.name || '')) ref = o; });
+      const ref = pick(re);
       if (!ref) continue;
       const twin = byName.get(ref.name);
       if (!twin) continue;
@@ -228,9 +271,17 @@
   }
 
   /* ------------------------------------------------------ model fitting --- */
-  // Normalise an asset to weapon space: muzzle at -Z, grip at origin, longest
+  // Fit an asset to weapon space: muzzle at -Z, grip near the origin, longest
   // axis scaled to `target` metres. Reports what it did so the table above can
   // be corrected without guessing.
+  //
+  // Two pivot groups are used deliberately. The exported node transforms must
+  // stay intact (the mag/bolt pivots are named nodes the reload animation
+  // drives), so orientation goes on `inner` and the grip-centring translation
+  // goes on `inner` too — both in the *pre-rotation* frame. Applying the
+  // centre offset after the rotation would move the grip sideways instead of
+  // along the barrel, and reading box.min/max in the same frame as the
+  // translation is what makes the rear of the receiver land at z=0.
   function fitWeapon(group, def, key) {
     const T = needThree();
     const root = new T.Group();
@@ -244,12 +295,14 @@
     box.getSize(size);
     const long = Math.max(size.x, size.y, size.z);
 
-    // Orientation: the longest axis must become -Z (forward). Euler applied to
-    // the inner pivot so the exported node transforms stay intact.
     const axis = size.x >= size.y && size.x >= size.z ? 'x' : (size.y >= size.z ? 'y' : 'z');
     const fix = { x: 0, y: 0, z: 0 };
     if (axis === 'x') fix.z = -90;                 // long axis along X -> rotate to Z
     else if (axis === 'y') fix.x = 90;             // vertical export -> tip forward
+    // def.rot is a correction composed AFTER the axis fix, on the same pivot,
+    // so a weapon that exports muzzle-up or grip-first can be turned into the
+    // bore axis without disturbing the length alignment. rot:[0,0,0] means the
+    // auto guess was already right.
     if (def.rot) { fix.x += def.rot[0]; fix.y += def.rot[1]; fix.z += def.rot[2]; }
     inner.rotation.set(T.MathUtils.degToRad(fix.x), T.MathUtils.degToRad(fix.y), T.MathUtils.degToRad(fix.z));
 
@@ -259,6 +312,9 @@
 
     // Recompute the fitted box and centre the grip at the origin: translate so
     // the back of the receiver sits at z=0 and the barrel points to -Z.
+    // The offset is applied in the PRE-rotation frame on the same pivot as the
+    // rotation, so it travels with it: the rear of the weapon lands on z=0
+    // along the barrel instead of being shunted sideways.
     root.updateMatrixWorld(true);
     const fitted = new T.Box3().setFromObject(root);
     const fs = new T.Vector3();
@@ -270,7 +326,9 @@
     // Grip at origin: keep the rear of the weapon near z=0.
     inner.position.z -= fitted.min.z;
 
-    // Muzzle anchor at the barrel tip.
+    // Muzzle anchor at the barrel tip. Positioned from the *fitted* box: after
+    // the orientation fix the muzzle end is at min.z, and centre x/y so the
+    // flash sits on the bore axis rather than the box corner.
     root.updateMatrixWorld(true);
     const tip = new T.Object3D();
     tip.name = 'muzzle';
@@ -281,29 +339,38 @@
 
     root.userData.hands = []; // rigs carry their own arms; standalone weapons have none
 
-    // Detachable parts. The GLBs were re-exported from Blender with magazines,
-    // loose rounds and attachments grouped under named pivot nodes ("mag",
-    // "rounds", "attachment"); those pivots are what the reload animation and
-    // the magazine-drop effect drive. The muzzle and bolt are looked up by
-    // their original names when the rig carries them.
-    const find = (re) => {
-      let hit = null;
-      root.traverse((o) => { if (!hit && re.test(o.name || '')) hit = o; });
-      return hit;
+    // Detachable parts. The GLBs are re-exported from Blender with magazines,
+    // loose rounds, bolt and scope grouped under named pivot nodes ("mag*",
+    // "rounds*", "bolt*", "scope*"); those pivots are what the reload animation
+    // and the magazine-drop effect drive. Only top-level pivots are candidates:
+    // a nested lookup would grab an attachment's own magazine and move the
+    // wrong mesh. When several pivots of one kind exist, the heaviest (most
+    // meshes) wins — the primary magazine over a spare.
+    const meshCount = (o) => { let n = 0; o.traverse(x => { if (x.isMesh) n++; }); return n; };
+    const pickPart = (re) => {
+      const hits = [];
+      root.traverse(o => { if (re.test(o.name || '') && o !== root) hits.push(o); });
+      if (!hits.length) return null;
+      return hits.sort((a, b) => meshCount(b) - meshCount(a))[0];
     };
-    const mag = find(/^mag$/);
-    if (mag) {
-      root.userData.mag = mag;
-      mag.userData.basePos = mag.position.clone();
-      mag.userData.baseRot = mag.rotation.clone();
-    }
-    // The bolt/slide only exists on some rigs; missing parts are skipped.
-    const bolt = find(/bolt|slide|charging/i);
-    if (bolt) {
-      root.userData.bolt = bolt;
-      bolt.userData.basePos = bolt.position.clone();
-      bolt.userData.baseRot = bolt.rotation.clone();
-    }
+    const bindPart = (field, re) => {
+      const p = pickPart(re);
+      if (!p) return;
+      root.userData[field] = p;
+      p.userData.basePos = p.position.clone();
+      p.userData.baseRot = p.rotation.clone();
+    };
+    bindPart('mag', /^mag/);
+    bindPart('rounds', /^rounds/);
+    bindPart('bolt', /^bolt/);
+    // Loose rounds and spare magazines are detached on the models; hide them so
+    // nothing floats around the weapon in-game. The active magazine stays
+    // visible because the reload animation drives it.
+    const hideExtras = (o) => { o.traverse(x => { if (x.isMesh) x.visible = false; }); };
+    if (root.userData.rounds) hideExtras(root.userData.rounds);
+    // Scoped rifles keep their glass as its own pivot so ADS stays aligned.
+    const scope = pickPart(/^scope/);
+    if (scope) { root.userData.scope = scope; scope.userData.basePos = scope.position.clone(); }
 
     root.userData.fit = {
       exportLong: +long.toFixed(4), scale: +scale.toFixed(5),

@@ -22,6 +22,55 @@ window.PolyAudio = (() => {
       // Dry fire: a distinct empty-chamber metallic click — sharp double tick.
       if(type==='dry'){tone(1850,.03,.06,'square',.035);tone(1450,.025,.045,'triangle',.055);}
       if(type==='heartbeat')tone(65,.12,.10,'sine',.21);return;}
+    // Per-weapon firing voice. The synth used to know only a handful of legacy
+    // names (ak47/awp/kar98/deagle) and silently dropped everything else, so
+    // the L96, Mosin, Hecate, MX and bayonet fired with no sound at all.
+    // barrel = round count the burst lasts (snipers crack once), pitch places
+    // the report, punch is the low-end thump.
+    const PROFILES = {
+      akm:     { barrel:'rifle',  dur:.20, hz:1500, punch:120, crack:2100 },
+      l96:     { barrel:'sniper', dur:.50, hz:900,  punch:70,  crack:2600 },
+      mosin:   { barrel:'sniper', dur:.45, hz:1000, punch:85,  crack:2400 },
+      hecate:  { barrel:'sniper', dur:.60, hz:750,  punch:60,  crack:2300 },
+      deagle:  { barrel:'pistol', dur:.14, hz:1900, punch:160, crack:2500 },
+      mx:      { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
+      bayonet: { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
+      ak47:    { barrel:'rifle',  dur:.20, hz:1500, punch:120, crack:2100 },
+      awp:     { barrel:'sniper', dur:.50, hz:900,  punch:70,  crack:2600 },
+      kar98:   { barrel:'sniper', dur:.45, hz:1000, punch:85,  crack:2400 },
+      enemy:   { barrel:'rifle',  dur:.20, hz:1300, punch:120, crack:2000 },
+    };
+    const prof = PROFILES[type];
+    if (prof) {
+      const now = ctx.currentTime;
+      // Noise body: the ballistic crack, band-passed around the weapon's pitch.
+      if (prof.barrel !== 'melee') {
+        const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+        src.buffer = noise;
+        filter.type = 'bandpass'; filter.frequency.value = prof.crack; filter.Q.value = .8;
+        gain.gain.setValueAtTime(.8, now);
+        gain.gain.exponentialRampToValueAtTime(.001, now + prof.dur);
+        src.connect(filter); filter.connect(gain); gain.connect(master);
+        src.start(now); src.stop(now + prof.dur);
+        src.onended = () => { src.disconnect(); filter.disconnect(); gain.disconnect(); };
+        // Low-end punch: the chest-thump under the crack.
+        if (prof.punch) {
+          const osc = ctx.createOscillator(), g = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(prof.punch, now);
+          osc.frequency.exponentialRampToValueAtTime(prof.punch * .3, now + prof.dur);
+          g.gain.setValueAtTime(.7, now);
+          g.gain.exponentialRampToValueAtTime(.001, now + prof.dur);
+          osc.connect(g); g.connect(master); osc.start(now); osc.stop(now + prof.dur);
+          osc.onended = () => { osc.disconnect(); g.disconnect(); };
+        }
+      } else {
+        // Melee: a short metallic swish, no report.
+        tone(prof.hz, prof.dur, .12, 'triangle');
+        tone(prof.crack, prof.dur * .6, .06, 'sine', .02);
+      }
+      return;
+    }
     const gun = ['ak47','awp','kar98','deagle','enemy'].includes(type);
     const duration = type==='awp'||type==='kar98' ? .5 : gun ? .2 : .08;
     const now=ctx.currentTime, src=ctx.createBufferSource(), filter=ctx.createBiquadFilter(), gain=ctx.createGain();
@@ -94,8 +143,11 @@ window.PolyAudio = (() => {
     if (!ctx) return;
     const list = PACKS[voicePack] || PACKS.male;
     let name = null;
+    // First Blood is index 0 and must only ever be requested by name; the
+    // streak path is never called with kills===1 (see addKill), but the guard
+    // keeps the mapping honest if that ever changes.
     if (kind === 'firstblood') name = list[0];
-    else if (Number.isInteger(kills) && kills >= 1 && kills <= TIER_CAP) {
+    else if (kind === 'streak' && Number.isInteger(kills) && kills >= 2 && kills <= TIER_CAP) {
       name = list[Math.min(kills - 1, list.length - 1)];
     }
     if (!name) return;
