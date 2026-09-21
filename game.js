@@ -6,13 +6,41 @@ let C=window.POLY_CORE, mapId='desert', preset='medium';
 // offline play overrides standard map selection and cycles the two test maps
 // on each deploy, so one code gives access to both new battlegrounds.
 const TEST_MAP_CODE='116791';
+// Only these two battlegrounds unlock with the code; every other map stays in
+// the standard rotation and is untouched.
 const TEST_MAPS=['range','depot'];
-let testMapIndex=0;
+// The player's chosen arena. null = no selection yet, so a deploy falls back to
+// the standard map dropdown instead of silently guessing.
+let testMapChoice=null;
 function testMapUnlocked(){return $('mapCode')&&$('mapCode').value.trim()===TEST_MAP_CODE;}
-function nextTestMap(){const id=TEST_MAPS[testMapIndex%TEST_MAPS.length];testMapIndex++;return id;}
+function testMapTarget(){return testMapUnlocked()&&testMapChoice?testMapChoice:null;}
+function syncTestMapPanel(){
+ const panel=$('testMapPanel');if(!panel)return;
+ const show=testMapUnlocked();
+ panel.hidden=!show;
+ if(!show){testMapChoice=null;}
+ for(const el of panel.querySelectorAll('.test-map-card'))
+  el.classList.toggle('active',el.dataset.testmap===testMapChoice);
+ const pick=$('testMapPick');
+ if(pick)pick.textContent=testMapChoice
+  ?'Selected: '+(testMapChoice==='range'?'Shooting Range':'Low Poly Tactical Map')+' — press Play Offline.'
+  :'No arena selected — returning to the standard rotation.';
+}
+if(typeof document!=='undefined'){
+ $('mapCode').addEventListener('input',syncTestMapPanel);
+ // Buttons fire click, not change: a change listener never saw the card
+ // taps, so the panel reported "no arena selected" and deploys silently
+ // fell back to the standard dropdown.
+ document.addEventListener('click',e=>{
+  const card=e.target.closest&&e.target.closest('.test-map-card');
+  if(card){testMapChoice=card.dataset.testmap;syncTestMapPanel();A.sound('switch');}
+ });
+ // Keep the state honest if the code is cleared while the panel is open.
+ $('mapCode').addEventListener('blur',syncTestMapPanel);
+}
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
-const primaries=['akm','l96','mosin','mx','hecate'];let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();
+const primaries=['akm','l96','mosin','hecate'];let primary='akm',secondary='deagle',melee='bayonet',dropped=false,localDrops=[];const dropNodes=new Map();
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
 try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
 const secondaryOf=()=>secondary;
@@ -30,9 +58,14 @@ try{$('crosshairColor').value=crosshair.color;}catch(_){}
 $('crosshairColor').onchange=()=>{crosshair.color=$('crosshairColor').value;try{localStorage.setItem('poly-crosshair',JSON.stringify(crosshair));}catch(_){}applyCrosshair();};
 $('crosshairDot').checked=crosshair.dot;
 $('crosshairDot').onchange=()=>{crosshair.dot=$('crosshairDot').checked;try{localStorage.setItem('poly-crosshair',JSON.stringify(crosshair));}catch(_){}applyCrosshair();};
-const inventory=()=>dropped?[secondary==='deagle'?'deagle':'bayonet',secondary==='deagle'?'bayonet':'deagle']:[primary,secondary==='deagle'?'deagle':'bayonet',secondary==='deagle'?'bayonet':'deagle'];
+// Inventory slots are derived from the equipped items: primary rifle,
+// secondary pistol, and the melee item the player has selected. Dropping the
+// primary collapses the rifle slot, so the wheel never offers a gap.
+const inventory=()=>dropped?[secondary,melee]:[primary,secondary,melee];
 // Weapon skins: one chosen skin index per weapon, persisted locally.
 // Declared with the full key list (keys is only assigned further down).
+// Weapon keys span every equipable: the primary rifles, the pistol and both
+// melee options (the reclassified MX knife and the bayonet).
 const keys=['akm','l96','mosin','mx','hecate','deagle','bayonet'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
@@ -80,6 +113,24 @@ readyAll().then(()=>{bindModels();
   // Only attach once: rebuildBots() re-rigs on every spawn cycle, and a second
   // pass would stack two Soldier clones in one group, doubling draw cost and
   // giving raycasts two meshes with mismatched botId tags.
+  // Put a rifle in the rig's right hand. The Mixamo skeleton names its hand
+  // bone mixamorigRightHand; the weapon is parented there and rotated into a
+  // ready carry, so it follows the hand through every clip.
+  const armBot = (g, rig) => {
+    if (!PolyAsset.weapon) return;
+    const w = PolyAsset.weapon('akm');
+    if (!w) return;
+    let hand = null;
+    rig.traverse(n => { if (!hand && n.isBone && /RightHand$/.test(n.name)) hand = n; });
+    if (!hand) return;
+    // Compose the hold in the hand's local frame: barrel forward, muzzle down
+    // the -Z of the weapon's own fitting space.
+    hand.add(w);
+    w.position.set(0, 0, 0.02);
+    w.rotation.set(0, Math.PI * -0.06, 0);
+    w.userData.botWeapon = true;
+  };
+
   attachSoldier = (g, i) => {
     // Test maps give each bot a Mixamo animation. The Soldier GLB is a static
     // mesh with no bones, so the clip cannot drive it; the clip's own skinned
@@ -100,6 +151,7 @@ readyAll().then(()=>{bindModels();
         const act = mixer.clipAction(PolyAsset.clip(anim));
         if (act) { act.reset(); act.setLoop(T.LoopRepeat, Infinity); act.play(); }
         g.userData.mixer = mixer;
+        armBot(g, rig);
         return;
       }
     }
@@ -112,6 +164,7 @@ readyAll().then(()=>{bindModels();
         ? (n.geometry.boundingBox.max.y > 1.5 ? 'head' : 'body') : 'body';
     }});
     g.add(m);
+    armBot(g, m);
   };
   bots.forEach((g, i) => { if (!g.userData.soldierAttached && typeof attachSoldier==='function') { g.userData.soldierAttached = true; attachSoldier(g, i); } });
 });
@@ -164,7 +217,7 @@ const online=PolyOnline.create(C,{
   if(enemyPose&&q.alive&&running&&Math.hypot(q.x-enemyPose.x,q.z-enemyPose.z)>.025&&Math.hypot(q.x-x,q.z-z)<22&&elapsed-enemyFoot>.38){A.sound('enemyStep');enemyFoot=elapsed;}enemyPose={x:q.x,z:q.z};
   if(s.round!==netRound){netRound=s.round;spawn();x=p.x;y=p.y;z=p.z;yaw=p.yaw;pitch=p.pitch;}
   if(Math.hypot(x-p.x,z-p.z)>2){x=p.x;z=p.z;y=p.y;}
-  if(netRound>0&&p.primaryLocked&&primaries.includes(p.primary))primary=p.primary;const wasDropped=dropped;dropped=!!p.dropped;if(!inventory().includes(weapon)){reload=0;select('deagle');}if(wasDropped&&!dropped){reload=0;select(primary);}
+  if(netRound>0&&p.primaryLocked&&primaries.includes(p.primary))primary=p.primary;const wasDropped=dropped;dropped=!!p.dropped;if(!inventory().includes(weapon)){reload=0;select(secondary);}if(wasDropped&&!dropped){reload=0;select(primary);}
   if(p.hp<netHp)damageFrom(q.x,q.z);netHp=p.hp;
   match.phase=s.phase;match.round=s.round;match.buyClock=s.buyClock;match.roundClock=s.roundClock;match.hp=p.hp;match.armor=0;match.score={player:s.score[id],enemy:s.score[1-id]};match.kills=p.kills;match.deaths=p.deaths;match.lastWinner=s.lastWinner===null?null:s.lastWinner===id?'player':'enemy';
   for(const k of keys)ammo[k]={...p.ammo[k]};reload=p.reload;reloadKey=p.reloadKey;
@@ -186,13 +239,13 @@ function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$(
 function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}
  // Test-map code: overrides standard map selection in offline play only,
  // cycling through both 116791 battlegrounds on each deploy.
- const target=testMapUnlocked()?nextTestMap():$('mapSelect').value;
+ const target=testMapTarget()||$('mapSelect').value;
  loadMap(target);if(C.MAP.training&&primaries.includes('mosin'))primary='mosin';match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;previous=weapon;weapon=k;bolt=0;inspectFade=0;inspectRest=null;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;inspect=0;equip=.35;cool=.15;A.sound('switch');}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
 function nearestDrop(){return currentDrops().find(d=>(!onlineMode||d.weapon===primary)&&Math.hypot(x-d.x,z-d.z)<2.5&&C.segmentClear({x,z},d,C.MAP.solids));}
-function dropPrimary(){if(dropped||weapon!==primary||reload>0||!['buy','live'].includes(match.phase))return;if(onlineMode){online.drop();return;}localDrops=[{id:'local',weapon:primary,x:x-Math.sin(yaw),z:z-Math.cos(yaw),ammo:{...ammo[primary]}}];dropped=true;select('deagle');}
+function dropPrimary(){if(dropped||weapon!==primary||reload>0||!['buy','live'].includes(match.phase))return;if(onlineMode){online.drop();return;}localDrops=[{id:'local',weapon:primary,x:x-Math.sin(yaw),z:z-Math.cos(yaw),ammo:{...ammo[primary]}}];dropped=true;select(secondary);}
 function pickupPrimary(){const d=nearestDrop();if(!d||!dropped||!['buy','live'].includes(match.phase))return;if(onlineMode){online.pickup(d.id);return;}primary=d.weapon;if(d.ammo)ammo[primary]={...d.ammo};localDrops=[];dropped=false;select(primary);}
 function syncDrops(){const live=new Set();for(const d of currentDrops().slice(0,8)){if(!C.WEAPONS[d.weapon])continue;live.add(d.id);let o=dropNodes.get(d.id);if(!o){o=PolyVisual.buildWeapon(T,d.weapon);for(const h of o.userData.hands||[])h.removeFromParent();scene.add(o);dropNodes.set(d.id,o);}o.position.set(d.x,.22,d.z);o.rotation.set(0,elapsed*.2,Math.PI/2);}for(const [id,o] of dropNodes)if(!live.has(id)){scene.remove(o);o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});dropNodes.delete(id);}}
 function doReload(){const w=C.WEAPONS[weapon];if(w.slot==='melee'||reload>0||ammo[weapon].mag===w.mag||ammo[weapon].reserve===0)return;if(onlineMode)online.reload(weapon);reload=w.reloadTime;reloadKey=weapon;scoped=false;ads=false;cancelInspect();reloadStage=0;A.sound('magout');}
@@ -263,11 +316,7 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
    A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
    // part is the height-classified hit zone (the Soldier is a single mesh).
 if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,part==='head');
-   // Clutch: offline standard mode only. The kill must eliminate the very last
-   // remaining hostile and thereby win the round/match. A training-range
-   // target, an online opponent, or any kill with other hostiles still up
-   // must never trigger it.
-   if(result.killed&&!onlineMode&&!match.training&&match.lastClutch){A.announce?.('clutch');match.lastClutch=false;}}}
+   }}
   else if(C.WEAPONS[weapon].slot!=='melee'&&budget.effects)spawnDecal(h);}}
  shotEffects();if(C.WEAPONS[weapon].slot!=='melee')tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(C.WEAPONS[weapon].slot!=='melee')pitch=Math.min(1.45,pitch+w.recoil*.013);
@@ -384,7 +433,7 @@ const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0
  // Rebuild the skin selector for the newly selected weapon.
  }
 function renderLoadoutCards(){
- const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else secondary=key;try{localStorage.setItem(primaries.includes(key)?'poly-primary':'poly-secondary',key);}catch(_){}A.sound('equip');};return el;};
+ const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else if(C.WEAPONS[key].slot==='melee'){melee=key;try{localStorage.setItem('poly-melee',key);}catch(_){}}else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
  $('secondaryCards').replaceChildren(...['deagle','bayonet'].map(k=>mk(k,k==='deagle'?'Semi-auto pistol':'Bayonet / melee')));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
@@ -461,7 +510,7 @@ function hud(){const w=C.WEAPONS[weapon];
 $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=weapon==='knife'?0:ammo[weapon].mag;$('ammo').textContent=weapon==='knife'?'∞':rounds;
  // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
  const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=(C.WEAPONS[weapon].slot==='melee')?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
- $('reserve').textContent=(C.WEAPONS[weapon].slot==='melee')?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'CLUTCH · ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
+ $('reserve').textContent=(C.WEAPONS[weapon].slot==='melee')?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
 $('status').textContent=C.WEAPONS[weapon].slot!=='melee'&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':inspect>0?`INSPECT ${inspectVariant+1}/2`:A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
@@ -472,7 +521,7 @@ $('status').textContent=C.WEAPONS[weapon].slot!=='melee'&&ammo[weapon].mag===0&&
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);rc.fillStyle='#b5baa650';for(const s of C.MAP.solids)rc.fillRect(85+(s.x-s.w/2)*2,85+(s.z-s.d/2)*2,s.w*2,s.d*2);rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85+x*2,85+z*2,3,0,Math.PI*2);rc.fill();rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85+x*2,85+z*2);rc.lineTo(85+x*2-Math.sin(yaw)*10,85+z*2-Math.cos(yaw)*10);rc.stroke();rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive){rc.beginPath();rc.arc(85+b.pos.x*2,85+b.pos.z*2,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
- for(const k of keys)if(models[k])models[k].visible=k===weapon&&!scoped;
+ for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
  const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
  m.position.set(.32*(1-adsBlend)+Math.sin(walk*1.7)*.006*moving*(1-adsBlend),-.3*(1-adsBlend)-.09*adsBlend-equip*.5,-.65+recoil*.06);
  m.rotation.set(recoil*.09,0,0);

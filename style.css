@@ -12,3 +12,12 @@ select,input[type=text],#roomInput{display:block;width:100%;padding:13px 12px;ba
 #loadoutPanel>div{width:min(520px,100%)}.loadout-stage{position:relative;background:#0b1c22;border:1px solid #55756b;border-radius:2px;margin:10px 0 4px}#loadoutCanvas{display:block;width:100%;height:auto}#loadoutInfo{position:absolute;left:10px;bottom:8px;background:#102128d9;padding:4px 10px}#loadoutInfo b{display:block;font:16px monospace;color:var(--lime)}#loadoutInfo small{font:10px monospace;color:#b9c4b9}#primaryCards,#secondaryCards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}.wcard{background:#122c35;border:1px solid #55756b;border-radius:2px;padding:12px 8px;text-align:center;cursor:pointer;color:var(--paper);font:11px monospace;letter-spacing:1px}.wcard b{display:block;font-size:12px;margin-bottom:4px}.wcard small{font-size:9px;color:#b9c4b9}.wcard.active{border-color:var(--lime);color:var(--lime);background:#1a352f}
 /* Career stats */
 #careerStats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.stat{background:#122c35;border-left:3px solid var(--lime);padding:12px}.stat b{display:block;font:24px monospace;color:var(--lime)}.stat span{font:9px monospace;letter-spacing:2px;color:#b9c4b9}
+
+/* Custom map code (116791) selection: exactly two test arenas. */
+.test-map-panel{margin-top:12px;padding:12px;border:1px solid #2b4a3f;border-radius:3px;background:#101d1a}
+.test-map-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.test-map-card{background:#122c35;border:1px solid #2b4a3f;border-radius:2px;padding:14px 10px;text-align:center;cursor:pointer;color:var(--paper);font:11px monospace;letter-spacing:1px}
+.test-map-card b{display:block;font-size:12px;margin-bottom:5px}
+.test-map-card small{font-size:9px;color:#b9c4b9}
+.test-map-card.active{border-color:var(--lime);color:var(--lime);background:#1a352f}
+#testMapPick{display:block;margin-top:8px;color:#b9c4b9}

@@ -37,12 +37,16 @@
     akm: { key:'akm', name:'AKM', slot:'primary', auto:true, mag:30, reserve:90, damage:36, headMult:4, legMult:0.75, fireInterval:0.1, reloadTime:1.35, spreadBase:0.0065, spreadScoped:0.0042, zoomFov:null, ads:true, price:2700, killAward:300, falloff:0.004, recoil:1.0 },
     l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
     mosin: { key:'mosin', name:'Mosin Nagant', slot:'primary', auto:false, mag:5, reserve:40, damage:88, headMult:3.2, legMult:0.75, fireInterval:1.2, reloadTime:2.9, spreadBase:0.0015, spreadScoped:0.0005, zoomFov:20, ads:true, price:3300, killAward:300, falloff:0.0015, recoil:1.3 },
-    mx: { key:'mx', name:'MX', slot:'primary', auto:true, mag:30, reserve:90, damage:30, headMult:4, legMult:0.75, fireInterval:0.085, reloadTime:1.5, spreadBase:0.005, spreadScoped:0.0035, zoomFov:null, ads:true, price:2900, killAward:300, falloff:0.004, recoil:0.9 },
+    // "MX" is really a combat knife/bayonet, not a rifle: reclassified from the
+    // primary slot into melee, so it never appears in the buy menu or the
+    // primary rifle list.
+    mx: { key:'mx', name:'MX Knife', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:2, legMult:1, fireInterval:0.6, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0.5 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:true, price:700, killAward:300, falloff:0.006, recoil:0.85 },
+    // The bayonet stays as the default melee swap for the drop/pickup flow.
     bayonet: { key:'bayonet', name:'Bayonet', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:2, legMult:1, fireInterval:0.6, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0.5 },
   };
-  const BUY_ITEMS = ['akm', 'l96', 'mosin', 'mx', 'hecate', 'deagle', 'armor'];
+  const BUY_ITEMS = ['akm', 'l96', 'mosin', 'hecate', 'deagle', 'armor'];
 
 
 
@@ -259,7 +263,7 @@
       hp: 100, armor: 0,
       kills: 0, deaths: 0, shotsFired: 0, shotsHit: 0, headshots: 0,
       owned: { primary: null, secondary: 'deagle' },
-      lastWinner: null, lastClutch: false,
+      lastWinner: null,
       bots: [],
       events: [],              // transient feed events for the HUD
     };
@@ -312,7 +316,7 @@
       this.buyClock = BUY_TIME;
       this.roundClock = ROUND_TIME;
       this.hp = 100;                 // armor persists, damaged
-      this.lastWinner = null; this.lastClutch = false;
+      this.lastWinner = null;
       for (const b of this.bots) {
         const sp = MAP.spawnBots[b.id];
         b.pos = { x: sp.x, z: sp.z };
@@ -355,10 +359,7 @@
       this.lastVictim = b.name;
         this.events.push({ type: 'kill', who: 'player', weapon: weaponKey, head: part === 'head', name: b.name });
         if (this.phase === 'live' && this.aliveBots().length === 0) {
-          // Clutch: this kill eliminated the final remaining hostile and ended
-          // the round. Only meaningful offline against a team (not the static
-          // training range, where "last target" is not a clutch).
-          this.lastClutch = !this.training && this.bots.length > 1;
+          // This kill eliminated the final remaining hostile: the round ends.
           this.endRound('player');
         }
       }
@@ -407,11 +408,16 @@
           const b = this.bots[i];
           if (!b.alive || this.phase !== 'live') continue;
           const perBot = sense && sense.bots ? sense.bots[i] : (Array.isArray(sense) ? sense[i] : sense);
-          // --- movement: greedy step toward the player through the nav graph
+          // --- movement: greedy step toward the player through the nav graph.
+          // Test arenas pin their bots in place so the player can inspect the
+          // animations and line up shots; standard maps chase as before.
           const target = MAP.nav[b.node];
           const tdx = target.x - b.pos.x, tdz = target.z - b.pos.z;
           const tdist = Math.hypot(tdx, tdz);
-          if (tdist < 0.5) {
+          if (MAP.stationaryBots) {
+            // Locked to the spawn node: still turns to track the player, but
+            // never leaves its spot.
+          } else if (tdist < 0.5) {
             // pick the neighbor node closest to the player (or wander)
             const opts = NAVGRAPH[b.node];
             if (opts.length) {

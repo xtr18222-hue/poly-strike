@@ -122,7 +122,7 @@
     size: 76, bounds: { hx: 25, hz: 50 }, nav: [],
     spawnPlayer: { x: 0, z: 34 },
     spawnOpponent: { x: 0, z: -34 },
-    test: true, peaceful: true,
+    test: true, peaceful: true, stationaryBots: true,
     // Authored geometry: theking1322's target range (50 x 7.2 x 100).
     model: { file: 'theking1322_range.glb', scale: 0.5 },
     spawnBots: [
@@ -142,7 +142,7 @@
     size: 76, bounds: { hx: 20, hz: 15 }, nav: [],
     spawnPlayer: { x: 0, z: 12 },
     spawnOpponent: { x: 0, z: -14 },
-    test: true, peaceful: true,
+    test: true, peaceful: true, stationaryBots: true,
     // Authored geometry: the low-poly tactical depot (40.6 x 5.1 x 28.6,
     // centered at z=-14, so shift it to sit inside the bounds).
     model: { file: 'map-depot.glb', scale: 1, offset: [0, 0, 1] },

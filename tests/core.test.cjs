@@ -8,12 +8,13 @@ const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
 test('arsenal contains the seven weapons with consistent stats', () => {
-  // The new asset suite: 7 weapons (5 primaries, Deagle, bayonet melee).
+  // The new asset suite: 7 weapons. "MX" is a knife, not a rifle: it was
+  // reclassified from primary into the melee slot alongside the bayonet.
   assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','bayonet','deagle','hecate','l96','mosin','mx']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
-    if (k !== 'bayonet') {
+    if (w.slot !== 'melee') {
       assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
       assert.ok(w.damage > 0 && w.reloadTime > 0);
       assert.equal(typeof w.auto, 'boolean');
@@ -23,8 +24,14 @@ test('arsenal contains the seven weapons with consistent stats', () => {
   assert.equal(C.WEAPONS.akm.auto, true, 'AKM is automatic');
   assert.equal(C.WEAPONS.deagle.auto, false, 'Deagle is semi-auto');
   assert.equal(C.WEAPONS.l96.zoomFov < 40, true, 'L96 has scope zoom');
-  assert.equal(C.WEAPONS.mx.zoomFov, null, 'MX is unscoped (iron sights only)');
-  assert.equal(C.WEAPONS.mx.ads, true, 'MX uses ADS like the AKM');
+  // The MX is a combat knife now, so it has no magazine, scope or ADS.
+  assert.equal(C.WEAPONS.mx.slot, 'melee', 'MX is reclassified to the melee slot');
+  assert.equal(C.WEAPONS.mx.mag, 0, 'MX has no magazine');
+  assert.equal(C.WEAPONS.mx.zoomFov, null, 'MX has no scope');
+  assert.equal(C.WEAPONS.mx.ads, false, 'MX does not use ADS');
+  assert.equal(C.WEAPONS.bayonet.slot, 'melee', 'bayonet stays melee');
+  assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
+    ['akm','hecate','l96','mosin'], 'four primaries remain');
 });
 
 /* ---------- 2. Spray pattern ---------- */

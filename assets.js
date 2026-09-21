@@ -184,6 +184,31 @@
   // (fitted weapons are stored unwrapped); normalize first.
   function sceneOf(src) { return src && (src.scene || src); }
 
+  // Relink the detachable-part handles after a clone. Object3D.copy() deep
+  // JSON-clones userData, which silently drops the live Object3D references
+  // (root.userData.mag) and their basePos/baseRot caches, so the reload
+  // animation then crashed reading .copy() off undefined. Walk the clone in
+  // lockstep with the source and restore the real cloned node.
+  const NAME_HINTS = { mag: /^mag$/, bolt: /bolt|slide|charging/i };
+  function relinkParts(cloneRoot, srcRoot) {
+    if (!cloneRoot || !srcRoot) return;
+    const byName = new Map();
+    cloneRoot.traverse(o => { if (o.name) byName.set(o.name, o); });
+    for (const [field, re] of Object.entries(NAME_HINTS)) {
+      let ref = null;
+      srcRoot.traverse(o => { if (!ref && re.test(o.name || '')) ref = o; });
+      if (!ref) continue;
+      const twin = byName.get(ref.name);
+      if (!twin) continue;
+      cloneRoot.userData[field] = twin;
+      twin.userData.basePos = twin.position.clone();
+      twin.userData.baseRot = twin.rotation.clone();
+    }
+    // The muzzle anchor is an empty child added at fit time; re-find it too.
+    const muzzle = byName.get('muzzle');
+    if (muzzle) cloneRoot.userData.muzzle = muzzle;
+  }
+
   function cloneGLB(src, skinned) {
     const scene = sceneOf(src);
     if (!scene) return null;
@@ -192,11 +217,13 @@
       if (utils && typeof utils.clone === 'function') {
         const clone = utils.clone(scene);
         if (src.animations) clone.animations = src.animations.map(a => a.clone());
+        relinkParts(clone, scene);
         return clone;
       }
     }
     const plain = scene.clone(true);
     if (src.animations) plain.animations = src.animations.map(a => a.clone());
+    relinkParts(plain, scene);
     return plain;
   }
 
@@ -253,6 +280,31 @@
     root.userData.muzzle = tip;
 
     root.userData.hands = []; // rigs carry their own arms; standalone weapons have none
+
+    // Detachable parts. The GLBs were re-exported from Blender with magazines,
+    // loose rounds and attachments grouped under named pivot nodes ("mag",
+    // "rounds", "attachment"); those pivots are what the reload animation and
+    // the magazine-drop effect drive. The muzzle and bolt are looked up by
+    // their original names when the rig carries them.
+    const find = (re) => {
+      let hit = null;
+      root.traverse((o) => { if (!hit && re.test(o.name || '')) hit = o; });
+      return hit;
+    };
+    const mag = find(/^mag$/);
+    if (mag) {
+      root.userData.mag = mag;
+      mag.userData.basePos = mag.position.clone();
+      mag.userData.baseRot = mag.rotation.clone();
+    }
+    // The bolt/slide only exists on some rigs; missing parts are skipped.
+    const bolt = find(/bolt|slide|charging/i);
+    if (bolt) {
+      root.userData.bolt = bolt;
+      bolt.userData.basePos = bolt.position.clone();
+      bolt.userData.baseRot = bolt.rotation.clone();
+    }
+
     root.userData.fit = {
       exportLong: +long.toFixed(4), scale: +scale.toFixed(5),
       axis, dim: [+fs.x.toFixed(4), +fs.y.toFixed(4), +fs.z.toFixed(4)],

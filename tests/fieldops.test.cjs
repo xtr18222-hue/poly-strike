@@ -29,15 +29,24 @@ test('asset suite ships every weapon the game selects', () => {
     }
   }
 });
-test('announcer packs map all 13 male and 9 female clips', () => {
+test('announcer packs map every clip and the Clutch line is gone', () => {
   const fs = require('fs');
   const path = require('path');
   const audio = fs.readFileSync(path.join(ROOT, 'audio.js'), 'utf-8');
-  const male = ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch'];
-  const female = ['[UT Sexy Female Announcer]First......Blood','Clutch'];
+  const male = ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation'];
+  const female = ['[UT Sexy Female Announcer]First......Blood','[UT Sexy Female Announcer]holy ......op!!! (1)'];
   for (const name of male.concat(female)) {
     assert.ok(audio.includes(name), 'pack maps ' + name.slice(0, 30));
     assert.ok(fs.existsSync(path.join(ROOT, 'assets/audio', name + '.mp3')), name.slice(0, 30) + ' exists on disk');
+  }
+  // The Clutch announcement was removed: no pack entry, no trigger, no file
+  // reference anywhere in the game code.
+  for (const name of ['Clutch','Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch']) {
+    assert.ok(!audio.includes(name), 'audio.js no longer references ' + name);
+  }
+  for (const f of ['game.js','core.js','visuals.js','maps.js']) {
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf-8');
+    assert.ok(!/clutch/i.test(src), f + ' has no clutch code');
   }
 });
 
