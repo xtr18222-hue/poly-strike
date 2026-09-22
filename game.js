@@ -175,15 +175,24 @@ readyAll().then(()=>{bindModels();
 let modelsBound=false;
 const bindModels=()=>{
  if(modelsBound)return;modelsBound=true;
- for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
-  viewScene.add(src);models[key]=src;src.visible=false;
+ const tryBind=()=>{
+  let bound=0;
+  for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
+   bound++;
+   viewScene.add(src);models[key]=src;src.visible=false;
   src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});
-  // Per-weapon viewmodel pose: an optional small sight-line pitch on top of
-  // the fit. fitWeapon already maps the measured bore onto -Z with sights on
+  // Per-weapon viewmodel pose: an optional small sight-line pitch on top of the
+  // fit. fitWeapon already maps the measured bore onto -Z with sights on
   // +Y, so the weapon arrives level and forward; no -90deg pitch is wanted
   // here (that was the barrel-pointing-down bug).
   const p=VIEWMODEL_POSE[key];if(p){src.rotation.set(p[0],p[1],p[2]);}
- }
+  }
+  // The suite resolves asynchronously; if it was not ready on the first pass the
+  // weapon groups stay empty and the in-game weapon is invisible. Retry until at
+  // least one weapon binds, then stop.
+  if(!bound){ modelsBound=false; setTimeout(tryBind, 120); }
+ };
+ tryBind();
  // Hands are gone: the player viewmodel is the weapon only. Bot rigs keep their
  // own arms (they are whole-character models, not first-person arms).
 };
