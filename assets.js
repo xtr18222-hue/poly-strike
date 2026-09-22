@@ -317,20 +317,27 @@
       let recZ = -Infinity, recY = Infinity, haveZ = false, haveY = false;
       const pb = new T.Box3().setFromObject(part);
       const pc = new T.Vector3(); pb.getCenter(pc);
+      let scZ = Infinity;
       root.traverse(o => {
         if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
         if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
         const b = new T.Box3().setFromObject(o);
         if (!isFinite(b.min.y)) return;
+        // A real receiver is a thick block; thin sight posts and rails at the
+        // extreme ends of the model are not the mating face, so weight the
+        // candidates by how much bore they span.
+        const span = b.max.z - b.min.z;
+        scZ = Math.min(scZ, b.min.z);
+        if (span > 0.3) {
+          if (!haveZ || b.max.z > recZ) { recZ = b.max.z; haveZ = true; }
+        }
         if (partName === 'mag') {
-          // the magazine hangs under the receiver, so only parts near it in z count
           const c = new T.Vector3(); b.getCenter(c);
           if (Math.abs(c.z - pc.z) > 0.12) return;
           if (b.min.y < recY) { recY = b.min.y; haveY = true; }
-        } else {
-          if (!haveZ || b.max.z > recZ) { recZ = b.max.z; haveZ = true; }
         }
       });
+      if (partName === 'stock' && haveZ) recZ = Math.min(recZ, scZ + 0.35);
 
       // The part's contact vertex, in world space.
       let pZ = partName === 'stock' ? Infinity : -Infinity;
@@ -347,20 +354,88 @@
       });
       if (!isFinite(pZ)) continue;
 
+      // The world-space position of the contact vertex itself. For a curved
+      // magazine this sits well forward of the part's box centre, so the
+      // receiver must be sampled here rather than at the centre.
+      let contactZ = 0;
+      {
+        let best = partName === 'stock' ? Infinity : -Infinity;
+        part.traverse(o => {
+          if (!o.isMesh || !o.geometry) return;
+          const pos = o.geometry.attributes.position;
+          if (!pos) return;
+          for (let i = 0; i < pos.count; i++) {
+            const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+            if (partName === 'stock') { if (v.z < pZ + 1e-6 && v.z < best) best = v.z; }
+            else { if (v.y > pZ - 1e-6 && v.z > best) best = v.z; }
+          }
+        });
+        if (isFinite(best)) contactZ = best;
+      }
+
+      // The receiver contact point must be a true vertex too. A bounding-box
+      // floor can be pulled down by a spur that is not above the magazine, which
+      // left the real floor out of reach of the part's top vertex. Measure the
+      // receiver floor at the contact vertex's own z: a curved magazine's top
+      // vertex sits well forward of its box centre, so the centre filters out
+      // the very part of the receiver the magazine must meet.
+      if (partName === 'mag') {
+        let vFloor = Infinity;
+        root.traverse(o => {
+          if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
+          if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
+          const pos = o.geometry && o.geometry.attributes.position;
+          if (!pos) return;
+          for (let i = 0; i < pos.count; i++) {
+            const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+            if (Math.abs(v.z - contactZ) > 0.05) continue;
+            if (v.y < vFloor) vFloor = v.y;
+          }
+        });
+        if (isFinite(vFloor)) recY = vFloor;
+      }
+
       const target = partName === 'stock' ? recZ : recY;
       const axis = partName === 'stock' ? 'z' : 'y';
       const d = target - pZ - 0.004;   // small tolerance so faces do not z-fight
-      if (Math.abs(d) > 0.15) continue; // a bigger jump means the proxy is wrong here
+      // Only close a gap the separation pass opened. In the fitted frame -Z is
+      // forward, so a negative d means the stock sits behind the mating face
+      // and must be slid forward; a positive d means it is already inserted and
+      // any move would pull it out of alignment. The magazine is the mirror
+      // image: +Y is up, so a positive d means it hangs below the well and must
+      // be raised, while a negative d means it is already inserted.
+      const gap = partName === 'stock' ? -d : d;
+      const guard = partName === 'stock' ? 0.6 : 0.15;
+      if (gap < 0.002 || gap > guard) continue;
 
       // The pivot does not drive its meshes, so push each mesh in local space.
+      // worldToLocal() refreshes the parent's world matrix first, which is what
+      // the manual inverse missed (stale parents scaled the delta per mesh).
       const worldDelta = new T.Vector3();
       worldDelta[axis] = d;
+      // The separation pass also dropped the part below the receiver (the AKM
+      // stock folds *under* it). Seat it flush on the vertical axis too, using
+      // the same world->local conversion so unrelated models stay untouched.
+      if (partName === 'stock') {
+        const sbb = new T.Box3().setFromObject(part);
+        const rbb = new T.Box3();
+        root.traverse(o => {
+          if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
+          if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
+          const b = new T.Box3().setFromObject(o);
+          if (isFinite(b.min.y)) rbb.union(b);
+        });
+        if (isFinite(rbb.min.y) && sbb.max.y < rbb.min.y) {
+          worldDelta.y = rbb.min.y - sbb.max.y;
+        }
+      }
       part.traverse(o => {
         if (!o.isMesh) return;
-        const parent = o.parent;
-        const inv = new T.Matrix4();
-        if (parent) inv.copy(parent.matrixWorld).invert();
-        o.position.add(worldDelta.clone().applyMatrix4(inv));
+        const wp = new T.Vector3();
+        o.getWorldPosition(wp);
+        wp.add(worldDelta);
+        if (o.parent) o.parent.worldToLocal(wp);
+        o.position.copy(wp);
       });
       part.userData.basePos = part.position.clone();
     }
@@ -510,7 +585,10 @@
       p.userData.basePos = p.position.clone();
       p.userData.baseRot = p.rotation.clone();
     };
-    bindPart('mag', /^mag/, true);       // verticalness picks the real magazine
+    // AKM-style exports name the magazine pivots after the cartridge
+    // ("762x39_12") rather than "mag", so bind by shape as well as by name:
+    // the real magazine is the vertical part hanging under the receiver.
+    bindPart('mag', /^(mag|762x?39|556|545|9mm|45acp|12g)/, true);
     bindPart('bolt', /^bolt/);           // heaviest is the bolt
     // The separation pass baked cants into the kept parts (the AKM magazine
     // carries a 60deg roll). Those are world-relative editing rotations, not
@@ -563,6 +641,10 @@
       stock.rotation.set(0, 0, 0);
       stock.quaternion.identity();
       stock.userData.baseRot = stock.rotation.clone();
+      // The separation pass left an unused duplicate stock behind the real one
+      // (e.g. "akm_stock_1" alongside the fitted "stock"). Only the fitted pivot
+      // drives the reload, so hide the duplicate rather than leaving it floating.
+      hideExtras(/stock/, stock);
     }
 
     root.userData.fit = {
