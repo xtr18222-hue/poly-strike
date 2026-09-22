@@ -163,21 +163,79 @@ test('the first-person viewmodel carries no hands', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
   assert.ok(!/handRoots/.test(game), 'hand root groups removed');
   assert.ok(!/PolyAsset\.rig\(/.test(game), 'FPS arm rigs are no longer attached');
-  // The pose table must pitch every weapon into a first-person hold.
+  // The pose table must still exist, but the fit now maps the measured bore
+  // onto -Z with sights on +Y, so the weapon arrives level and forward. Every
+  // pose is a small sight-line correction, never the full -90deg pitch that
+  // rolled weapons onto their side.
   assert.ok(/const VIEWMODEL_POSE=\{/.test(game), 'per-weapon viewmodel pose table exists');
   for (const k of Object.keys(CORE.WEAPONS)) {
     if (k === 'mx') continue; // mx is a melee alt-skin, not a viewmodel key
-    assert.ok(new RegExp(`${k}:\\[-1\\.5708`).test(game), `${k} has a -90deg pose`);
+    assert.ok(new RegExp(`${k}:`).test(game), `${k} has a pose entry`);
   }
+  // A pose entry that contains a full 90deg pitch would re-introduce the
+  // sideways-weapon bug on top of a correct fit.
+  assert.ok(!/-1\.5708/.test(game), 'no full -90deg pitch left in the pose table');
 });
 
-// ---------- sniper bolt ----------
+// ---------- weapon orientation: fitted, upright, solid ----------
+// The weapons used to render rolled onto their side and in scattered pieces.
+// These guard the three things that caused it, all of which live in assets.js.
+test('the weapon fit maps the bore onto -Z with sights on +Y', () => {
+  // The old code applied a roll about the forward axis, which mapped +X -> -Y
+  // and laid the sights sideways. The fit must build a real basis instead.
+  assert.ok(!/fix\.z\s*=\s*-90\s*;/.test(src), 'the forward-axis roll is gone');
+  assert.ok(/function fitWeapon/.test(src), 'fitWeapon is defined');
+  assert.ok(/q\.setFromUnitVectors/.test(src), 'the fit composes unit-vector rotations');
+});
+
+test('per-asset muzzle direction is recorded, not assumed', () => {
+  // Measured by vertex slicing: AKM/Deagle/L96/Mosin/Bayonet point +X, but
+  // Hecate and MX point -X. A universal assumption flips those two.
+  const m = src.match(/const\s+WEAPON_ASSETS\s*=\s*\{([\s\S]*?)\n\s*\};/);
+  assert.ok(m, 'WEAPON_ASSETS table found');
+  // The entries are multi-line, so read each block rather than each row.
+  const blocks = {};
+  let cur = null;
+  for (const line of m[1].split('\n')) {
+    const head = line.match(/^\s*([a-z0-9_]+)\s*:\s*\{/);
+    if (head) { cur = head[1]; blocks[cur] = ''; continue; }
+    if (cur) blocks[cur] += line + '\n';
+  }
+  for (const k of ['akm', 'deagle', 'l96', 'mosin', 'hecate', 'bayonet']) {
+    assert.ok(blocks[k], `${k} present in WEAPON_ASSETS`);
+    assert.ok(/flip\s*:/.test(blocks[k]), `${k} records its muzzle direction (flip)`);
+  }
+  assert.ok(/flip\s*:\s*-1/.test(blocks.hecate), 'hecate is flipped (muzzle at -X)');
+  assert.ok(/flip\s*:\s*-1/.test(blocks.mx), 'mx is flipped (muzzle at -X)');
+});
+
+test('cloneGLB preserves the fitted orientation and hidden parts', () => {
+  // three r149's Object3D.clone() copies only position/scale and resets the
+  // quaternion, which silently discarded the fit on every in-game instance.
+  assert.ok(/function cloneGLB/.test(src), 'cloneGLB is defined');
+  assert.ok(/quaternion/.test(src), 'the clone path copies quaternions');
+  // Per-part visibility (hidden spare magazines and loose rounds) also has to
+  // survive the clone, or those parts reappear floating past the muzzle.
+  assert.ok(/visByName/.test(src), 'clone propagates per-part visibility by name');
+});
+
+test('detached weapon parts are hidden or seated, not left floating', () => {
+  // Every rounds_ pivot is a detached loose bullet; the reload drives only the
+  // magazine, so there is no "real" rounds pivot to keep.
+  assert.ok(/hideExtras/.test(src), 'hideExtras exists for detached parts');
+  assert.ok(/seatParts/.test(src), 'seatParts closes stock/magazine gaps');
+  // The part picker must prefer the magazine that hangs vertically below the
+  // receiver; picking by mesh weight selected the floating spare instead.
+  assert.ok(/vertical/.test(src), 'the part picker tests verticalness');
+  assert.ok(!/hits\.sort\(\(a,b\)=>b-a\)/.test(src), 'weight-only part picking is gone');
+});
+
 test('the sniper bolt strokes along the bore, not outward', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
   const m = game.match(/u\.bolt\.position\.set\(([^)]+)\)/);
   assert.ok(m, 'bolt position is set as a whole vector');
-  // The old bug translated only z (toward the camera); the fix drives -Y,
-  // the weapon's local bore axis before the -90deg viewmodel pitch.
-  assert.ok(m[1].includes('basePos.y-stroke'), 'bolt strokes on local Y');
+  // The fit maps the bore onto -Z, so the bolt strokes along -Z (forward,
+  // toward the muzzle) — never the local -Y it used before the orientation fix.
+  assert.ok(m[1].includes('basePos.z-stroke'), 'bolt strokes on local Z (the bore axis)');
   assert.ok(!/u\.bolt\.position\.z=/.test(game), 'no direct bolt z assignment');
 });

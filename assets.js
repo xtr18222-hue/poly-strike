@@ -33,31 +33,31 @@
   const WEAPON_ASSETS = {
     akm: {
       file: 'low-poly_akm.glb',
-      length: 0.90, rot: [0, 0, 0],
+      length: 0.90, rot: [0, 0, 0], flip: 1,
     },
     deagle: {
       file: 'low-poly_desert_eagle_xix.glb',
-      length: 0.27, rot: [0, 0, 0],
+      length: 0.27, rot: [0, 0, 0], flip: 1,
     },
     l96: {
       file: 'low-poly_l96_a1_precision_marksman.glb',
-      length: 1.18, rot: [0, 0, 0],
+      length: 1.18, rot: [0, 0, 0], flip: 1,
     },
     mosin: {
       file: 'low-poly_mosin_nagant_189130.glb',
-      length: 1.23, rot: [0, 0, 0],
+      length: 1.23, rot: [0, 0, 0], flip: 1,
     },
     mx: {
       file: 'low-poly_mx-8054.glb',
-      length: 0.75, rot: [0, 0, 0],
+      length: 0.75, rot: [0, 0, 0], flip: -1,
     },
     hecate: {
       file: 'low-poly_pgm_hecate_ii.glb',
-      length: 1.30, rot: [0, 0, 0],
+      length: 1.30, rot: [0, 0, 0], flip: -1,
     },
     bayonet: {
       file: 'low-poly_fa-03_bayonet.glb',
-      length: 0.30, rot: [0, 0, 0],
+      length: 0.30, rot: [0, 0, 0], flip: 1,
     },
   };
 
@@ -224,30 +224,24 @@
   const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i };
   function relinkParts(cloneRoot, srcRoot) {
     if (!cloneRoot || !srcRoot) return;
+    // Prefer the pivot fitWeapon bound on the original: it is already the
+    // correct part, chosen by verticalness, and copying it across keeps the
+    // reload animating the right magazine. Only fall back to re-picking if the
+    // source lost its binding (old cached asset).
     const byName = new Map();
     cloneRoot.traverse(o => { if (o.name) byName.set(o.name, o); });
-    // Pick the same pivot fitWeapon chose: the heaviest match of each kind,
-    // so a spare magazine never wins over the primary one.
-    const meshes = (root) => { let n = 0; root.traverse(o => { if (o.isMesh) n++; }); return n; };
-    const pick = (re) => {
-      let best = null, bestN = -1;
-      srcRoot.traverse(o => {
-        if (!re.test(o.name || '')) return;
-        const n = meshes(o);
-        if (n > bestN) { best = o; bestN = n; }
-      });
-      return best;
-    };
-    for (const [field, re] of Object.entries(NAME_HINTS)) {
-      const ref = pick(re);
+    for (const field of Object.keys(NAME_HINTS)) {
+      const ref = srcRoot.userData[field];
       if (!ref) continue;
       const twin = byName.get(ref.name);
       if (!twin) continue;
       cloneRoot.userData[field] = twin;
+      // basePos/baseRot were straightened at fit time; copy those, since the
+      // clone's own local transform is already identical but its userData is
+      // not carried by Object3D.clone().
       twin.userData.basePos = twin.position.clone();
       twin.userData.baseRot = twin.rotation.clone();
     }
-    // The muzzle anchor is an empty child added at fit time; re-find it too.
     const muzzle = byName.get('muzzle');
     if (muzzle) cloneRoot.userData.muzzle = muzzle;
   }
@@ -255,19 +249,40 @@
   function cloneGLB(src, skinned) {
     const scene = sceneOf(src);
     if (!scene) return null;
+    let clone;
     if (skinned) {
       const utils = global.THREE && global.THREE.SkeletonUtils;
       if (utils && typeof utils.clone === 'function') {
-        const clone = utils.clone(scene);
-        if (src.animations) clone.animations = src.animations.map(a => a.clone());
-        relinkParts(clone, scene);
-        return clone;
+        clone = utils.clone(scene);
       }
     }
-    const plain = scene.clone(true);
-    if (src.animations) plain.animations = src.animations.map(a => a.clone());
-    relinkParts(plain, scene);
-    return plain;
+    if (!clone) clone = scene.clone(true);
+    // Object3D.clone() copies only position/scale, so the fitted orientation on
+    // the inner pivot (and the per-part straightening done at fit time) were
+    // discarded and every cloned weapon rendered sideways / with canted mags.
+    // Propagate only the transforms fitWeapon owns: the top-level pivot chain.
+    // Copying every node by name would re-apply the source's baked cants over
+    // the straightened clone.
+    const copyPivot = (srcNode, dstNode) => {
+      if (!srcNode || !dstNode) return;
+      dstNode.position.copy(srcNode.position);
+      dstNode.quaternion.copy(srcNode.quaternion);
+      dstNode.rotation.copy(srcNode.rotation);
+      dstNode.scale.copy(srcNode.scale);
+      dstNode.visible = srcNode.visible;
+    };
+    copyPivot(scene, clone);
+    for (let i = 0; i < scene.children.length && i < clone.children.length; i++)
+      copyPivot(scene.children[i], clone.children[i]);
+    // Per-part visibility set by hideExtras (spare magazines, loose rounds) is
+    // not carried by clone(); propagate it by name so the clone hides the same
+    // floating parts the original hid.
+    const visByName = new Map();
+    scene.traverse(o => { if (o.name) visByName.set(o.name, o.visible); });
+    clone.traverse(c => { if (c.name && visByName.has(c.name)) c.visible = visByName.get(c.name); });
+    if (src.animations) clone.animations = src.animations.map(a => a.clone());
+    relinkParts(clone, scene);
+    return clone;
   }
 
   /* ------------------------------------------------------ model fitting --- */
@@ -282,6 +297,75 @@
   // centre offset after the rotation would move the grip sideways instead of
   // along the barrel, and reading box.min/max in the same frame as the
   // translation is what makes the rear of the receiver land at z=0.
+  // Close the gap the separation pass opened between the stock/magazine and the
+  // receiver. The stock pivot's children are offset far from the pivot itself
+  // (~2.8 units in local space) and the separation pass broke the pivot's hold
+  // on its meshes, so neither part's bounding box nor the pivot's position can
+  // be trusted: measure the contact vertices directly and push each mesh in
+  // its own local space. Guarded, so a model whose parts do not line up this
+  // way is left untouched rather than broken.
+  function seatParts(root, T) {
+    for (const partName of ['stock', 'mag']) {
+      const part = root.userData[partName];
+      if (!part) continue;
+      root.updateMatrixWorld(true);
+      const partMeshes = new Set();
+      part.traverse(o => { if (o.isMesh) partMeshes.add(o); });
+
+      // The contact point on the receiver, along the fitted bore (z) and up (y).
+      // -Z is forward, so the receiver's rear face is the LARGEST z.
+      let recZ = -Infinity, recY = Infinity, haveZ = false, haveY = false;
+      const pb = new T.Box3().setFromObject(part);
+      const pc = new T.Vector3(); pb.getCenter(pc);
+      root.traverse(o => {
+        if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
+        if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
+        const b = new T.Box3().setFromObject(o);
+        if (!isFinite(b.min.y)) return;
+        if (partName === 'mag') {
+          // the magazine hangs under the receiver, so only parts near it in z count
+          const c = new T.Vector3(); b.getCenter(c);
+          if (Math.abs(c.z - pc.z) > 0.12) return;
+          if (b.min.y < recY) { recY = b.min.y; haveY = true; }
+        } else {
+          if (!haveZ || b.max.z > recZ) { recZ = b.max.z; haveZ = true; }
+        }
+      });
+
+      // The part's contact vertex, in world space.
+      let pZ = partName === 'stock' ? Infinity : -Infinity;
+      let measuring = partName === 'stock' ? haveZ : haveY;
+      if (!measuring) continue;
+      part.traverse(o => {
+        if (!o.isMesh || !o.geometry) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          if (partName === 'stock') { if (v.z < pZ) pZ = v.z; }
+          else { if (v.y > pZ) pZ = v.y; }
+        }
+      });
+      if (!isFinite(pZ)) continue;
+
+      const target = partName === 'stock' ? recZ : recY;
+      const axis = partName === 'stock' ? 'z' : 'y';
+      const d = target - pZ - 0.004;   // small tolerance so faces do not z-fight
+      if (Math.abs(d) > 0.15) continue; // a bigger jump means the proxy is wrong here
+
+      // The pivot does not drive its meshes, so push each mesh in local space.
+      const worldDelta = new T.Vector3();
+      worldDelta[axis] = d;
+      part.traverse(o => {
+        if (!o.isMesh) return;
+        const parent = o.parent;
+        const inv = new T.Matrix4();
+        if (parent) inv.copy(parent.matrixWorld).invert();
+        o.position.add(worldDelta.clone().applyMatrix4(inv));
+      });
+      part.userData.basePos = part.position.clone();
+    }
+  }
+
   function fitWeapon(group, def, key) {
     const T = needThree();
     const root = new T.Group();
@@ -289,22 +373,61 @@
     root.add(inner);
     inner.add(group);
 
-    // Bounding box of the raw asset tells us the export scale and orientation.
+  // --- Orientation -------------------------------------------------------
+    // All assets export with the long axis on +X, sights on +Y, thin in Z, but
+    // the muzzle end differs per model. The old code applied a roll about the
+    // forward axis (fix.z = -90), which maps +X -> -Y: the barrel pointed DOWN
+    // and the sights ended up sideways (a rifle lying on its side). A roll
+    // about the bore never fixes that — it only spins around the wrong axis.
+    // Build the target basis instead: muzzle -> -Z (forward), up -> +Y,
+    // width -> +X (to the player's right). Determinant-1 and orthogonal, so no
+    // shear or flip, and the weapon always sits level and faces forward.
     const box = new T.Box3().setFromObject(group);
     const size = new T.Vector3();
     box.getSize(size);
     const long = Math.max(size.x, size.y, size.z);
-
     const axis = size.x >= size.y && size.x >= size.z ? 'x' : (size.y >= size.z ? 'y' : 'z');
-    const fix = { x: 0, y: 0, z: 0 };
-    if (axis === 'x') fix.z = -90;                 // long axis along X -> rotate to Z
-    else if (axis === 'y') fix.x = 90;             // vertical export -> tip forward
-    // def.rot is a correction composed AFTER the axis fix, on the same pivot,
-    // so a weapon that exports muzzle-up or grip-first can be turned into the
-    // bore axis without disturbing the length alignment. rot:[0,0,0] means the
-    // auto guess was already right.
-    if (def.rot) { fix.x += def.rot[0]; fix.y += def.rot[1]; fix.z += def.rot[2]; }
-    inner.rotation.set(T.MathUtils.degToRad(fix.x), T.MathUtils.degToRad(fix.y), T.MathUtils.degToRad(fix.z));
+
+    // Asset forward: the axis the muzzle points along. Measured per model
+    // (probes/probe_slice.mjs): AKM/Deagle/L96/Mosin/Bayonet muzzle at +X,
+    // Hecate and MX at -X. A def.flip lets the table correct either case.
+    const assetFwd = { x: new T.Vector3(def.flip === -1 ? -1 : 1, 0, 0),
+                       y: new T.Vector3(0, def.flip === -1 ? -1 : 1, 0),
+                       z: new T.Vector3(0, 0, def.flip === -1 ? -1 : 1) }[axis];
+    const assetUp = new T.Vector3(0, 1, 0);   // sights up on every asset measured
+    const assetRgt = new T.Vector3().crossVectors(assetUp, assetFwd).normalize();
+    // Guard against a degenerate (collinear) pair.
+    if (!isFinite(assetRgt.x) || assetRgt.lengthSq() < 1e-6) assetRgt.set(1, 0, 0);
+    const assetUp2 = new T.Vector3().crossVectors(assetFwd, assetRgt).normalize();
+
+    // Target basis: -Z forward, +Y up, +X right. All three measured asset axes
+    // are mutually perpendicular, so a single quaternion built from two basis
+    // vectors via setFromUnitVectors pairs carries the full rotation with no
+    // matrix intermediate. Applying them in sequence (asset up -> view up,
+    // then asset forward -> view forward about that up) avoids the
+    // column-normalisation path in setFromRotationMatrix, which silently
+    // produced a degenerate identity-ish quaternion when handed to a matrix
+    // whose columns were unit-length but not exactly orthonormal.
+    const tgtFwd = new T.Vector3(0, 0, -1);
+    const tgtUp = new T.Vector3(0, 1, 0);
+    const q = new T.Quaternion();
+    q.setFromUnitVectors(assetUp2.clone().normalize(), tgtUp);
+    // After that, the bore sits somewhere in the XZ plane; yaw it onto -Z
+    // about the now-correct +Y axis.
+    const fwdAfter = assetFwd.clone().applyQuaternion(q);
+    const yawFix = new T.Quaternion().setFromUnitVectors(fwdAfter.clone().normalize(), tgtFwd);
+    q.premultiply(yawFix);
+    // Write the fit as an EULER, not just a quaternion. Object3D.clone() copies
+    // position and scale only, so a quaternion-only orientation was discarded
+    // on every cloned weapon and it rendered sideways. Euler/rotation is also
+    // not copied by clone(), but cloneGLB propagates it explicitly, and keeping
+    // both in sync means the cached original and every clone agree.
+    inner.quaternion.copy(q);
+    inner.rotation.setFromQuaternion(q);
+    inner.updateMatrix();
+    if (def.rot) inner.rotateOnAxis(new T.Vector3(1, 0, 0), T.MathUtils.degToRad(def.rot[0]));
+    if (def.rot) inner.rotateOnAxis(new T.Vector3(0, 1, 0), T.MathUtils.degToRad(def.rot[1]));
+    if (def.rot) inner.rotateOnAxis(new T.Vector3(0, 0, 1), T.MathUtils.degToRad(def.rot[2]));
 
     // Scale to real-world length. Blender-unit exports come out ~8-18x too big.
     const scale = long > 0 ? def.length / long : 1;
@@ -326,16 +449,19 @@
     // Grip at origin: keep the rear of the weapon near z=0.
     inner.position.z -= fitted.min.z;
 
-    // Muzzle anchor at the barrel tip. Positioned from the *fitted* box: after
-    // the orientation fix the muzzle end is at min.z, and centre x/y so the
-    // flash sits on the bore axis rather than the box corner.
+    // Muzzle anchor at the barrel tip. The bore now runs along -Z with the
+    // receiver centred on the origin, so the tip is simply min.z at the fitted
+    // centre in X/Y — never a box corner.
     root.updateMatrixWorld(true);
     const tip = new T.Object3D();
     tip.name = 'muzzle';
     const again = new T.Box3().setFromObject(root);
-    tip.position.set(again.min.x + fs.x / 2, again.min.y + fs.y / 2, again.min.z);
+    const ac = new T.Vector3(); again.getCenter(ac);
+    tip.position.set(ac.x, ac.y, again.min.z);
     root.add(tip);
     root.userData.muzzle = tip;
+    // Kept so the stock can be butted up against the receiver's rear face.
+    root.userData.fitBox = again.clone();
 
     root.userData.hands = []; // rigs carry their own arms; standalone weapons have none
 
@@ -347,35 +473,103 @@
     // wrong mesh. When several pivots of one kind exist, the heaviest (most
     // meshes) wins — the primary magazine over a spare.
     const meshCount = (o) => { let n = 0; o.traverse(x => { if (x.isMesh) n++; }); return n; };
-    const pickPart = (re) => {
+    // A real magazine hangs straight down from the receiver; a spare that the
+    // separation pass detached floats with its long axis sideways or forward.
+    // Verticalness of the long axis is therefore the discriminator, with
+    // volume breaking ties (a mag-release catch is also vertical but tiny).
+    const worldLongAxis = (o) => {
+      const bb = new T.Box3().setFromObject(o);
+      const s = bb.getSize(new T.Vector3());
+      if (!isFinite(s.x) || s.lengthSq() < 1e-8) return null;
+      const q = new T.Quaternion();
+      o.getWorldQuaternion(q);
+      let li = 0;
+      if (s.y > s.x && s.y > s.z) li = 1;
+      else if (s.z > s.x && s.z > s.y) li = 2;
+      const v = [new T.Vector3(1, 0, 0), new T.Vector3(0, 1, 0), new T.Vector3(0, 0, 1)][li];
+      v.applyQuaternion(q);
+      return { axis: v, vol: s.x * s.y * s.z };
+    };
+    const pickPart = (re, vertical) => {
       const hits = [];
       root.traverse(o => { if (re.test(o.name || '') && o !== root) hits.push(o); });
       if (!hits.length) return null;
-      return hits.sort((a, b) => meshCount(b) - meshCount(a))[0];
+      if (!vertical) {
+        // Heaviest pivot for bolt/scope: the largest is the real part.
+        return hits.sort((a, b) => meshCount(b) - meshCount(a))[0];
+      }
+      return hits.map(o => {
+        const la = worldLongAxis(o);
+        return { o, vert: la ? Math.abs(la.axis.y) : 0, vol: la ? la.vol : 0 };
+      }).sort((a, b) => (b.vert - a.vert) || (b.vol - a.vol))[0].o;
     };
-    const bindPart = (field, re) => {
-      const p = pickPart(re);
+    const bindPart = (field, re, vertical) => {
+      const p = pickPart(re, vertical);
       if (!p) return;
       root.userData[field] = p;
       p.userData.basePos = p.position.clone();
       p.userData.baseRot = p.rotation.clone();
     };
-    bindPart('mag', /^mag/);
-    bindPart('rounds', /^rounds/);
-    bindPart('bolt', /^bolt/);
-    // Loose rounds and spare magazines are detached on the models; hide them so
-    // nothing floats around the weapon in-game. The active magazine stays
-    // visible because the reload animation drives it.
-    const hideExtras = (o) => { o.traverse(x => { if (x.isMesh) x.visible = false; }); };
-    if (root.userData.rounds) hideExtras(root.userData.rounds);
+    bindPart('mag', /^mag/, true);       // verticalness picks the real magazine
+    bindPart('bolt', /^bolt/);           // heaviest is the bolt
+    // The separation pass baked cants into the kept parts (the AKM magazine
+    // carries a 60deg roll). Those are world-relative editing rotations, not
+    // articulation, so clear them BEFORE the inner orientation is composed and
+    // the part hangs straight down from the receiver.
+    const straighten = (o) => {
+      if (!o) return;
+      o.rotation.set(0, 0, 0);
+      o.quaternion.identity();
+      o.userData.baseRot = o.rotation.clone();
+    };
+    straighten(root.userData.mag);
+    straighten(root.userData.bolt);
+    // Note: the stock/mag seating runs after the fit box is final (below).
+    // Loose rounds and spare magazines are detached on the models; hide every
+    // pivot of those kinds except the one bound above, or the spares float in
+    // space far off the receiver (a mag pivot can sit 0.45m past the muzzle).
+    const hideExtras = (re, keep) => {
+      root.traverse(o => {
+        if (o === root || o === keep || !re.test(o.name || '')) return;
+        // Hide pivots with real geometry; keep structural empties alone so the
+        // node graph the reload reads is untouched.
+        let meshes = 0;
+        o.traverse(x => { if (x.isMesh) meshes++; });
+        if (!meshes) return;
+        o.traverse(x => { if (x.isMesh) x.visible = false; });
+      });
+    };
+    hideExtras(/^mag/, root.userData.mag);
+    // Every rounds_ pivot is a detached loose bullet; the reload only drives
+    // the magazine, so there is no "real" rounds pivot to keep - hide them all.
+    hideExtras(/^rounds/, null);
     // Scoped rifles keep their glass as its own pivot so ADS stays aligned.
     const scope = pickPart(/^scope/);
     if (scope) { root.userData.scope = scope; scope.userData.basePos = scope.position.clone(); }
+    straighten(root.userData.scope);
+
+    // The separation pass detached the stock on several models (the AKM stock
+    // folds backwards and *under* the receiver). A real stock extends rearward
+    // from the receiver along the bore, so neutralise that pivot instead of
+    // hiding a part the weapon needs.
+    const stock = pickPart(/^stock/, false);
+    if (stock) {
+      root.userData.stock = stock;
+      stock.userData.basePos = stock.position.clone();
+      // Only clear the separation-pass cant; the pivot's children are offset
+      // from it, so re-seating by bounding box measures in the unfitted frame
+      // and misaligns the whole model. Instead, close the visible gaps to the
+      // receiver in world space after the fit is applied (see below).
+      stock.rotation.set(0, 0, 0);
+      stock.quaternion.identity();
+      stock.userData.baseRot = stock.rotation.clone();
+    }
 
     root.userData.fit = {
       exportLong: +long.toFixed(4), scale: +scale.toFixed(5),
       axis, dim: [+fs.x.toFixed(4), +fs.y.toFixed(4), +fs.z.toFixed(4)],
     };
+    seatParts(root, T);
     return root;
   }
 

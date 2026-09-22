@@ -178,19 +178,20 @@ const bindModels=()=>{
  for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
   viewScene.add(src);models[key]=src;src.visible=false;
   src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});
-  // Per-weapon viewmodel pose: pitch the fitted model so the bore axis sits
-  // level with the camera and the sights land in the upper half of the view.
-  // Without this every weapon points at the floor — the fitted box is longer
-  // along Y than Z, so the model needs a -90deg pitch to lie forward.
+  // Per-weapon viewmodel pose: an optional small sight-line pitch on top of
+  // the fit. fitWeapon already maps the measured bore onto -Z with sights on
+  // +Y, so the weapon arrives level and forward; no -90deg pitch is wanted
+  // here (that was the barrel-pointing-down bug).
   const p=VIEWMODEL_POSE[key];if(p){src.rotation.set(p[0],p[1],p[2]);}
  }
  // Hands are gone: the player viewmodel is the weapon only. Bot rigs keep their
  // own arms (they are whole-character models, not first-person arms).
 };
-// Viewmodel pose per weapon (radians): [pitch, yaw, roll]. The fitted weapon
-// lies along +Y with the sights up, so -PI/2 pitch lays the muzzle forward
-// along -Z. Small per-weapon offsets correct each asset's modelling pose.
-const VIEWMODEL_POSE={akm:[-1.5708,0,0],deagle:[-1.5708,0,0],l96:[-1.5708,0,0],mosin:[-1.5708,0,0],mx:[-1.5708,0,0],hecate:[-1.5708,0,0],bayonet:[-1.5708,0,0]};
+// Viewmodel pose per weapon (radians): [pitch, yaw, roll] applied on top of
+// the fit. fitWeapon now maps the measured bore onto -Z with sights on +Y, so
+// the weapon already points forward and level: pose is identity, and each
+// entry only carries a small sight-line pitch so the bore meets the camera.
+const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],mosin:[0,0,0],mx:[0,0,0],hecate:[0,0,0],bayonet:[0,0,0]};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
@@ -529,10 +530,10 @@ $('status').textContent=C.WEAPONS[weapon].slot!=='melee'&&ammo[weapon].mag===0&&
 function animateWeapon(dt){
  for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
  const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
- // The model is pitched -90deg by VIEWMODEL_POSE so the bore runs along -Z.
- // Position and recoil rotate in that same frame: a forward kick is -Z, the
- // hip offset is +X to the player's right.
- const pose=VIEWMODEL_POSE[weapon]||[-1.5708,0,0];
+ // The fit maps the measured bore onto -Z with sights on +Y, so the weapon
+ // already faces forward and level. Position and recoil rotate in that same
+ // frame: a forward kick is -Z, the hip offset is +X to the player's right.
+ const pose=VIEWMODEL_POSE[weapon]||[0,0,0];
  m.position.set(.32*(1-adsBlend)+Math.sin(walk*1.7)*.006*moving*(1-adsBlend)-.09*adsBlend,-.3*(1-adsBlend)-.09*adsBlend-equip*.5,-.65+recoil*.06);
  m.rotation.set(pose[0]+recoil*.09,pose[1],pose[2]);
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
@@ -541,19 +542,20 @@ function animateWeapon(dt){
   if(progress>=.25&&reloadStage<1){reloadStage=1;dropMag();A.sound('magin');}
   if(progress>=.55&&reloadStage<2)reloadStage=2;
   const mOut=progress<.25?progress/.25:progress<.55?1:Math.max(0,1-(progress-.55)/.2);
+  // The bore now runs along -Z with sights on +Y, so the mag drops out along
+  // -Y (below the receiver) and the tilt is a roll about the bore axis.
   m.rotation.z=-Math.sin(progress*Math.PI)*.55;m.rotation.x=-Math.sin(progress*Math.PI)*.2;
   if(u.mag){u.mag.position.copy(u.mag.userData.basePos);u.mag.position.y-=mOut*.3;}}
  else if(u.mag)u.mag.position.copy(u.mag.userData.basePos);
  if(u.bolt){
   // Bolt stroke: pull straight back along the bore, then let it run forward
-  // home under spring pressure. The bolt pivot is authored in the weapon's
-  // local frame where the bore runs along +Y (the model is pitched -90deg by
-  // VIEWMODEL_POSE afterwards), so the stroke is -Y and the handle arcs in
-  // the X/Y plane — never outward toward the camera.
+  // home under spring pressure. The bore is -Z in the fitted frame, so the
+  // stroke is -Z (back) and the handle arcs in X/Z — never outward toward the
+  // camera.
   const duration=C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval;
   const t=bolt>0?1-bolt/duration:0;
   const stroke=Math.sin(Math.PI*Math.min(1,t*1.4));   // quick pull, eased return
-  u.bolt.position.set(u.bolt.userData.basePos.x,u.bolt.userData.basePos.y-stroke*.12,u.bolt.userData.basePos.z);
+  u.bolt.position.set(u.bolt.userData.basePos.x,u.bolt.userData.basePos.y,u.bolt.userData.basePos.z-stroke*.12);
   u.bolt.rotation.set(u.bolt.userData.baseRot.x,u.bolt.userData.baseRot.y,u.bolt.userData.baseRot.z+stroke*.5);
  }
  // The viewmodel is the weapon alone: no hands, no inspection turn. The
