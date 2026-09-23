@@ -285,11 +285,13 @@
     if (!map || !Array.isArray(map.solids)) throw new Error('buildArena: C.MAP.solids missing');
     if (!['performance', 'medium', 'high'].includes(preset)) preset = 'medium';
     const performance = preset === 'performance', high = preset === 'high';
-    const theme = ['desert', 'industrial', 'urban', 'training', 'test'].includes(map.theme) ? map.theme : 'desert';
+    const theme = ['desert', 'industrial', 'urban', 'harbor', 'training', 'test'].includes(map.theme) ? map.theme : 'desert';
     const palette = {
       desert: [0xd2b183,0xdcb98a,0xb8946a,0x8a5a33,0x2f8a86,0x395875,0xd8c9a8],
       industrial: [0x647076,0x9aa6a8,0x495860,0x426c73,0xe4b24e,0x34434c,0xa6b9bf],
       urban: [0x666d76,0xa5a6ad,0x727883,0x71716b,0xacc6d4,0x435c70,0xbac7d5],
+      // Coastal sawmill: salt-grey timber, rusted steel, tide-green water accents.
+      harbor: [0x8a8f96,0xb9bfc6,0x5d6670,0x6e5240,0x3f7d78,0x2c4049,0xc3cbcf],
       // Clean purpose-built range: green floor, white lanes, red accents.
       training: [0x4a6b5c,0x8fae9d,0x6b8f7a,0x39564a,0xd9534a,0x2b3a33,0xbfd8c8],
       // Proving Grounds: slate-steel range with hi-vis orange target accents.

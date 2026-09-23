@@ -86,6 +86,46 @@
       { x: 12, z: -4, w: 2, d: 3, h: 1.6, kind: 'crate' },
     ],
   };
+  // Harbor: a coastal sawmill. A central dry-dock splits the map into a
+  // cluttered west breakwater and an open east quay, with a crane gantry over
+  // mid and a covered dock building on the south point.
+  const harbor = {
+    id: 'harbor', name: 'Drydock', theme: 'harbor',
+    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
+    spawnPlayer: { x: -32, z: 32 }, spawnOpponent: { x: 32, z: -32 },
+    spawnBots: [
+      { x: 32, z: -32 }, { x: 8, z: -28 }, { x: -26, z: -20 },
+      { x: 30, z: 4 }, { x: 4, z: 26 },
+    ],
+    solids: [
+      // mid dry-dock: two long seawalls with a gantry between them
+      { x: -14, z: 0, w: 1, d: 26, h: 5, kind: 'wall' },
+      { x: 14, z: 0, w: 1, d: 26, h: 5, kind: 'wall' },
+      // gantry over mid: a tall crate block a bot can pass under
+      { x: 0, z: 0, w: 10, d: 4, h: 9, kind: 'building' },
+      // west breakwater: stacked timber, low and dense
+      { x: -24, z: -16, w: 5, d: 5, h: 2, kind: 'crate' },
+      { x: -24, z: -8, w: 5, d: 5, h: 3, kind: 'crate' },
+      { x: -24, z: 0, w: 5, d: 5, h: 2, kind: 'crate' },
+      { x: -24, z: 10, w: 5, d: 5, h: 3, kind: 'crate' },
+      { x: -24, z: 18, w: 5, d: 5, h: 2, kind: 'crate' },
+      // east quay: open yard with container stacks
+      { x: 24, z: -16, w: 7, d: 12, h: 4, kind: 'crate' },
+      { x: 24, z: 6, w: 7, d: 12, h: 4, kind: 'crate' },
+      { x: 22, z: 24, w: 6, d: 5, h: 2, kind: 'crate' },
+      // south dock building, flanked by low walls
+      { x: -8, z: 28, w: 14, d: 7, h: 8, kind: 'building' },
+      { x: 4, z: 30, w: 6, d: 1, h: 3, kind: 'wall' },
+      { x: 22, z: 30, w: 10, d: 1, h: 3, kind: 'wall' },
+      // north seawall with a gate gap at x -4..4
+      { x: -14, z: -30, w: 8, d: 1, h: 4, kind: 'wall' },
+      { x: 12, z: -30, w: 8, d: 1, h: 4, kind: 'wall' },
+      // loose cover so the long lanes stay breakable
+      { x: -6, z: 14, w: 3, d: 3, h: 1.5, kind: 'crate' },
+      { x: 8, z: -12, w: 3, d: 3, h: 1.5, kind: 'crate' },
+      { x: 4, z: 20, w: 2, d: 6, h: 2.5, kind: 'wall' },
+    ],
+  };
   // Training: open firing range with range lanes, cover and pop-up targets.
   // No match pressure: bots are static ducks/targets and never shoot back.
   const training = {
@@ -114,6 +154,7 @@
     ],
   };
   // Standard arenas only. The code-gated test maps (116791) and their authored
-  // GLB geometry were removed: the rotation is the four core battlegrounds.
-  return { desert, industrial, urban, training };
+  // GLB geometry were removed: the rotation is the four core battlegrounds plus
+  // the training range.
+  return { desert, industrial, urban, harbor, training };
 });

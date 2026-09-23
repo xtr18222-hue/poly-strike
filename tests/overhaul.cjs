@@ -65,6 +65,64 @@ test('every map spawn point is inside its own bounds and clear of solids', () =>
   }
 });
 
+// ---------- harbor: the fourth arena is reachable and bot-navigable ----------
+// Drydock has to hold up to the same geometry contract as the core three: its
+// nav graph must be one connected island (a bot that spawns has to be able to
+// path to the player) and its spawns must sit on the 4m nav grid.
+test('the fourth arena is wired into every map list', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  assert.ok(/<option value="harbor">/.test(html), 'harbor is in the map select');
+  assert.ok(/<option value="harbor">/.test(html), 'harbor is in the rematch select');
+  const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
+  assert.ok(/'harbor'/.test(game), 'harbor is in the loadMap allowlist');
+  // The post-match rotation cycles the four battlegrounds.
+  assert.ok(/maps=\['desert','industrial','urban','harbor'\]/.test(game),
+    'nextMapId rotates through harbor');
+  const vis = fs.readFileSync(path.join(ROOT, 'visuals.js'), 'utf8');
+  // Without its own palette the theme check would silently fall back to desert.
+  assert.ok(/harbor:\s*\[/.test(vis), 'harbor has its own palette');
+});
+
+test('harbor nav is a single connected island every spawn can reach', () => {
+  const m = MAPS.harbor;
+  assert.ok(m, 'harbor exists in the map table');
+  const B = m.bounds, R = 0.5;
+  // Replicate core.js nav generation: 4m grid with 0.5m solid clearance.
+  const nav = [];
+  for (let x = -36; x <= 36; x += 4)
+    for (let z = -36; z <= 36; z += 4)
+      if (!m.solids.some(s => Math.abs(x - s.x) < s.w / 2 + 0.5 && Math.abs(z - s.z) < s.d / 2 + 0.5))
+        nav.push({ x, z });
+  const key = n => `${n.x},${n.z}`;
+  const by = new Map(nav.map(n => [key(n), n]));
+  const adj = new Map();
+  for (const n of nav) {
+    const out = [];
+    for (const [dx, dz] of [[4, 0], [-4, 0], [0, 4], [0, -4]]) {
+      const o = by.get(`${n.x + dx},${n.z + dz}`);
+      if (o) out.push(key(o));
+    }
+    adj.set(key(n), out);
+  }
+  // BFS from one node: the whole grid must be one island.
+  const seen = new Set(nav.length ? [key(nav[0])] : []);
+  const q = [...seen];
+  while (q.length) {
+    const c = q.shift();
+    for (const o of adj.get(c) || []) if (!seen.has(o)) { seen.add(o); q.push(o); }
+  }
+  assert.equal(seen.size, nav.length, 'harbor nav is fully connected');
+  // Every spawn must have a nav node within 3m or the bot brain has nowhere to go.
+  const nearNav = (p) => nav.some(n => Math.hypot(n.x - p.x, n.z - p.z) <= 3);
+  for (const s of [m.spawnPlayer, m.spawnOpponent, ...m.spawnBots])
+    assert.ok(nearNav(s), `harbor spawn (${s.x},${s.z}) is on the nav grid`);
+  // And no solid may poke outside the arena bounds.
+  for (const s of m.solids)
+    assert.ok(s.x - s.w / 2 >= -B.hx && s.x + s.w / 2 <= B.hx &&
+              s.z - s.d / 2 >= -B.hz && s.z + s.d / 2 <= B.hz,
+      `harbor solid at (${s.x},${s.z}) inside bounds`);
+});
+
 test('standard maps are combat arenas, not peaceful test maps', () => {
   // The code-gated test maps (116791) were removed: the rotation is the four
   // core battlegrounds, and none of them may carry test-map flags.
@@ -156,16 +214,14 @@ test('the inspection system is fully removed', () => {
   assert.ok(!/KeyF'/.test(game), 'F inspect keybind removed');
 });
 
-// ---------- top-down camera ----------
-test('the training map has a top-down camera toggle', () => {
+// ---------- top-down camera (removed) ----------
+// The T-key overhead camera was deleted. The state, keybind, camera override
+// and state() exposure must all be gone.
+test('the top-down camera toggle is fully removed', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
-  assert.ok(/let .*topDown=false/.test(game), 'topDown state exists');
-  assert.ok(/KeyT'&&mapId!=='desert'\)\{topDown=!topDown/.test(game),
-    'T toggles top-down on any non-default map');
-  // The override must apply a downward-looking camera, not just a flag.
-  assert.ok(/if\(topDown\)\{cam\.position\.set\(x,34,z\);cam\.rotation\.set\(-Math\.PI\/2/.test(game),
-    'top-down positions the camera overhead looking down');
-  assert.ok(/topDown,/.test(game), 'topDown exposed in Game.state()');
+  assert.ok(!/topDown/.test(game), 'topDown state gone');
+  assert.ok(!/KeyT'[^)]*\)/.test(game), 'T keybind gone');
+  assert.ok(!/cam\.position\.set\(x,34,z\)/.test(game), 'overhead camera override gone');
 });
 
 // ---------- viewmodel: no hands, weapon-only ----------

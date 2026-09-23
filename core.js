@@ -283,6 +283,14 @@
         cool: 0.6 + rng() * 0.8,
         speed: 3.9 + rng() * 0.6,
         name: 'BOT Phoenix ' + (i + 1),
+        // Pro Rifle Pack locomotion state. The bot's own frame-to-frame
+        // displacement decides the clip, not a hand-authored animation table:
+        // prevPos tracks the last position so step() can report real speed and
+        // facing, and anim is the clip key the game layer renders (idle, walk,
+        // run, sprint, crouch, crouchWalk, or a death). synced each tick.
+        prevPos: { x: sp.x, z: sp.z },
+        anim: 'idle',
+        animClock: 0,
       });
     }
 
@@ -355,6 +363,11 @@
         b.alive = false; b.deaths++; killed = true;
         this.kills++;
         if (part === 'head') this.headshots++;
+        // Death clip for the rig: the pack ships direction-specific deaths;
+        // the angle of the incoming shot picks one, falling back to the prone
+        // 'lay' pose. Plays once and clamps on the final frame.
+        b.deathAnim = part === 'head' ? (Math.random() < 0.5 ? 'deathFrontHead' : 'deathBackHead')
+                                     : (Math.random() < 0.5 ? 'deathFront' : 'deathBack');
         this.money = Math.min(ECON.max, this.money + w.killAward);
       this.lastVictim = b.name;
         this.events.push({ type: 'kill', who: 'player', weapon: weaponKey, head: part === 'head', name: b.name });
@@ -449,6 +462,27 @@
           } else {
             b.cool = Math.min(b.cool + dt * 0.5, 1.4);
           }
+          // --- locomotion: derive the Pro Rifle Pack clip from the real
+          // frame-to-frame displacement. Measuring speed instead of trusting
+          // the intended step length keeps the clip honest when the bot is
+          // blocked by a solid or arrives at its node.
+          const vx = b.pos.x - b.prevPos.x, vz = b.pos.z - b.prevPos.z;
+          const moved = Math.hypot(vx, vz);
+          const hz = moved > 1e-5 ? moved / Math.max(dt, 1e-4) : 0;
+          // Advance toward the player = forward; away = backward; the sign of
+          // the dot with the bot->player vector splits them.
+          const toPx = (px !== null ? px : 0) - b.pos.x;
+          const toPz = (pz !== null ? pz : 0) - b.pos.z;
+          const forward = moved > 1e-5 ? (vx * toPx + vz * toPz) / (moved * Math.max(1e-5, Math.hypot(toPx, toPz)) + 1e-9) : 1;
+          let key = 'idle';
+          if (hz > 6.4) key = forward < -0.25 ? 'runBack' : 'run';
+          else if (hz > 1.3) key = forward < -0.25 ? 'walkBack' : 'walk';
+          // The bot's own chase speed rarely exceeds walk, so a sprint clip is
+          // reserved for the rare long open lane; crouch is not part of the
+          // bot AI yet, so idle/walk/run cover every real state.
+          if (key !== b.anim) { b.anim = key; b.animClock = 0; }
+          b.animClock += dt;
+          b.prevPos.x = b.pos.x; b.prevPos.z = b.pos.z;
         }
         return;
       }

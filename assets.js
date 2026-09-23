@@ -75,6 +75,7 @@
   // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
   const WEAPON_KEYS = ROSTER.slice();
 
+  const SOLDIER_RIG_FILE = 'anims/Soldier by madtrollstudio - UL46oXeZYK.fbx';
   const SOLDIER_FILE = 'Soldier by madtrollstudio - UL46oXeZYK.glb';
 
   // Mixamo clips for the test maps' animated bots. FBX, so they load through
@@ -138,6 +139,7 @@
   const clips = new Map();   // Mixamo FBX clips for the test map's animated bots
   const mapModels = new Map();   // authored arena GLBs, keyed by filename
   let soldierGLB = null;
+  let soldierRigGLB = null;    // skinned Soldier FBX (Pro Rifle Pack character mesh)
   // The packs export one clip per FBX; loaded lazily on first use.
   const clipPacks = new Map();
   let mixer = null;
@@ -631,6 +633,15 @@
       report.push('soldier ok');
     } catch (e) { console.error('[assets] soldier failed', e.message); report.push('soldier FAIL ' + e.message); }
 
+    // The skinned Soldier. The per-clip FBXs in the Pro Rifle Pack carry only
+    // the animation (Geometry: 0), so a clip's own rig renders nothing; the
+    // character mesh lives here, on the same mixamorig skeleton the clips
+    // target. Bots are built from this and driven by the pack's clips.
+    try {
+      soldierRigGLB = await loadFBX(base + 'assets/models/' + SOLDIER_RIG_FILE);
+      report.push('soldierRig ok ' + (soldierRigGLB.animations ? soldierRigGLB.animations.length : 0) + ' clips');
+    } catch (e) { console.error('[assets] soldierRig failed', e.message); report.push('soldierRig FAIL ' + e.message); }
+
     // Mixamo animation clips for the test map's animated bots. These are FBX,
     // so they go through FBXLoader; failures are non-fatal (the bots simply
     // fall back to the static soldier pose).
@@ -687,6 +698,32 @@
 
   function soldier() { return cloneSoldier(); }
 
+  // A skinned Soldier rig the Pro Rifle Pack clips can drive. Mixamo exports
+  // in centimetres; 0.01 puts the ~180cm figure into metres, matching the
+  // game's other 1.7-1.9m actors. The clip FBXs are animation-only, so this
+  // is the body every bot actually wears.
+  function soldierRig() {
+    if (!soldierRigGLB) return null;
+    const rig = cloneGLB(soldierRigGLB, true);
+    if (!rig) return null;
+    rig.scale.setScalar(0.01);
+    rig.updateMatrixWorld(true);
+    // Inverse-bind matrices must be computed AFTER the rig scale has been
+    // applied. Baking them before leaves them at Mixamo's centimetre scale
+    // while the bones end up in metres; the mismatch cancels the skinning
+    // and the whole figure collapses into a small block.
+    rig.traverse(n => { if (n.isSkinnedMesh && n.skeleton) n.skeleton.calculateInverses(); });
+    rig.updateMatrixWorld(true);
+    const box = skinnedBox(rig);
+    if (!box.isEmpty() && isFinite(box.min.y)) {
+      rig.position.y -= box.min.y;
+      const c = box.getCenter(new THREE.Vector3());
+      rig.position.x -= c.x; rig.position.z -= c.z;
+    }
+    rig.name = 'soldierRig';
+    return rig;
+  }
+
   // Mixamo FBX for a named animation (see CLIP_FILES), or null if it failed
   // to load. The Soldier GLB is a static mesh with zero bones, so the clip
   // cannot be retargeted onto it; instead we return the clip's own skinned
@@ -697,18 +734,47 @@
     const src = clips.get(key);
     if (!src) return null;
     const rig = cloneGLB(src, true);
+    if (!rig) return null;
     // Mixamo FBX is in cm; the Soldier is ~1.9m, so match that height.
-    const box = new THREE.Box3().setFromObject(rig);
+    // Skinned meshes only bound correctly once the skeleton has been updated,
+    // and Box3.setFromObject on a SkeletonUtils clone of a bound rig can hand
+    // back NaN (the bone matrices are still identity), which would silently
+    // poison position/scale with NaN and vanish the bot. Guard both.
+    rig.updateMatrixWorld(true);
+    const box = skinnedBox(rig);
     const size = box.getSize(new THREE.Vector3());
-    const s = size.y > 0 ? 1.9 / size.y : 1;
+    const s = size.y > 0 && isFinite(size.y) ? 1.9 / size.y : 0.01;
     rig.scale.setScalar(s);
     // Feet on the ground, centred on the origin the bot group expects.
-    const after = new THREE.Box3().setFromObject(rig);
+    rig.updateMatrixWorld(true);
+    const after = skinnedBox(rig);
+    if (after.isEmpty() || !isFinite(after.min.y)) return rig;
     const c = after.getCenter(new THREE.Vector3());
     rig.position.x -= c.x; rig.position.z -= c.z;
     rig.position.y -= after.min.y;
     rig.name = 'clip:' + key;
     return rig;
+  }
+
+  // Bounding box of the character only. The rig may already carry a bot weapon
+  // in its hand bone (armBot), and that weapon is fitted to a ~0.1 scale, so
+  // letting it into the box inflates the bounds and mis-scales the whole rig.
+  // Walk the meshes but skip anything under a bot-weapon pivot.
+  function skinnedBox(root) {
+    const T = THREE || global.THREE;
+    const box = new T.Box3();
+    root.updateMatrixWorld(true);
+    root.traverse(n => { if (n.isSkinnedMesh && n.skeleton) n.skeleton.calculateInverses(); });
+    root.traverse(n => {
+      if (!n.isMesh) return;
+      for (let p = n.parent; p && p !== root; p = p.parent) {
+        if (p.userData && p.userData.botWeapon) return;
+      }
+      n.updateMatrixWorld(true);
+      const gb = new T.Box3().setFromObject(n);
+      if (!gb.isEmpty() && isFinite(gb.min.x)) box.union(gb);
+    });
+    return box;
   }
 
   // The AnimationClip for a named animation, for callers that already have a
@@ -757,7 +823,7 @@
   }
 
   global.PolyAsset = {
-    bind, loadAll, ready, weapon, rig, soldier, clip, clipRig, gltfFor, weaponDef, hasWeapon, progress,
+    bind, loadAll, ready, weapon, rig, soldier, soldierRig, clip, clipRig, gltfFor, weaponDef, hasWeapon, progress,
     WEAPON_KEYS, ROSTER,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -89,23 +89,32 @@ readyAll().then(()=>{bindModels();
     let hand = null;
     rig.traverse(n => { if (!hand && n.isBone && /RightHand$/.test(n.name)) hand = n; });
     if (!hand) return;
+    // The rig is 0.01 (Mixamo centimetres -> metres) while the fitted weapon
+    // is at weapon scale (~0.1). Parenting it directly into the hand makes it
+    // render 100x too large and swallow the whole view, so carry it in a
+    // pivot that cancels the rig's scale. The fitted subtree is untouched.
+    const rs = Math.max(1e-6, rig.scale.x || 0.01);
+    const pivot = new T.Group();
+    pivot.scale.setScalar(1 / rs);
+    pivot.add(w);
     // Compose the hold in the hand's local frame: barrel forward, muzzle down
     // the -Z of the weapon's own fitting space.
-    hand.add(w);
-    w.position.set(0, 0, 0.02);
-    w.rotation.set(0, Math.PI * -0.06, 0);
-    w.userData.botWeapon = true;
+    hand.add(pivot);
+    pivot.position.set(0, 0, 0.02);
+    pivot.rotation.set(0, Math.PI * -0.06, 0);
+    pivot.userData.botWeapon = true;
   };
 
   attachSoldier = (g, i) => {
-    // Test maps give each bot a Mixamo animation. The Soldier GLB is a static
-    // mesh with no bones, so the clip cannot drive it; the clip's own skinned
-    // rig is displayed instead, with its own AnimationMixer. Falls back to
-    // the static Soldier when the clip is missing or unavailable.
-    const anim = C.MAP.peaceful ? (C.MAP.spawnBots[i] && C.MAP.spawnBots[i].anim) : null;
+    // Every bot is the skinned Soldier driven by the Pro Rifle Pack clips.
+    // The clip FBXs carry only the animation, so the body has to come from
+    // the Soldier FBX (same mixamorig skeleton); one AnimationMixer per bot.
+    // Falls back to the static Soldier GLB only when the rig is unavailable.
+    const anim = (PolyAsset.soldierRig && PolyAsset.clip('idle')) ? 'idle'
+      : (C.MAP.peaceful ? (C.MAP.spawnBots[i] && C.MAP.spawnBots[i].anim) : null);
     let mixer = null;
-    if (anim && PolyAsset.clipRig) {
-      const rig = PolyAsset.clipRig(anim);
+    if (anim && PolyAsset.soldierRig) {
+      const rig = PolyAsset.soldierRig();
       if (rig) {
         g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
         rig.traverse(n => { if (n.isMesh) {
@@ -114,9 +123,22 @@ readyAll().then(()=>{bindModels();
         }});
         g.add(rig);
         mixer = new T.AnimationMixer(rig);
-        const act = mixer.clipAction(PolyAsset.clip(anim));
-        if (act) { act.reset(); act.setLoop(T.LoopRepeat, Infinity); act.play(); }
+        // Cache every locomotion action up front so state changes are pure
+        // cross-fades: creating an action on demand resets its time and makes
+        // the transition stamp instead of blending.
+        const acts = {};
+        for (const key of ['idle','walk','walkBack','run','runBack','sprint',
+                           'crouch','crouchWalk','jumpUp','jumpDown','lay',
+                           'deathFront','deathBack']) {
+          const cl = PolyAsset.clip(key);
+          if (cl) acts[key] = mixer.clipAction(cl);
+        }
+        g.userData.acts = acts;
+        const first = acts[anim] || acts.idle;
+        if (first) { first.reset(); first.setLoop(T.LoopRepeat, Infinity); first.play(); }
         g.userData.mixer = mixer;
+        g.userData.rig = rig;
+        g.userData.animKey = anim;
         armBot(g, rig);
         return;
       }
@@ -174,7 +196,7 @@ let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
 let weapon='akm',previous='bayonet',ammo={},reload=0,reloadKey=null,cool=0,equip=.3,scoped=false,trigger=false,burst=0,recoil=0,hit=0,hurt=0,flashTime=0;
 let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=performance.now(),fps=60,hudClock=0,stepClock=0;
 const spray=C.buildSprayPattern(4815,30),effects=[];let feed=[];
-let damageSource=null,bolt=0,boltSound=false,reloadStage=-1,heartbeat=0,enemyFoot=0,enemyPose=null,killCount=0,killClock=0,killText='',killTime=0,roundNotice=0,finished=false,firstBlood=false,topDown=false;
+let damageSource=null,bolt=0,boltSound=false,reloadStage=-1,heartbeat=0,enemyFoot=0,enemyPose=null,killCount=0,killClock=0,killText='',killTime=0,roundNotice=0,finished=false,firstBlood=false;
 function damageFrom(sx,sz){damageSource={x:sx,z:sz};hurt=.65;A.sound('enemy');}
 function addKill(text,headshot=false){feed.unshift({text,headshot});feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
 // 2=Double, 3=Triple, 4=Multi, then Mega/Ultra/Unstoppable/... up the pack.
@@ -216,7 +238,7 @@ const online=PolyOnline.create(C,{
 function finishMatch(won){if(finished)return;finished=true;running=false;clearInput();recordCareer(won);$('pauseTitle').textContent=won?'VICTORY':'DEFEAT';$('pauseText').textContent=`Final score ${match.score.player} : ${match.score.enemy}. ${match.kills} eliminations. Accuracy: ${accuracy()}%. MVP: ${mvp()}.`;$('rematchControls').hidden=false;$('nextMap').value=nextMapId();$('nextMap').disabled=onlineMode&&!online.hostRole;$('rematch').disabled=false;$('rematch').textContent=onlineMode?'REQUEST / ACCEPT REMATCH':'PLAY NEXT MATCH';$('rematchStatus').textContent=onlineMode?'Both players must consent. Host selects next map.':'';$('resume').hidden=true;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function accuracy(){const p=onlineMode?online.state?.players[online.localId]:match;return p?.shotsFired?Math.min(100,Math.round(100*(p.shotsHit||0)/p.shotsFired)):0;}
 function mvp(){const rows=onlineMode&&online.state?online.state.players.map((p,i)=>({name:p.name||'Opponent',score:p.kills*100+online.state.score[i]*250})):[{name:username,score:match.kills*100+match.score.player*250},...match.bots.map(b=>({name:b.name,score:(b.kills||0)*100}))];return rows.sort((a,b)=>b.score-a.score)[0].name;}
-function nextMapId(){const maps=['desert','industrial','urban'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
+function nextMapId(){const maps=['desert','industrial','urban','harbor'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
 $('rematch').onclick=()=>{if(onlineMode){if(online.requestRematch($('nextMap').value)&&match.phase==='matchover'){$('rematchStatus').textContent='Consent sent — waiting for opponent';$('rematch').disabled=true;}}else{$('mapSelect').value=$('nextMap').value;deploy();}};
 function refill(){for(const k of keys)ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WEAPONS[k].reserve};reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
 function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='bayonet';ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
@@ -305,7 +327,11 @@ if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${ma
   else if(C.WEAPONS[weapon].slot!=='melee'&&budget.effects)spawnDecal(h);}}
  shotEffects();if(C.WEAPONS[weapon].slot!=='melee')tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(C.WEAPONS[weapon].slot!=='melee')pitch=Math.min(1.45,pitch+w.recoil*.013);
- if(scopedOnly(weapon)){scoped=false;ads=false;}
+ // Firing kicks the player out of the scope, but iron-sight ADS is a held
+ // aim posture and must survive a shot — clearing it here made every
+ // iron-sight weapon drop its sights the instant it fired. Only the true
+ // scoped rifles (l96/hecate) unscope on report.
+ if(scopedOnly(weapon)){scoped=false;}
 }
 function disposeWorld(){
  if(arena){if(arena.dispose){arena.dispose();}else{for(const o of worldNodes)scene.remove(o);}worldNodes.length=0;return;}
@@ -332,7 +358,7 @@ function rebuildBots(){
  }
 }
 function loadMap(id){
- mapId=['desert','industrial','urban','training','range','depot'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
+ mapId=['desert','industrial','urban','harbor','training','range','depot'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
  // disposeWorld() pulled the bot groups out of the scene along with the arena
@@ -448,7 +474,7 @@ function saveCareer(){try{localStorage.setItem('poly-career',JSON.stringify(care
 function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=match.kills||0;career.deaths+=match.deaths||0;career.headshots+=match.headshots||0;career.shotsFired+=match.shotsFired||0;career.shotsHit+=match.shotsHit||0;career.roundsWon+=match.score.player||0;saveCareer();}
 window.__bots=bots;Object.defineProperty(window,'__match',{get:()=>match});Object.defineProperty(window,'__arena',{get:()=>arena});
 /* DIAGNOSTIC: expose the view scene graph so tests can verify the viewmodel. */
-window.__viewScene=viewScene;window.__models=models;
+window.__viewScene=viewScene;window.__models=models;window.__viewCam=viewCam;window.__worldCam=cam;
 function openCareer(){ // Career reads real stats tracked during matches. A first-time
  // player sees a starter service record so the panel is not all zeros; the
  // grant is one-time (guarded by a localStorage key) and never overwrites
@@ -467,7 +493,7 @@ document.addEventListener('pointerlockchange',()=>{locked=!!document.pointerLock
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});window.addEventListener('blur',pause);
 document.addEventListener('mousemove',e=>{if(!running||(!locked&&!drag))return;const s=.002*Number($('sensitivity').value)*((scoped||ads)?Number($('adsSensitivity').value):1);yaw-=e.movementX*s;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*s));});
 $('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){trigger=true;shoot();}if(e.button===2){if(C.WEAPONS[weapon].slot!=='melee'&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else ads=!ads;A.sound('scope');}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2','Digit3'].indexOf(e.code);if(i>=0)select([primary,'deagle','bayonet'][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyT'&&mapId!=='desert'){topDown=!topDown;A.sound('switch');}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
+document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2','Digit3'].indexOf(e.code);if(i>=0)select([primary,'deagle','bayonet'][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
 document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
 function move(dt){
  const crouch=held.has('ControlLeft')||held.has('ControlRight')||held.has('KeyC');
@@ -498,8 +524,8 @@ function hud(){const w=C.WEAPONS[weapon];
 $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=weapon==='knife'?0:ammo[weapon].mag;$('ammo').textContent=weapon==='knife'?'∞':rounds;
  // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
  const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=(C.WEAPONS[weapon].slot==='melee')?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
- $('reserve').textContent=(C.WEAPONS[weapon].slot==='melee')?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS · T = TOP-DOWN`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
-$('status').textContent=C.WEAPONS[weapon].slot!=='melee'&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':topDown?'TOP-DOWN · T to exit':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
+ $('reserve').textContent=(C.WEAPONS[weapon].slot==='melee')?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE / KNIFE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
+$('status').textContent=C.WEAPONS[weapon].slot!=='melee'&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
  $('primarySlot').dataset.slot=primary;$('primarySlot').querySelector('b').textContent=dropped?'DROPPED':C.WEAPONS[primary].name;$('primarySlot').classList.toggle('empty',dropped);
@@ -577,11 +603,7 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  if(onlineMode)online.step(dt,pose());
  if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
  killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
- // Top-down view (test maps only): an overhead camera over the player so
- // character movement and the bot animation suite can be verified visually.
- // Pitch is clamped so the view never flips past vertical.
- if(topDown){cam.position.set(x,34,z);cam.rotation.set(-Math.PI/2,0,yaw);cam.fov+=(50-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}
- else{cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
+ {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
  // The reload timer is decremented and resolved inside the running branch
  // above (line ~579); a second decrement here would count the same reload
  // down twice and complete it early, so there is deliberately none.
@@ -590,9 +612,31 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // already called on mousedown), so re-firing here would break their cadence.
  if(trigger&&running&&match.phase==='live'&&cool<=0&&reload<=0&&bolt<=0&&C.WEAPONS[weapon].auto)shoot();
  syncBots();syncDrops();animateWeapon(dt);
- // Test-map bots loop their Mixamo clips: the mixer owns the rig's bone
- // transforms, so update it after syncBots() has placed the group.
- for(const g of bots){const mx=g.userData.mixer;if(mx){mx.update(dt);g.updateMatrixWorld(true);}}for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
+ // Bot rigs are driven by the Pro Rifle Pack: the mixer owns the rig's bone
+ // transforms, so update it after syncBots() has placed the group. Cross-fade
+ // to whatever core.js derived from the bot's real displacement this tick.
+ for(const g of bots){
+  const mx=g.userData.mixer;if(!mx)continue;
+  const b=match.bots[bots.indexOf(g)];
+  if(b){
+   const key=b.alive?(b.anim||'idle'):(b.deathAnim||'lay');
+   if(key!==g.userData.animKey){
+    const acts=g.userData.acts||{};
+    const na=acts[key], oa=acts[g.userData.animKey];
+    if(na){
+     // Blend over 0.18s so a stride change never pops; a death clip is a
+     // one-shot that holds its final frame.
+     na.reset();
+     na.setLoop(key.startsWith('death')||key==='lay'?T.LoopOnce:T.LoopRepeat, Infinity);
+     na.clampWhenFinished=true;
+     na.play();
+     if(oa){na.startAt(0).fadeIn(.18);oa.fadeOut(.18);}
+     g.userData.animKey=key;
+    }
+   }
+  }
+  mx.update(dt);g.updateMatrixWorld(true);
+ }for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
  renderer.info.reset();renderer.clear();renderer.render(scene,cam);if(started){renderer.clearDepth();renderer.render(viewScene,viewCam);}
  // Loadout hub: the preview renders into its own WebGL context on
  // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main
@@ -608,7 +652,7 @@ PolyAsset.ready().then(boot, boot);
 requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
   if(!booted) { resize(); }
 });
-let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,preset,map:mapId,topDown,pixels:renderer.domElement.width*renderer.domElement.height,reload,ammo:JSON.parse(JSON.stringify(ammo)),bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// syncBots() writes the group transform; the nested Soldier pivot needs its
+let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,ammo:JSON.parse(JSON.stringify(ammo)),bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// syncBots() writes the group transform; the nested Soldier pivot needs its
 // own world matrix refreshed or raycasts still see the pre-move position.
 select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
 // Camera forward is -Z at yaw 0, so the bearing to a target is atan2(dx,-dz).

@@ -5,7 +5,7 @@ const C = require('../core.js');
 
 test('four selectable maps expose bound simulation contexts', () => {
   assert.ok(C.MAPS, 'map registry exists');
-  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert', 'industrial', 'training', 'urban']);
+  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert', 'harbor', 'industrial', 'training', 'urban']);
   assert.equal(C.MAP, C.MAPS.desert, 'legacy default stays desert');
   for (const id of Object.keys(C.MAPS)) {
     const ctx = C.forMap(id);
@@ -29,7 +29,7 @@ test('classic scripts expose the same map API without Node or DOM', () => {
   const sandbox = {};
   vm.createContext(sandbox);
   for (const file of ['maps.js', 'core.js']) vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',file),'utf8'), sandbox);
-  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban','training']);
+  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban','harbor','training']);
   assert.equal(sandbox.POLY_CORE.forMap('urban').createMatch().MAP.id,'urban');
 });
 
@@ -57,7 +57,7 @@ test('training range is a pressure-free target range', () => {
   m.step(0.05, C.mulberry32(1), sense);
   assert.equal(m.phase, 'live');
   assert.equal(m.bots.every(b => b.speed === 0), true, 'targets are static');
-  const shot = m.playerShot('ak47', 0, 'head', 10);
+  const shot = m.playerShot('akm', 0, 'head', 10);
   assert.equal(shot.killed, true, 'targets still take damage');
   for (let i = 0; i < 60; i++) m.step(0.05, C.mulberry32(i), sense);
   assert.equal(m.bots[0].alive, true, 'targets respawn');
@@ -65,13 +65,13 @@ test('training range is a pressure-free target range', () => {
 });
 
 test('reloads finish in the faster per-weapon times', () => {
-  assert.equal(C.WEAPONS.ak47.reloadTime, 1.35);
-  assert.equal(C.WEAPONS.awp.reloadTime, 1.9);
-  assert.equal(C.WEAPONS.deagle.reloadTime, 1.05);
+  assert.equal(C.WEAPONS.akm.reloadTime, 1.35);
+  assert.equal(C.WEAPONS.l96.reloadTime, 3.2);
+  assert.equal(C.WEAPONS.deagle.reloadTime, 1.8);
 });
 
 test('AK and Deagle ADS tightens spread without removing movement penalties', () => {
-  for (const key of ['ak47', 'deagle']) {
+  for (const key of ['akm', 'deagle']) {
     const spread = (move, crouch, air, ads) => Math.hypot(...Object.values(C.pickSpread(key, move, crouch, air, ads, () => .9)));
     const hip = spread(0,false,false,false), ads = spread(0,false,false,true);
     const moving = spread(1,false,false,true);
@@ -120,7 +120,7 @@ test('all arena navigation and spawn paths have full collision-safe connectivity
     }
     assert.ok(Math.hypot(map.spawnPlayer.x-map.spawnOpponent.x, map.spawnPlayer.z-map.spawnOpponent.z)>50);
   }
-  assert.equal(footprints.size, 4, 'topologies differ, not just materials');
+  assert.equal(footprints.size, 5, 'topologies differ, not just materials');
 });
 
 test('map/context match arguments share cached graphs but not live match state', () => {
