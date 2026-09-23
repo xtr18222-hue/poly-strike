@@ -88,7 +88,7 @@ window.PolyAudio = (() => {
   } catch (_) {} }
   function tone(hz,duration,level,type='sine',delay=0){const now=ctx.currentTime+delay,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(hz,now);g.gain.setValueAtTime(level,now);g.gain.exponentialRampToValueAtTime(.0001,now+duration);o.connect(g);g.connect(master);o.start(now);o.stop(now+duration+.01);o.onended=()=>{o.disconnect();g.disconnect();};}
   // Kill streak -> clip, indexed from 1. Tiers stop at the last line in the
-  // pack: beyond that the announcer goes silent (see TIER_CAP in announce()).
+  // pack: beyond that the announcer goes silent (see TIER_CAPS in announce()).
   const PACKS = {
     male: [
       '[audio]First......lood!',
@@ -103,6 +103,8 @@ window.PolyAudio = (() => {
       'Mortal-Kombat-Announcer-2026-09-20-07-03-Unreal!',
       'Mortal-Kombat-Announcer-2026-09-20-07-06-Devastation!',
       'Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation',
+      '[audio]Monster-Kill !',
+      '[audio]Godlike!',
     ],
     female: [
       '[UT Sexy Female Announcer]First......Blood',
@@ -113,6 +115,7 @@ window.PolyAudio = (() => {
       '[UT Sexy Female Announcer]Ultra......ll!!!',
       '[UT Sexy Female Announcer]Unbel......able!',
       '[UT Sexy Female Announcer]holy ......op!!! (1)',
+      '[UT Sexy Female Announcer]Monster-Kill!',
     ],
   };
   let voicePack = 'male';
@@ -138,16 +141,22 @@ window.PolyAudio = (() => {
   }
   // Kill-count tiers stop at the last line in the pack: beyond it the
   // announcer goes completely silent rather than looping or replaying the top.
-  const TIER_CAP = 9;
+  // The packs are capped separately: the female announcer runs to 9 kills and
+  // the male announcer to 14, so each pack is indexed by its own length and
+  // the shared hard cap is gone.
+  const TIER_CAPS = { male: 14, female: 9 };
   function announce(kind, kills) {
     if (!ctx) return;
     const list = PACKS[voicePack] || PACKS.male;
+    const cap = TIER_CAPS[voicePack] || TIER_CAPS.male;
     let name = null;
     // First Blood is index 0 and must only ever be requested by name; the
     // streak path is never called with kills===1 (see addKill), but the guard
     // keeps the mapping honest if that ever changes.
     if (kind === 'firstblood') name = list[0];
-    else if (kind === 'streak' && Number.isInteger(kills) && kills >= 2 && kills <= TIER_CAP) {
+    // A streak of N plays list[N-1]: the pack is ordered from First Blood at
+    // index 0 through the top tier, so the cap is the pack's own length.
+    else if (kind === 'streak' && Number.isInteger(kills) && kills >= 2 && kills <= cap) {
       name = list[Math.min(kills - 1, list.length - 1)];
     }
     if (!name) return;
@@ -158,7 +167,8 @@ window.PolyAudio = (() => {
   function toggle() {muted=!muted;if(muted&&window.speechSynthesis)window.speechSynthesis.cancel();if(master)master.gain.setTargetAtTime(muted?0:.28,ctx.currentTime,.02);return muted;}
   function packFilenames(){
     // Verification accessor: the exact audio file each kill streak resolves to.
-    return { male: PACKS.male.slice(0,12), female: PACKS.female.slice(0,8) };
+    // Male runs all 14 tiers, female caps at 9.
+    return { male: PACKS.male.slice(0,14), female: PACKS.female.slice(0,9) };
   }
 
   return {start,sound,announce,setVoicePack,getVoicePack,toggle,get muted(){return muted;},get ready(){return !!ctx;},packFilenames};

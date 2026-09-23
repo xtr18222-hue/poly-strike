@@ -17,15 +17,19 @@ import json
 from playwright.sync_api import sync_playwright
 
 URL = "http://127.0.0.1:18959/index.html?test=1"
-WEAPONS = ["akm", "deagle", "l96", "mosin", "hecate", "bayonet"]
+WEAPONS = ["akm", "deagle", "l96", "mosin", "hecate", "bayonet", "mx"]
 
 RENDER = """(() => {
   try {
     var key = %s;
     var m = window.__models[key];
     if (!m) return 'ERR no model for ' + key;
+    // The bound model is hidden until it is the active weapon, so build the
+    // render from a visible clone rather than trusting its visibility flag.
     m.updateMatrixWorld(true);
-    var box = new THREE.Box3().setFromObject(m);
+    var src = m.clone();
+    src.traverse(function(o){ o.visible = true; });
+    var box = new THREE.Box3().setFromObject(src);
     var c = box.getCenter(new THREE.Vector3());
     var cv = document.querySelector('#game');
     var R3 = window.THREE;
@@ -34,44 +38,60 @@ RENDER = """(() => {
     sc.add(new R3.HemisphereLight(0xffffff, 0x445566, 2.0));
     var dl = new R3.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 1, 0.4); sc.add(dl);
     var holder = new R3.Group();
-    holder.add(m);
+    // The model is a live object in the game's scene graph; reparenting it
+    // into this throwaway holder would detach it. Clone for the render so the
+    // gameplay model keeps its own parent, and only this copy moves.
+    holder.add(src);
     holder.position.set(-c.x, -c.y, -c.z);
     sc.add(holder);
     // Side view: camera on +X looking along -X. Barrel runs horizontally,
     // up is vertical, so a roll off upright is immediately visible.
-    var span = Math.max(box.getSize(new THREE.Vector3()).y, 0.1);
-    var cam = new R3.OrthographicCamera(-0.6, 0.6, span * 0.72, -span * 0.72, 0.01, 10);
+    var sz = box.getSize(new THREE.Vector3());
+    var span = Math.max(sz.y, 0.1);
+    var halfW = Math.max(sz.z, sz.x) * 0.72 + 0.05;
+    var cam = new R3.OrthographicCamera(-halfW, halfW, span * 0.72, -span * 0.72, 0.01, 10);
     cam.position.set(2, 0, 0); cam.lookAt(0, 0, 0);
+    r.setClearColor(new R3.Color(0x20242b), 1);
     r.render(sc, cam);
     var png = cv.toDataURL('image/png').split(',')[1];
 
-    // Assembly check: every visible mesh must lie inside the receiver box.
+    // Assembly check: every visible mesh must sit inside the fitted body box.
+    // The clean base exports name their meshes generically ("Object_4"), so
+    // there is no "receiver" pivot to anchor on — use the weapon's own fitted
+    // box (the fitter centres the grip at the origin) and measure each part
+    // against its silhouette in the side view.
+    // Silhouette check: a floating part is an island that does not touch the
+    // rest of the weapon. Test it directly — the gap between this mesh's box
+    // and the union of every other visible mesh must be ~0 when seated. Axis
+    // reasoning fails here (the fitted frame's thin axis is the gun's depth,
+    // so a naive perpendicular test flags the whole gun as floating).
     var bad = [];
-    var recName = null;
-    m.traverse(function(o) {
-      if (!o.isMesh || !o.visible) return;
-      if (/receiver|frame|body/.test(o.name || '')) recName = recName || o.name;
-    });
-    var rb = recName ? new R3.Box3().setFromObject(m.getObjectByName(recName)) : box;
-    m.traverse(function(o) {
-      if (!o.isMesh || !o.visible) return;
+    var vis = [];
+    src.traverse(function (o) { if (o.isMesh && o.visible) vis.push(o); });
+    for (var i = 0; i < vis.length; i++) {
+      var o = vis[i];
       var b = new R3.Box3().setFromObject(o);
-      var s = b.getSize(new R3.Vector3());
-      if (s.lengthSq() < 1e-6) return;
-      // Stock and barrel legitimately extend past the receiver along the bore;
-      // flag only parts that break away sideways (|x| or |y| far outside).
-      var c2 = b.getCenter(new R3.Vector3());
-      var rc = rb.getCenter(new R3.Vector3());
-      var rs = rb.getSize(new R3.Vector3());
-      var over = Math.max(Math.abs(c2.x - rc.x) - rs.x/2 - 0.05,
-                          Math.abs(c2.y - rc.y) - rs.y/2 - 0.05);
-      if (over > 0.02) bad.push([o.name, +over.toFixed(3)]);
-    });
+      if (b.getSize(new R3.Vector3()).lengthSq() < 1e-6) continue;
+      // Union of every other visible mesh.
+      var rest = new R3.Box3();
+      var any = false;
+      for (var j = 0; j < vis.length; j++) {
+        if (j === i) continue;
+        var b2 = new R3.Box3().setFromObject(vis[j]);
+        if (b2.isEmpty()) continue;
+        rest.union(b2); any = true;
+      }
+      if (!any) continue;
+      var closest = rest.clampPoint(b.getCenter(new THREE.Vector3()), new THREE.Vector3());
+      var gap = b.distanceToPoint(closest);
+      if (gap > 0.006) bad.push([o.name, +gap.toFixed(3)]);
+    }
+
     var s = box.getSize(new R3.Vector3());
     return JSON.stringify({
       png: png,
       size: [+s.x.toFixed(3), +s.y.toFixed(3), +s.z.toFixed(3)],
-      receiver: recName,
+      receiver: "body-box",
       stray: bad,
       ratio: +(s.y / Math.max(s.x, 0.001)).toFixed(2)
     });

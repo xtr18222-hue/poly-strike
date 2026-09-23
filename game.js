@@ -2,42 +2,8 @@
 (() => { 'use strict';
 const $=id=>document.getElementById(id), T=window.THREE, A=window.PolyAudio;
 let C=window.POLY_CORE, mapId='desert', preset='medium';
-// Test-map access code. Entered in Settings → "Map code"; when it matches,
-// offline play overrides standard map selection and cycles the two test maps
-// on each deploy, so one code gives access to both new battlegrounds.
-const TEST_MAP_CODE='116791';
-// Only these two battlegrounds unlock with the code; every other map stays in
-// the standard rotation and is untouched.
-const TEST_MAPS=['range','depot'];
-// The player's chosen arena. null = no selection yet, so a deploy falls back to
-// the standard map dropdown instead of silently guessing.
-let testMapChoice=null;
-function testMapUnlocked(){return $('mapCode')&&$('mapCode').value.trim()===TEST_MAP_CODE;}
-function testMapTarget(){return testMapUnlocked()&&testMapChoice?testMapChoice:null;}
-function syncTestMapPanel(){
- const panel=$('testMapPanel');if(!panel)return;
- const show=testMapUnlocked();
- panel.hidden=!show;
- if(!show){testMapChoice=null;}
- for(const el of panel.querySelectorAll('.test-map-card'))
-  el.classList.toggle('active',el.dataset.testmap===testMapChoice);
- const pick=$('testMapPick');
- if(pick)pick.textContent=testMapChoice
-  ?'Selected: '+(testMapChoice==='range'?'Shooting Range':'Low Poly Tactical Map')+' — press Play Offline.'
-  :'No arena selected — returning to the standard rotation.';
-}
-if(typeof document!=='undefined'){
- $('mapCode').addEventListener('input',syncTestMapPanel);
- // Buttons fire click, not change: a change listener never saw the card
- // taps, so the panel reported "no arena selected" and deploys silently
- // fell back to the standard dropdown.
- document.addEventListener('click',e=>{
-  const card=e.target.closest&&e.target.closest('.test-map-card');
-  if(card){testMapChoice=card.dataset.testmap;syncTestMapPanel();A.sound('switch');}
- });
- // Keep the state honest if the code is cleared while the panel is open.
- $('mapCode').addEventListener('blur',syncTestMapPanel);
-}
+// Standard maps only. The code-entry map feature was removed: the rotation is
+// the core arenas and nothing else.
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
 const primaries=['akm','l96','mosin','hecate'];let primary='akm',secondary='deagle',melee='bayonet',dropped=false,localDrops=[];const dropNodes=new Map();
@@ -202,7 +168,7 @@ const bindModels=()=>{
 // entry only carries a small sight-line pitch so the bore meets the camera.
 const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],mosin:[0,0,0],mx:[0,0,0],hecate:[0,0,0],bayonet:[0,0,0]};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
-const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3();const held=new Set();
+const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
 let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
 let weapon='akm',previous='bayonet',ammo={},reload=0,reloadKey=null,cool=0,equip=.3,scoped=false,trigger=false,burst=0,recoil=0,hit=0,hurt=0,flashTime=0;
@@ -212,12 +178,14 @@ let damageSource=null,bolt=0,boltSound=false,reloadStage=-1,heartbeat=0,enemyFoo
 function damageFrom(sx,sz){damageSource={x:sx,z:sz};hurt=.65;A.sound('enemy');}
 function addKill(text,headshot=false){feed.unshift({text,headshot});feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
 // 2=Double, 3=Triple, 4=Multi, then Mega/Ultra/Unstoppable/... up the pack.
-// Kill-count voice lines cap at 9 kills: tiers 1-9 play normally, beyond that
-// the announcer goes silent (the HUD kill counter keeps counting visually).
+// Kill-count voice lines are capped per pack: the female announcer stops at 9
+// and the male announcer runs to 14. audio.js applies that cap (announce()
+// resolves the active pack's own TIER_CAPS), so the caller must not gate the
+// streak here — a shared hard cap here would clip the male pack at 9 again.
 // First Blood fires exactly once per match: the streak counter resets to 1
 // whenever the 5s window lapses, so a raw killCount===1 test would replay it
 // on every isolated kill. firstBlood is cleared by reset on each deploy.
-if(killCount===1&&!firstBlood){firstBlood=true;A.announce?.('firstblood',1);}else if(killCount>1&&killCount<=9)A.announce?.('streak',killCount);
+if(killCount===1&&!firstBlood){firstBlood=true;A.announce?.('firstblood',1);}else if(killCount>1)A.announce?.('streak',killCount);
 }
 let onlineMode=false,netRound=0,lastNetEvent='',netHp=100;
 function pose(){return {x,y,z,yaw,pitch,weapon,primary,name:username};}
@@ -255,9 +223,8 @@ function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
 function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}
- // Test-map code: overrides standard map selection in offline play only,
- // cycling through both 116791 battlegrounds on each deploy.
- const target=testMapTarget()||$('mapSelect').value;
+ // Standard map selection only: the code-entry test maps were removed.
+ const target=$('mapSelect').value;
  loadMap(target);match=C.MAP.training?C.createTrainingMatch():C.createMatch();rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;previous=weapon;weapon=k;bolt=0;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;equip=.35;cool=.15;A.sound('switch');}
@@ -446,19 +413,21 @@ loadoutRenderer.setPixelRatio(Math.min(2,devicePixelRatio||1));loadoutRenderer.a
 function resizeLoadout(){const cv=$('loadoutCanvas');const w=cv.clientWidth||360;const h=cv.clientHeight||240;if(w>4&&h>4){loadoutRenderer.setSize(w,h,false);loadoutCam.aspect=w/h;loadoutCam.updateProjectionMatrix();}}
 window.__loadoutModels=loadoutModels;window.__loadoutCam=loadoutCam;window.__loadoutSelected=()=>loadoutSelected;window.__loadoutScene=loadoutScene;window.__resizeLoadout=resizeLoadout;window.__loadoutRenderer=loadoutRenderer;
 function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;bindLoadoutModels();for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);// The card can fire for a weapon whose GLB is still loading or failed to load.
-const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':'Butterfly Knife / Melee · unlimited';
+const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':w.name+' / Melee · unlimited';
  for(const el of document.querySelectorAll('.wcard'))el.classList.toggle('active',el.dataset.weapon===key);
  // Rebuild the skin selector for the newly selected weapon.
  }
 function renderLoadoutCards(){
  const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else if(C.WEAPONS[key].slot==='melee'){melee=key;try{localStorage.setItem('poly-melee',key);}catch(_){}}else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
- $('secondaryCards').replaceChildren(...['deagle','bayonet'].map(k=>mk(k,k==='deagle'?'Semi-auto pistol':'Bayonet / melee')));}
+ // Secondaries and melee are separate equip slots: both knives live in the
+ // same slot list so MX Knife is selectable.
+ $('secondaryCards').replaceChildren(...['deagle','bayonet','mx'].map(k=>mk(k,k==='deagle'?'Semi-auto pistol':'Knife / melee')));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
 // A drag overrides the idle drift until the player releases the mouse.
-let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false;
+let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false,loadoutInspectTime=0;
 const loadoutCanvas=$('loadoutCanvas');
 loadoutCanvas.style.cursor='grab';
 loadoutCanvas.addEventListener('pointerdown',e=>{loadoutDragging=true;loadoutDragX=e.clientX;loadoutCanvas.style.cursor='grabbing';loadoutCanvas.setPointerCapture(e.pointerId);});
@@ -467,7 +436,10 @@ const endLoadoutDrag=()=>{loadoutDragging=false;loadoutDragX=null;loadoutCanvas.
 loadoutCanvas.addEventListener('pointerup',endLoadoutDrag);loadoutCanvas.addEventListener('pointercancel',endLoadoutDrag);loadoutCanvas.addEventListener('pointerleave',endLoadoutDrag);
 function tickLoadoutPreview(dt){if($('loadoutPanel').hidden)return;const m=loadoutModels[loadoutSelected];if(!m||!m.visible)return;
  // Slow idle drift while idle, cinematic pose while inspecting.
- else if(loadoutDragging){m.rotation.set(loadoutPitch,loadoutYaw,0);m.position.set(0,0,0);}
+ // The pose sets rotation+position every frame, so the branch order matters:
+ // drag first, then the scripted inspect, then the idle drift as the default.
+ loadoutInspectTime+=dt;
+ if(loadoutDragging){m.rotation.set(loadoutPitch,loadoutYaw,0);m.position.set(0,0,0);}
  else{m.position.set(0,Math.sin(elapsed*.8)*.008,0);m.rotation.set(0,Math.sin(elapsed*.3)*.12+Math.PI*.02,0);}}
 /* ------------------------------------------------------------- Career stats */
 const career={matches:0,wins:0,kills:0,deaths:0,headshots:0,shotsFired:0,shotsHit:0,roundsWon:0};
@@ -543,7 +515,35 @@ function animateWeapon(dt){
  // already faces forward and level. Position and recoil rotate in that same
  // frame: a forward kick is -Z, the hip offset is +X to the player's right.
  const pose=VIEWMODEL_POSE[weapon]||[0,0,0];
- m.position.set(.32*(1-adsBlend)+Math.sin(walk*1.7)*.006*moving*(1-adsBlend)-.09*adsBlend,-.3*(1-adsBlend)-.09*adsBlend-equip*.5,-.65+recoil*.06);
+ // ADS does NOT lerp a fixed eye offset: the anchor is the exact point on the
+ // weapon the eye must occupy (scope glass centre or the rear-sight post), so
+ // move the viewmodel until that anchor sits on the camera axis. Lerping
+ // between two hand-crafted offsets never lands on the sight, which is why
+ // zoomed aim looked past the iron sights.
+ const hx=.32+Math.sin(walk*1.7)*.006*moving, hy=-.3-equip*.5, hz=-.65+recoil*.06;
+ // The anchor is the point on the weapon the eye must occupy (scope glass or
+ // the rear-sight post). m.position is set in the parent frame (viewScene) and
+ // the anchor offset must be expressed in that same frame, so read the anchor's
+ // world position relative to the viewmodel's own world position. getWorldPosition
+ // folds in the fit scale and the pose rotation; subtracting m's world position
+ // leaves exactly the offset that m.position must cancel.
+ // If the viewmodel has been re-parented or scaled, use the local anchor with
+ // the inverse fit scale instead (the fitted-frame path).
+ let ax=0,ay=0,az=0;
+ if(u.adsAnchor){
+  m.updateMatrixWorld(true);
+  u.adsAnchor.getWorldPosition(tmpV);
+  // m's world position is its position in viewScene (identity parent), so the
+  // relative offset is the anchor's world position minus it.
+  const mw=new (tmpV.constructor)(); m.getWorldPosition(mw);
+  ax=tmpV.x-mw.x; ay=tmpV.y-mw.y; az=tmpV.z-mw.z;
+ }
+ // ADS slides the anchor onto the camera forward axis: viewCam sits at the
+ // origin looking down -Z, so the target places the anchor at (0,0,hz) —
+ // centred horizontally and at hip-fire depth. Hip-fire keeps the weapon
+ // offset to the player's right and below the sight line.
+ const tx=0-ax, ty=0-ay, tz=hz-az;
+ m.position.set(hx+(tx-hx)*adsBlend, hy+(ty-hy)*adsBlend, hz+(tz-hz)*adsBlend);
  m.rotation.set(pose[0]+recoil*.09,pose[1],pose[2]);
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
@@ -582,9 +582,9 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // Pitch is clamped so the view never flips past vertical.
  if(topDown){cam.position.set(x,34,z);cam.rotation.set(-Math.PI/2,0,yaw);cam.fov+=(50-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}
  else{cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
-// The reload timer counts down here; the purge had removed the only decrement,
-// leaving every reload permanently mid-swap with an empty magazine.
- if(reload>0){reload-=dt;if(reload<=0){reload=0;const w=C.WEAPONS[reloadKey];const a=ammo[reloadKey];const need=w.mag-a.mag;if(need>0&&a.reserve>0){const take=Math.min(need,a.reserve);a.mag+=take;a.reserve-=take;}}}
+ // The reload timer is decremented and resolved inside the running branch
+ // above (line ~579); a second decrement here would count the same reload
+ // down twice and complete it early, so there is deliberately none.
  if(!started){cam.position.set(27+Math.sin(elapsed*.08)*5,17,30);cam.lookAt(0,0,-3);}
  // Full-auto only: semi-auto weapons fire once per trigger pull (shoot() is
  // already called on mousedown), so re-firing here would break their cadence.

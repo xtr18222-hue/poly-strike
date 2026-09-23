@@ -121,11 +121,10 @@
   };
 
   // Authored arena geometry. Loaded eagerly in loadAll() so buildArena() can
-  // read them synchronously at deploy time.
-  const MAP_MODELS = {
-    'theking1322_range.glb': 'theking1322_range.glb',
-    'map-depot.glb': 'map-depot.glb',
-  };
+  // read them synchronously at deploy time. The code-gated test maps were
+  // removed; no standard map ships authored geometry, so nothing is loaded
+  // here and MAP_MODELS stays empty.
+  const MAP_MODELS = {};
 
   /* ------------------------------------------------------------ loader ---- */
   let THREE = null;
@@ -214,14 +213,12 @@
   // (fitted weapons are stored unwrapped); normalize first.
   function sceneOf(src) { return src && (src.scene || src); }
 
-  // Relink the detachable-part handles after a clone. Object3D.copy() deep
-  // JSON-clones userData, which silently drops the live Object3D references
+  // Match the detachable-part handles to a fresh clone. Object3D.clone()
+  // deep-JSON-clones userData, which drops the live Object3D references
   // (root.userData.mag) and their basePos/baseRot caches, so the reload
   // animation then crashed reading .copy() off undefined. Walk the clone in
   // lockstep with the source and restore the real cloned node.
-  // The Blender separation pass names pivots by kind with the source mesh
-  // suffix attached ("mag_Object_19"), so match by prefix, not exact name.
-  const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i };
+  const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i, scope: /^scope/, stock: /stock/, adsAnchor: /^adsAnchor/ };
   function relinkParts(cloneRoot, srcRoot) {
     if (!cloneRoot || !srcRoot) return;
     // Prefer the pivot fitWeapon bound on the original: it is already the
@@ -274,9 +271,9 @@
     copyPivot(scene, clone);
     for (let i = 0; i < scene.children.length && i < clone.children.length; i++)
       copyPivot(scene.children[i], clone.children[i]);
-    // Per-part visibility set by hideExtras (spare magazines, loose rounds) is
-    // not carried by clone(); propagate it by name so the clone hides the same
-    // floating parts the original hid.
+    // Per-part visibility set by assembleParts (hidden spare magazines and
+    // loose rounds) is not carried by clone(); propagate it by name so the
+    // clone hides the same floating parts the original hid.
     const visByName = new Map();
     scene.traverse(o => { if (o.name) visByName.set(o.name, o.visible); });
     clone.traverse(c => { if (c.name && visByName.has(c.name)) c.visible = visByName.get(c.name); });
@@ -297,148 +294,124 @@
   // centre offset after the rotation would move the grip sideways instead of
   // along the barrel, and reading box.min/max in the same frame as the
   // translation is what makes the rear of the receiver land at z=0.
-  // Close the gap the separation pass opened between the stock/magazine and the
-  // receiver. The stock pivot's children are offset far from the pivot itself
-  // (~2.8 units in local space) and the separation pass broke the pivot's hold
-  // on its meshes, so neither part's bounding box nor the pivot's position can
-  // be trusted: measure the contact vertices directly and push each mesh in
-  // its own local space. Guarded, so a model whose parts do not line up this
-  // way is left untouched rather than broken.
-  function seatParts(root, T) {
-    for (const partName of ['stock', 'mag']) {
-      const part = root.userData[partName];
-      if (!part) continue;
-      root.updateMatrixWorld(true);
-      const partMeshes = new Set();
-      part.traverse(o => { if (o.isMesh) partMeshes.add(o); });
-
-      // The contact point on the receiver, along the fitted bore (z) and up (y).
-      // -Z is forward, so the receiver's rear face is the LARGEST z.
-      let recZ = -Infinity, recY = Infinity, haveZ = false, haveY = false;
-      const pb = new T.Box3().setFromObject(part);
-      const pc = new T.Vector3(); pb.getCenter(pc);
-      let scZ = Infinity;
-      root.traverse(o => {
-        if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
-        if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
-        const b = new T.Box3().setFromObject(o);
-        if (!isFinite(b.min.y)) return;
-        // A real receiver is a thick block; thin sight posts and rails at the
-        // extreme ends of the model are not the mating face, so weight the
-        // candidates by how much bore they span.
-        const span = b.max.z - b.min.z;
-        scZ = Math.min(scZ, b.min.z);
-        if (span > 0.3) {
-          if (!haveZ || b.max.z > recZ) { recZ = b.max.z; haveZ = true; }
-        }
-        if (partName === 'mag') {
-          const c = new T.Vector3(); b.getCenter(c);
-          if (Math.abs(c.z - pc.z) > 0.12) return;
-          if (b.min.y < recY) { recY = b.min.y; haveY = true; }
-        }
-      });
-      if (partName === 'stock' && haveZ) recZ = Math.min(recZ, scZ + 0.35);
-
-      // The part's contact vertex, in world space.
-      let pZ = partName === 'stock' ? Infinity : -Infinity;
-      let measuring = partName === 'stock' ? haveZ : haveY;
-      if (!measuring) continue;
-      part.traverse(o => {
-        if (!o.isMesh || !o.geometry) return;
-        const pos = o.geometry.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-          const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-          if (partName === 'stock') { if (v.z < pZ) pZ = v.z; }
-          else { if (v.y > pZ) pZ = v.y; }
-        }
-      });
-      if (!isFinite(pZ)) continue;
-
-      // The world-space position of the contact vertex itself. For a curved
-      // magazine this sits well forward of the part's box centre, so the
-      // receiver must be sampled here rather than at the centre.
-      let contactZ = 0;
-      {
-        let best = partName === 'stock' ? Infinity : -Infinity;
-        part.traverse(o => {
-          if (!o.isMesh || !o.geometry) return;
-          const pos = o.geometry.attributes.position;
-          if (!pos) return;
-          for (let i = 0; i < pos.count; i++) {
-            const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-            if (partName === 'stock') { if (v.z < pZ + 1e-6 && v.z < best) best = v.z; }
-            else { if (v.y > pZ - 1e-6 && v.z > best) best = v.z; }
-          }
-        });
-        if (isFinite(best)) contactZ = best;
-      }
-
-      // The receiver contact point must be a true vertex too. A bounding-box
-      // floor can be pulled down by a spur that is not above the magazine, which
-      // left the real floor out of reach of the part's top vertex. Measure the
-      // receiver floor at the contact vertex's own z: a curved magazine's top
-      // vertex sits well forward of its box centre, so the centre filters out
-      // the very part of the receiver the magazine must meet.
-      if (partName === 'mag') {
-        let vFloor = Infinity;
-        root.traverse(o => {
-          if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
-          if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
-          const pos = o.geometry && o.geometry.attributes.position;
-          if (!pos) return;
-          for (let i = 0; i < pos.count; i++) {
-            const v = new T.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-            if (Math.abs(v.z - contactZ) > 0.05) continue;
-            if (v.y < vFloor) vFloor = v.y;
-          }
-        });
-        if (isFinite(vFloor)) recY = vFloor;
-      }
-
-      const target = partName === 'stock' ? recZ : recY;
-      const axis = partName === 'stock' ? 'z' : 'y';
-      const d = target - pZ - 0.004;   // small tolerance so faces do not z-fight
-      // Only close a gap the separation pass opened. In the fitted frame -Z is
-      // forward, so a negative d means the stock sits behind the mating face
-      // and must be slid forward; a positive d means it is already inserted and
-      // any move would pull it out of alignment. The magazine is the mirror
-      // image: +Y is up, so a positive d means it hangs below the well and must
-      // be raised, while a negative d means it is already inserted.
-      const gap = partName === 'stock' ? -d : d;
-      const guard = partName === 'stock' ? 0.6 : 0.15;
-      if (gap < 0.002 || gap > guard) continue;
-
-      // The pivot does not drive its meshes, so push each mesh in local space.
-      // worldToLocal() refreshes the parent's world matrix first, which is what
-      // the manual inverse missed (stale parents scaled the delta per mesh).
-      const worldDelta = new T.Vector3();
-      worldDelta[axis] = d;
-      // The separation pass also dropped the part below the receiver (the AKM
-      // stock folds *under* it). Seat it flush on the vertical axis too, using
-      // the same world->local conversion so unrelated models stay untouched.
-      if (partName === 'stock') {
-        const sbb = new T.Box3().setFromObject(part);
-        const rbb = new T.Box3();
-        root.traverse(o => {
-          if (!o.isMesh || !o.visible || partMeshes.has(o)) return;
-          if (/mag|rounds|stock|scope|grip/.test(o.name || '')) return;
-          const b = new T.Box3().setFromObject(o);
-          if (isFinite(b.min.y)) rbb.union(b);
-        });
-        if (isFinite(rbb.min.y) && sbb.max.y < rbb.min.y) {
-          worldDelta.y = rbb.min.y - sbb.max.y;
-        }
-      }
-      part.traverse(o => {
-        if (!o.isMesh) return;
-        const wp = new T.Vector3();
-        o.getWorldPosition(wp);
-        wp.add(worldDelta);
-        if (o.parent) o.parent.worldToLocal(wp);
-        o.position.copy(wp);
-      });
-      part.userData.basePos = part.position.clone();
+  // The base models export every part already seated (each pivot's box
+  // intersects the receiver's), so no vertex-level re-seating is needed. What
+  // they do carry is loose rounds and spare/empty magazines as extra pivots
+  // that float clear of the gun — hide those, keep the loaded magazine.
+  //
+  // Per-part visibility propagates through cloneGLB's visByName map, and the
+  // names below are anchored by tests/overhaul.cjs.
+  const hidePart = (root, node) => {
+    if (!node) return;
+    node.traverse(o => { if (o.isMesh) o.visible = false; });
+  };
+  // A pivot is a floating spare if its box does not touch the receiver.
+  function receiverBox(root) {
+    const T = needThree();
+    const bb = new T.Box3();
+    root.traverse(o => {
+      if (/mag|rounds|bullet|cartridge|case|scope|clip|stock|grip/.test(o.name || '')) return;
+      const b = new T.Box3().setFromObject(o);
+      if (!b.isEmpty()) bb.union(b);
+    });
+    return bb;
+  }
+  // Loose bullets / cartridges are the parts the brief calls out to strip.
+  // A bare-cartridge name (76239_11, 762x51_mag_1, 50bmg_1) is a loose round;
+  // an empty magazine shell keeps the word "mag" and is handled below.
+  const LOOSE_ROUND = /^rounds|bullet|cartridge|50_bmg|\d+mm\dc?ase|762\d*_*\d*$/;
+  // The loaded magazine vs the empty spare differ by mesh count on every
+  // model: the loaded one carries its rounds as extra meshes (3 vs 1 on the
+  // AKM, 3 vs 2 on the Deagle), so mesh count picks the one the player is
+  // actually holding without trusting "empty" in the name.
+  // Mosin's magazine is internal (fixed): its pivot is named for the bare
+  // cartridge ("76254_0") rather than for the word "mag", so it will never
+  // match the magazine picker. It is loaded through the top of the receiver,
+  // not dropped out, so the reload has no magazine to animate.
+  const INTERNAL_MAG = /76254_0|76254_case_1|internal_mag/i;
+  function pickMag(root) {
+    let internal = false;
+    root.traverse(o => { if (INTERNAL_MAG.test(o.name || '')) internal = true; });
+    if (internal) return null;
+    let best = null, bestN = 0;
+    root.traverse(o => {
+      if (o.isMesh || !o.name || !/mag/i.test(o.name)) return;
+      if (/release|well|catch|empty/.test(o.name)) return;
+      let n = 0; o.traverse(x => { if (x.isMesh) n++; });
+      if (n > bestN) { best = o; bestN = n; }
+    });
+    return best;
+  }
+  function assembleParts(root) {
+    const T = needThree();
+    root.updateMatrixWorld(true);
+    // Bind the loaded magazine first so the hide loops below can keep it.
+    // The Mosin has no detachable magazine (it is internal), so pickMag
+    // returns null there and the reload simply has nothing to animate.
+    const loaded = pickMag(root);
+    if (loaded) {
+      root.userData.mag = loaded;
+      loaded.userData.basePos = loaded.position.clone();
+      loaded.userData.baseRot = loaded.rotation.clone();
     }
+    // Hide every loose-round pivot; those are the parts the brief calls out
+    // to strip (they render as bullets floating beside the gun).
+    root.traverse(o => {
+      if (o.isMesh || !o.name) return;
+      if (!LOOSE_ROUND.test(o.name)) return;
+      hidePart(root, o);
+    });
+    // Every OTHER magazine pivot is the empty spare the player is not
+    // holding — hide it so only one magazine renders.
+    root.traverse(o => {
+      if (o.isMesh || !o.name) return;
+      if (!/mag/i.test(o.name)) return;
+      if (o === root.userData.mag) return;
+      if (/release|well|catch/.test(o.name)) return;
+      let meshes = 0; o.traverse(x => { if (x.isMesh) meshes++; });
+      if (!meshes) return;
+      hidePart(root, o);
+    });
+    // Record rest poses for the parts the reload animation drives.
+    for (const field of ['mag', 'scope', 'stock', 'bolt']) {
+      const p = root.userData[field];
+      if (!p) continue;
+      p.userData.basePos = p.position.clone();
+      p.userData.baseRot = p.rotation.clone();
+    }
+    // The ADS anchor: an empty Object3D placed on the optical axis. game.js
+    // lerps the viewmodel group toward this point so the eye lands on the
+    // sight instead of the bore centre. Scoped rifles use the scope glass;
+    // iron-sight weapons use the rear sight post.
+    const anchor = new T.Object3D();
+    anchor.name = 'adsAnchor';
+    const sight = root.userData.scope || root.userData.aim || null;
+    if (sight) {
+      const sb = new T.Box3().setFromObject(sight);
+      if (!sb.isEmpty()) {
+        const sc = new T.Vector3(); sb.getCenter(sc);
+        // The scope glass sits above and usually to one side of the bore, but
+        // the eye looks down the optical axis, not the glass centre. Place the
+        // anchor at the glass's height on the weapon's own fitted centre-line:
+        // X from the fitted box centre (the axis the bore lies on), Y at the
+        // glass, Z at the glass so the eye lands on the optic, not beside it.
+        const fb2 = new T.Box3().setFromObject(root);
+        if (!fb2.isEmpty()) {
+          const fc2 = new T.Vector3(); fb2.getCenter(fc2);
+          anchor.position.set(fc2.x, sc.y, sc.z);
+        } else anchor.position.copy(sc);
+      }
+    }
+    if (anchor.position.lengthSq() === 0) {
+      // Fall back to the fitted box top-centre: the sights sit above the bore.
+      const fb = new T.Box3().setFromObject(root);
+      if (!fb.isEmpty()) {
+        const fc = new T.Vector3(); fb.getCenter(fc);
+        anchor.position.set(fc.x, fb.max.y, fc.z);
+      }
+    }
+    root.add(anchor);
+    root.userData.adsAnchor = anchor;
   }
 
   function fitWeapon(group, def, key) {
@@ -540,18 +513,17 @@
 
     root.userData.hands = []; // rigs carry their own arms; standalone weapons have none
 
-    // Detachable parts. The GLBs are re-exported from Blender with magazines,
-    // loose rounds, bolt and scope grouped under named pivot nodes ("mag*",
-    // "rounds*", "bolt*", "scope*"); those pivots are what the reload animation
-    // and the magazine-drop effect drive. Only top-level pivots are candidates:
-    // a nested lookup would grab an attachment's own magazine and move the
-    // wrong mesh. When several pivots of one kind exist, the heaviest (most
-    // meshes) wins — the primary magazine over a spare.
+    // Detachable parts. The clean base GLBs name their pivots semantically
+    // (akm_receiver_3, ak_30rnd_steel_mag_15, hawke_endurance__9, ...), so the
+    // part handles resolve by name + shape rather than the separation-pass
+    // "mag_Object_19" renaming the previous pipeline depended on. Only
+    // top-level pivots are candidates: a nested lookup would grab an
+    // attachment's own magazine and move the wrong mesh.
     const meshCount = (o) => { let n = 0; o.traverse(x => { if (x.isMesh) n++; }); return n; };
-    // A real magazine hangs straight down from the receiver; a spare that the
-    // separation pass detached floats with its long axis sideways or forward.
-    // Verticalness of the long axis is therefore the discriminator, with
-    // volume breaking ties (a mag-release catch is also vertical but tiny).
+    // A real magazine hangs straight down from the receiver; an empty spare
+    // (or a detached mag) floats with its long axis sideways or forward.
+    // Verticalness of the long axis is the discriminator, with volume
+    // breaking ties (a mag-release catch is also vertical but tiny).
     const worldLongAxis = (o) => {
       const bb = new T.Box3().setFromObject(o);
       const s = bb.getSize(new T.Vector3());
@@ -585,73 +557,42 @@
       p.userData.basePos = p.position.clone();
       p.userData.baseRot = p.rotation.clone();
     };
-    // AKM-style exports name the magazine pivots after the cartridge
-    // ("762x39_12") rather than "mag", so bind by shape as well as by name:
-    // the real magazine is the vertical part hanging under the receiver.
-    bindPart('mag', /^(mag|762x?39|556|545|9mm|45acp|12g)/, true);
+    // The magazine is picked by mesh count in assembleParts (the loaded mag
+    // carries its rounds as extra meshes; the empty spare does not), so only
+    // bolt/scope/sight/stock are bound here.
     bindPart('bolt', /^bolt/);           // heaviest is the bolt
-    // The separation pass baked cants into the kept parts (the AKM magazine
-    // carries a 60deg roll). Those are world-relative editing rotations, not
-    // articulation, so clear them BEFORE the inner orientation is composed and
-    // the part hangs straight down from the receiver.
+    // The clean exports have no baked cants, but the reload resets each part
+    // to baseRot/basePos, so record the rest pose the model shipped with.
     const straighten = (o) => {
       if (!o) return;
-      o.rotation.set(0, 0, 0);
-      o.quaternion.identity();
       o.userData.baseRot = o.rotation.clone();
     };
     straighten(root.userData.mag);
     straighten(root.userData.bolt);
-    // Note: the stock/mag seating runs after the fit box is final (below).
-    // Loose rounds and spare magazines are detached on the models; hide every
-    // pivot of those kinds except the one bound above, or the spares float in
-    // space far off the receiver (a mag pivot can sit 0.45m past the muzzle).
-    const hideExtras = (re, keep) => {
-      root.traverse(o => {
-        if (o === root || o === keep || !re.test(o.name || '')) return;
-        // Hide pivots with real geometry; keep structural empties alone so the
-        // node graph the reload reads is untouched.
-        let meshes = 0;
-        o.traverse(x => { if (x.isMesh) meshes++; });
-        if (!meshes) return;
-        o.traverse(x => { if (x.isMesh) x.visible = false; });
-      });
-    };
-    hideExtras(/^mag/, root.userData.mag);
-    // Every rounds_ pivot is a detached loose bullet; the reload only drives
-    // the magazine, so there is no "real" rounds pivot to keep - hide them all.
-    hideExtras(/^rounds/, null);
-    // Scoped rifles keep their glass as its own pivot so ADS stays aligned.
-    const scope = pickPart(/^scope/);
+    // Scoped rifles keep their glass as its own pivot so ADS can align to it.
+    // The clean exports name their optic after the real scope model
+    // (hawke_endurance__9 on the L96) rather than "scope", so match the known
+    // optic brands and any pivot carrying a lens-shaped mesh.
+    const scope = pickPart(/scope|optic|hawke|endurance|vortex|leupold|nightforce|nilkon|zeiss|swaro/i);
     if (scope) { root.userData.scope = scope; scope.userData.basePos = scope.position.clone(); }
     straighten(root.userData.scope);
-
-    // The separation pass detached the stock on several models (the AKM stock
-    // folds backwards and *under* the receiver). A real stock extends rearward
-    // from the receiver along the bore, so neutralise that pivot instead of
-    // hiding a part the weapon needs.
-    const stock = pickPart(/^stock/, false);
+    // Iron-sight rifles expose their rear sight as a separate pivot on a few
+    // exports; prefer it for the ADS anchor when no scope is present.
+    root.userData.aim = pickPart(/sight|rear/) || null;
+    // The stock is a fixed part of the body on the clean models: keep a handle
+    // only where the export gives it its own pivot.
+    const stock = pickPart(/stock/, false);
     if (stock) {
       root.userData.stock = stock;
       stock.userData.basePos = stock.position.clone();
-      // Only clear the separation-pass cant; the pivot's children are offset
-      // from it, so re-seating by bounding box measures in the unfitted frame
-      // and misaligns the whole model. Instead, close the visible gaps to the
-      // receiver in world space after the fit is applied (see below).
-      stock.rotation.set(0, 0, 0);
-      stock.quaternion.identity();
       stock.userData.baseRot = stock.rotation.clone();
-      // The separation pass left an unused duplicate stock behind the real one
-      // (e.g. "akm_stock_1" alongside the fitted "stock"). Only the fitted pivot
-      // drives the reload, so hide the duplicate rather than leaving it floating.
-      hideExtras(/stock/, stock);
     }
 
     root.userData.fit = {
       exportLong: +long.toFixed(4), scale: +scale.toFixed(5),
       axis, dim: [+fs.x.toFixed(4), +fs.y.toFixed(4), +fs.z.toFixed(4)],
     };
-    seatParts(root, T);
+    assembleParts(root);
     return root;
   }
 
@@ -680,8 +621,8 @@
         weapons.set(key, w);
         report.push(key + ' ok ' + JSON.stringify(w.userData.fit));
       } catch (e) {
-        console.error('[assets] weapon failed', key, e.message);
-        report.push(key + ' FAIL ' + e.message);
+            console.error('[assets] weapon failed', key, e.stack || e.message);
+            report.push(key + ' FAIL ' + e.message);
       }
     }
 
@@ -701,8 +642,9 @@
       } catch (e) { console.error('[assets] clip failed', key, e.message); report.push('clip:' + key + ' FAIL ' + e.message); }
     }
 
-    // Authored arena GLBs for the 116791 test maps, loaded eagerly so
-    // buildArena() can read them synchronously at deploy time.
+    // Standard arenas use procedural geometry, so MAP_MODELS is empty and no
+    // arena GLB is fetched. The loop is kept so buildArena()'s synchronous
+    // lookup contract still holds if an arena ever ships authored geometry.
     for (const file of Object.keys(MAP_MODELS)) {
       try {
         const g = await loadGLB(base + 'assets/models/' + file);

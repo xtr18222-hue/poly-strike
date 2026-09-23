@@ -45,24 +45,34 @@ test('CLIP_FILES registers the full Pro FPS suite', () => {
     assert.ok(keys.includes(k), `pro-fps clip ${k} registered`);
 });
 
-test('every map spawn anim resolves to a registered clip', () => {
-  const keys = new Set(clipKeys());
-  const refs = mapAnimRefs();
-  assert.ok(refs.size >= 8, 'spawn tables reference a healthy clip spread');
-  for (const ref of refs)
-    assert.ok(keys.has(ref), `map anim '${ref}' has no CLIP_FILES entry`);
+test('every map spawn point is inside its own bounds and clear of solids', () => {
+  // The code-gated test maps carried per-pad anim clips; the standard arenas
+  // let the bot brain assign locomotion, so what must hold now is that every
+  // spawn (player, opponent and bots) is on the map and not embedded in a wall.
+  for (const id of Object.keys(MAPS)) {
+    const m = MAPS[id];
+    const spots = [m.spawnPlayer, m.spawnOpponent, ...(m.spawnBots || [])];
+    assert.ok(spots.length >= 7, `${id} has enough spawn points`);
+    for (const s of spots) {
+      assert.ok(Math.abs(s.x) <= m.bounds.hx, `${id} spawn x within bounds`);
+      assert.ok(Math.abs(s.z) <= m.bounds.hz, `${id} spawn z within bounds`);
+      for (const o of (m.solids || [])) {
+        const dx = Math.abs(s.x - o.x), dz = Math.abs(s.z - o.z);
+        const inside = dx < o.w / 2 && dz < o.d / 2;
+        assert.ok(!inside, `${id} spawn (${s.x},${s.z}) inside solid at (${o.x},${o.z})`);
+      }
+    }
+  }
 });
 
-test('test maps are stationary and peaceful so the suite can be reviewed', () => {
-  for (const id of ['range', 'depot']) {
+test('standard maps are combat arenas, not peaceful test maps', () => {
+  // The code-gated test maps (116791) were removed: the rotation is the four
+  // core battlegrounds, and none of them may carry test-map flags.
+  for (const id of Object.keys(MAPS)) {
     const m = MAPS[id];
-    assert.ok(m, `test map ${id} exists`);
-    assert.equal(m.stationaryBots, true, `${id} bots stay on their pads`);
-    assert.equal(m.peaceful, true, `${id} bots do not shoot back`);
-    assert.equal(m.test, true, `${id} is a 116791 map`);
-    // One clip per pad, all distinct, so nothing is duplicated.
-    const anims = m.spawnBots.map(b => b.anim);
-    assert.equal(new Set(anims).size, anims.length, `${id} anims are unique`);
+    assert.equal(m.test, undefined, `${id} is not a test map`);
+    assert.equal(m.peaceful, undefined, `${id} is a live combat arena`);
+    assert.equal(m.stationaryBots, undefined, `${id} bots are free to move`);
   }
 });
 
@@ -220,10 +230,13 @@ test('cloneGLB preserves the fitted orientation and hidden parts', () => {
 });
 
 test('detached weapon parts are hidden or seated, not left floating', () => {
-  // Every rounds_ pivot is a detached loose bullet; the reload drives only the
-  // magazine, so there is no "real" rounds pivot to keep.
-  assert.ok(/hideExtras/.test(src), 'hideExtras exists for detached parts');
-  assert.ok(/seatParts/.test(src), 'seatParts closes stock/magazine gaps');
+  // Every loose-round pivot is a detached bullet the player is not holding;
+  // the reload drives only the magazine, so the loader hides them all.
+  assert.ok(/pickMag/.test(src), 'a magazine picker prefers the loaded mag');
+  assert.ok(/empty/.test(src), 'empty spares are excluded by name');
+  assert.ok(/INTERNAL_MAG/.test(src), 'internal Mosin magazine is special-cased');
+  assert.ok(/hidePart/.test(src), 'a hide helper suppresses the floating part');
+  assert.ok(/straighten/.test(src), 'rest poses are recorded for the reload');
   // The part picker must prefer the magazine that hangs vertically below the
   // receiver; picking by mesh weight selected the floating spare instead.
   assert.ok(/vertical/.test(src), 'the part picker tests verticalness');

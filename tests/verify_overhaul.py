@@ -22,21 +22,10 @@ def main():
         pg.goto(URL, wait_until="domcontentloaded")
         pg.wait_for_timeout(6000)
 
-        # Reach the test-map panel and enter the 116791 code.
+        # Standard maps only: the code-entry test maps were removed, so the
+        # smoke check deploys on the default arena straight from the menu.
         def ev(expr):
             return pg.evaluate(f"(() => {{ try {{ return {expr}; }} catch(e) {{ return 'ERR '+e.message; }} }})()")
-
-        ev("document.querySelector('#mapCode').value='116791'")
-        ev("document.querySelector('#mapCode').dispatchEvent(new Event('input',{bubbles:true}))")
-        pg.wait_for_timeout(400)
-        panel = ev("document.querySelector('#testMapPanel').hidden")
-        print("test map panel visible:", panel is False)
-
-        # Pick the range (Shooting Range) card and deploy.
-        ev("document.querySelector('[data-testmap=range]').click()")
-        pg.wait_for_timeout(300)
-        choice = ev("document.querySelector('#testMapPick').textContent")
-        print("card pick:", choice)
 
         ev("document.querySelector('#start').click()")
         pg.wait_for_timeout(5000)

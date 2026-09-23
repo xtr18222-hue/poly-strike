@@ -59,6 +59,29 @@ test('tick audio cue exists', () => {
   assert.ok(src('audio.js').includes('tick:'), 'audio.js must define a tick cue');
 });
 
+test('male announcer walks 14 sequential tiers, female caps at 9', () => {
+  // The packs are capped separately. The male announcer must resolve every
+  // tier 1..14 to a distinct clip with a real file; the female announcer stops
+  // at 9 and must not be held to the male cap.
+  const fs = require('fs');
+  const path = require('path');
+  const audio = src('audio.js');
+  assert.ok(/const TIER_CAPS = \{ male: 14, female: 9 \}/.test(audio),
+    'TIER_CAPS is split per pack (male 14, female 9)');
+  assert.ok(!/\bTIER_CAP\b\s*=/.test(audio), 'the shared TIER_CAP constant is gone');
+
+  const dir = path.join(ROOT, 'assets/audio');
+  for (const [pack, cap] of [['male', 14], ['female', 9]]) {
+    const m = new RegExp('    ' + pack + ': \\[([\\s\\S]*?)\\n    \\],').exec(audio);
+    assert.ok(m, pack + ' pack found');
+    const clips = m[1].split('\n').map(l => l.trim().replace(/,$/, '').replace(/^'|'$/g, '')).filter(x => x && !x.startsWith('//'));
+    assert.equal(clips.length, cap, pack + ' pack lists exactly ' + cap + ' tiers, got ' + clips.length);
+    assert.equal(new Set(clips).size, clips.length, pack + ' tiers are all distinct');
+    for (const name of clips)
+      assert.ok(fs.existsSync(path.join(dir, name + '.mp3')), name.slice(0, 28) + ' exists on disk');
+  }
+});
+
 
 
 test('career stats seed and persist real values', () => {

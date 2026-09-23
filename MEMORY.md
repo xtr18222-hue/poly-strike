@@ -249,7 +249,12 @@ renders with zero lighting cost in Three.js.
   ak47/awp/kar98/deagle, so akm/l96/mosin/hecate/mx/bayonet fired silently.
   First Blood is once per match via a `firstBlood` flag (reset in `spawn()`)
   plus an `announce()` guard so `'streak'` can never resolve to `list[0]`.
-  `TIER_CAP = 9`: kill lines play to 9 kills then go silent (known, unchanged).
+  Killstreak caps are now per pack: `TIER_CAPS = { male: 14, female: 9 }` in
+  audio.js. The male pack walks all 14 tiers (11 Mortal Kombat clips + First
+  Blood + Mega + the two TTS-generated `[audio]Monster-Kill !` and
+  `[audio]Godlike!`), the female pack 9 (8 UT clips + the TTS
+  `[UT Sexy Female Announcer]Monster-Kill!`). `addKill()` in game.js no longer
+  gates the streak itself — `announce()` applies the active pack's cap.
 - Sniper bolt strokes along the bore axis with a sin(π·t) pull/return instead
   of the outward-popping rotation on the wrong axis.
 - sw.js: `assets.js` was MISSING from the precache list (it is load-bearing —
@@ -265,3 +270,32 @@ renders with zero lighting cost in Three.js.
   the match via the `blur→pause()` listener, so synthetic keydown events never
   reach the handler; click the canvas first, then use `pg.keyboard.press`.
 
+
+## 2026-09-21 — critical fixes round (assets, loadout, ADS, maps, audio)
+
+- Weapons: the fragmented GLBs from the separation pass were replaced with the
+  clean base models from `My Game/Guns`. `assets.js` only hides loose rounds and
+  spare empty mags now (`assembleParts`), `pickMag` picks the loaded mag by mesh
+  count, and the Mosin's internal mag is kept (`INTERNAL_MAG`). No vertex
+  re-seating. `npm test` 75/75.
+- Loadout: `loadoutInspectTime` was never declared (page error on every weapon
+  click) and `tickLoadoutPreview` had an orphaned `else if`; both fixed. MX Knife
+  had no card, so it was unreachable — the secondary list is now
+  `['deagle','bayonet','mx']`. "AK-47" text tags removed from index.html (HUD
+  name, slot label, loadout preview); the weapon is an AKM.
+- ADS: the anchor is placed on the weapon's fitted centre-line at the scope
+  glass height (`assets.js`), and `animateWeapon` reads the anchor via
+  `getWorldPosition` relative to the viewmodel's own world position, then moves
+  the viewmodel so the anchor lands on the camera axis. Verified live: all 5
+  ADS weapons reach 0.000 lateral offset. Scoped-optic pivots are matched by
+  brand (`hawke_endurance__9` on the L96, `sb_5-25x56_scope_17` on the Hecate),
+  not just `/scope/`.
+- Maps: the `116791` code-entry feature is fully removed. Deleted test maps
+  `range`/`depot` from maps.js, `MAP_MODELS` emptied, `map-depot.glb`,
+  `theking1322_range.glb`, `map-depot.blend` and `tests/verify_116791.py`,
+  `tests/load_map_depot.mjs`, `tests/load_range_glb.mjs`,
+  `tests/map_depot_check.py` deleted, map-code HTML + test-map CSS stripped.
+  The rotation is `desert, industrial, urban, training` only.
+- Reload bug fixed: the timer was decremented twice (once in the `running`
+  branch, once after), so every reload completed at double speed.
+- sw.js cache bumped v17 → v18.
