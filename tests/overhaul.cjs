@@ -137,33 +137,36 @@ test('standard maps are combat arenas, not peaceful test maps', () => {
 // ---------- training mode: the player is not locked to the Mosin ----------
 const CORE = require(path.join(ROOT, 'core.js'));
 
-test('training does not force the Mosin: every primary stays selectable', () => {
+test('the roster is exactly AKM, L96, Hecate and the Deagle sidearm', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
-  // The old lock assigned the Mosin on every training deploy; if it returns,
-  // the player is welded to one gun in the range.
-  assert.ok(!/MAP\.training[^;]*primary\s*=\s*['"]mosin['"]/.test(game),
-    'no training -> mosin primary assignment');
-  // The inventory the wheel cycles must keep all three slots.
-  assert.ok(/const inventory=\(\)=>dropped?\?\[secondary,melee\]:\[primary,secondary,melee\]/.test(game),
-    'inventory exposes primary, secondary and melee');
-  // And the primaries list still has the four real rifles.
+  // No melee slot any more: the wheel cycles primary and secondary only, and
+  // the only "melee" text left is the isFirearm() guard comment.
+  assert.ok(/const inventory=\(\)=>dropped?\?\[secondary\]:\[primary,secondary\]/.test(game),
+    'inventory exposes primary and secondary, no melee');
+  assert.ok(!/melee slot|melee\]/.test(game), 'no melee handling left in game.js');
+  // The three primaries are the rifles that survived the roster cut.
   const prim = game.match(/const primaries=\[([^\]]+)\]/);
   assert.ok(prim, 'primaries list present');
-  for (const k of ['akm', 'l96', 'mosin', 'hecate'])
+  for (const k of ['akm', 'l96', 'hecate'])
     assert.ok(prim[1].includes(`'${k}'`), `${k} is a selectable primary`);
+  for (const k of ['mosin', 'mx', 'bayonet'])
+    assert.ok(!prim[1].includes(`'${k}'`), `${k} was removed from the primaries`);
+  // And the cut weapons are gone from the shared table too.
+  assert.deepEqual(Object.keys(CORE.WEAPONS).sort(), ['akm', 'deagle', 'hecate', 'l96']);
 });
 
-test('the knife occupies the melee slot, not the buy menu', () => {
-  for (const key of ['mx', 'bayonet']) {
-    const w = CORE.WEAPONS[key];
-    assert.ok(w, `${key} is a weapon`);
-    assert.equal(w.slot, 'melee', `${key} is melee-slot`);
-    assert.equal(w.mag, 0, `${key} carries no magazine`);
+test('the melee weapons were removed from the roster entirely', () => {
+  // The Mosin, MX knife and bayonet are gone: no key, no slot, nothing to buy.
+  for (const key of ['mosin', 'mx', 'bayonet']) {
+    assert.ok(!CORE.WEAPONS[key], `${key} is not a weapon`);
   }
-  // Melee keys must not appear in the buy menu.
-  const buy = JSON.stringify(CORE.BUY_ITEMS || {});
-  assert.ok(!/["']mx["']/.test(buy), 'mx is not purchasable');
-  assert.ok(!/["']bayonet["']/.test(buy), 'bayonet is not purchasable');
+  // The Deagle is the only sidearm.
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary'), ['deagle']);
+  // Nothing melee-shaped remains anywhere in the arsenal.
+  for (const w of Object.values(CORE.WEAPONS)) {
+    assert.ok(w.slot === 'primary' || w.slot === 'secondary', `${w.key} has a gun slot`);
+    assert.ok(w.mag > 0, `${w.key} has a magazine`);
+  }
 });
 
 // ---------- announcer: First Blood is once per match ----------
@@ -255,9 +258,9 @@ test('the weapon fit maps the bore onto -Z with sights on +Y', () => {
 });
 
 test('per-asset muzzle direction is recorded, not assumed', () => {
-  // Measured on the loaded exports in world space: AKM/Deagle/L96/Mosin/
-  // Bayonet/Hecate/MX all carry the muzzle at +X in asset space, so every
-  // entry records flip:1 and fitWeapon aligns +X onto the camera's forward.
+  // Measured on the loaded exports in world space: AKM/Deagle/L96/Hecate all
+  // carry the muzzle at +X in asset space, so every entry records flip:1 and
+  // fitWeapon aligns +X onto the camera's forward.
   const m = src.match(/const\s+WEAPON_ASSETS\s*=\s*\{([\s\S]*?)\n\s*\};/);
   assert.ok(m, 'WEAPON_ASSETS table found');
   // The entries are multi-line, so read each block rather than each row.
@@ -268,7 +271,7 @@ test('per-asset muzzle direction is recorded, not assumed', () => {
     if (head) { cur = head[1]; blocks[cur] = ''; continue; }
     if (cur) blocks[cur] += line + '\n';
   }
-  for (const k of ['akm', 'deagle', 'l96', 'mosin', 'hecate', 'bayonet']) {
+  for (const k of ['akm', 'deagle', 'l96', 'hecate']) {
     assert.ok(blocks[k], `${k} present in WEAPON_ASSETS`);
     assert.ok(/flip\s*:/.test(blocks[k]), `${k} records its muzzle direction (flip)`);
   }

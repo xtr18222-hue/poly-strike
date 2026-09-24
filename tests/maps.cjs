@@ -70,17 +70,24 @@ test('reloads finish in the faster per-weapon times', () => {
   assert.equal(C.WEAPONS.deagle.reloadTime, 1.8);
 });
 
-test('AK and Deagle ADS tightens spread without removing movement penalties', () => {
-  for (const key of ['akm', 'deagle']) {
-    const spread = (move, crouch, air, ads) => Math.hypot(...Object.values(C.pickSpread(key, move, crouch, air, ads, () => .9)));
-    const hip = spread(0,false,false,false), ads = spread(0,false,false,true);
-    const moving = spread(1,false,false,true);
-    assert.ok(ads < hip && ads > 0, key + ' ADS tightens');
-    assert.ok(moving > ads, key + ' moving is not perfectly accurate');
-    assert.ok(moving < spread(1,false,false,false), key + ' moving ADS still helps');
-    assert.ok(spread(0,true,false,true) < ads, key + ' crouch helps');
-    assert.ok(spread(0,false,true,true) > moving, key + ' airborne penalty remains');
+test('ADS tightens the guns that have it, and the AKM has none', () => {
+  const spread = (key, move, crouch, air, ads) => Math.hypot(...Object.values(C.pickSpread(key, move, crouch, air, ads, () => .9)));
+  // The AKM has no ADS mechanic: aiming down its sights frames the target but
+  // never tightens the spread.
+  assert.equal(C.WEAPONS.akm.ads, false, 'AKM advertises no ADS');
+  assert.ok(spread('akm',0,false,false,true) === spread('akm',0,false,false,false), 'AKM ADS is a no-op');
+  // The scoped snipers collapse to their scoped value.
+  for (const key of ['l96','hecate']) {
+    assert.ok(spread(key,0,false,false,true) < spread(key,0,false,false,false), key + ' scoping tightens');
   }
+  // The Deagle keeps its ADS and its movement penalties.
+  const dHip = spread('deagle',0,false,false,false), dAds = spread('deagle',0,false,false,true);
+  const dMoving = spread('deagle',1,false,false,true);
+  assert.ok(dAds < dHip && dAds > 0, 'deagle ADS tightens');
+  assert.ok(dMoving > dAds, 'deagle moving is not perfectly accurate');
+  assert.ok(dMoving < spread('deagle',1,false,false,false), 'deagle moving ADS still helps');
+  assert.ok(spread('deagle',0,true,false,true) < dAds, 'deagle crouch helps');
+  assert.ok(spread('deagle',0,false,true,true) > dMoving, 'deagle airborne penalty remains');
 });
 
 function safe(map, p, message) {

@@ -7,31 +7,26 @@ const path = require('path');
 const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
-test('arsenal contains the seven weapons with consistent stats', () => {
-  // The new asset suite: 7 weapons. "MX" is a knife, not a rifle: it was
-  // reclassified from primary into the melee slot alongside the bayonet.
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','bayonet','deagle','hecate','l96','mosin','mx']);
+test('arsenal contains the four weapons with consistent stats', () => {
+  // The reduced roster: AKM, L96 A1 and PGM Hecate II as primaries, Desert
+  // Eagle as the sidearm. Mosin, the MX knife and the bayonet were removed.
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','l96']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
-    if (w.slot !== 'melee') {
-      assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
-      assert.ok(w.damage > 0 && w.reloadTime > 0);
-      assert.equal(typeof w.auto, 'boolean');
-    }
+    assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
+    assert.ok(w.damage > 0 && w.reloadTime > 0);
+    assert.equal(typeof w.auto, 'boolean');
   }
   assert.equal(C.WEAPONS.l96.damage >= 100, true, 'L96 one-shot body damage');
   assert.equal(C.WEAPONS.akm.auto, true, 'AKM is automatic');
   assert.equal(C.WEAPONS.deagle.auto, false, 'Deagle is semi-auto');
   assert.equal(C.WEAPONS.l96.zoomFov < 40, true, 'L96 has scope zoom');
-  // The MX is a combat knife now, so it has no magazine, scope or ADS.
-  assert.equal(C.WEAPONS.mx.slot, 'melee', 'MX is reclassified to the melee slot');
-  assert.equal(C.WEAPONS.mx.mag, 0, 'MX has no magazine');
-  assert.equal(C.WEAPONS.mx.zoomFov, null, 'MX has no scope');
-  assert.equal(C.WEAPONS.mx.ads, false, 'MX does not use ADS');
-  assert.equal(C.WEAPONS.bayonet.slot, 'melee', 'bayonet stays melee');
+  assert.equal(C.WEAPONS.hecate.zoomFov < 40, true, 'Hecate has scope zoom');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
-    ['akm','hecate','l96','mosin'], 'four primaries remain');
+    ['akm','hecate','l96'], 'three primaries remain');
+  assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
+    ['deagle'], 'the Deagle is the only sidearm');
 });
 
 /* ---------- 2. Spray pattern ---------- */
@@ -171,9 +166,10 @@ test('economy: kill awards per weapon, win/loss bonuses, loss-streak cap', () =>
   const rng = C.mulberry32(5);
   const m = C.createMatch();
   assert.equal(m.money, C.ECON.start);
-  const ak = C.WEAPONS.akm, awp = C.WEAPONS.l96, de = C.WEAPONS.deagle, kn = C.WEAPONS.bayonet;
-  // Each award requires a fresh, alive target and a lethal hit.
-  for (const w of [ak, awp, de, kn]) {
+  const ak = C.WEAPONS.akm, awp = C.WEAPONS.l96, de = C.WEAPONS.deagle, hg = C.WEAPONS.hecate;
+  // Each award requires a fresh, alive target and a lethal hit. The melee
+  // weapons are gone from the roster, so the fourth entry is the Hecate.
+  for (const w of [ak, awp, de, hg]) {
     const fresh = C.createMatch(); fresh.money = 0;
     while (fresh.bots[0].alive) fresh.playerShot(w.key, 0, 'body', 1);
     assert.equal(fresh.money, w.killAward);

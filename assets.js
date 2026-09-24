@@ -43,25 +43,9 @@
       file: 'low-poly_l96_a1_precision_marksman.glb',
       length: 1.18, rot: [0, 0, 0], flip: 1,
     },
-    mosin: {
-      file: 'low-poly_mosin_nagant_189130.glb',
-      length: 1.23, rot: [0, 0, 0], flip: 1,
-    },
-    mx: {
-      file: 'low-poly_mx-8054.glb',
-      // The MX export measures 6.43 units long and the bayonet 2.23, so at a
-      // raw fit the knife lands at ~2.9x the bayonet. 0.42m is a realistic
-      // fighting-knife length (the real blade is ~30cm plus the hilt) and
-      // keeps it visually distinct from the 0.30m bayonet in hand.
-      length: 0.42, rot: [0, 0, 0], flip: 1,
-    },
     hecate: {
       file: 'low-poly_pgm_hecate_ii.glb',
       length: 1.30, rot: [0, 0, 0], flip: 1,
-    },
-    bayonet: {
-      file: 'low-poly_fa-03_bayonet.glb',
-      length: 0.30, rot: [0, 0, 0], flip: 1,
     },
   };
 
@@ -75,7 +59,10 @@
   // Game balance for the new suite. Firearm identity maps to the old slots so
   // the inventory code keeps working: primary / secondary / melee.
 
-  const ROSTER = ['akm', 'l96', 'mosin', 'mx', 'hecate', 'deagle', 'bayonet'];
+  // Strict roster: AKM, L96 A1, PGM Hecate II and the Desert Eagle. The
+  // Mosin and both knives were removed from the loadout, so the loader never
+  // builds them.
+  const ROSTER = ['akm', 'l96', 'hecate', 'deagle'];
   // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
   const WEAPON_KEYS = ROSTER.slice();
 
@@ -277,6 +264,36 @@
     copyPivot(scene, clone);
     for (let i = 0; i < scene.children.length && i < clone.children.length; i++)
       copyPivot(scene.children[i], clone.children[i]);
+    // The fit's world-space placement lives on the ROOT group (it recentres
+    // the gun and butts the receiver's rear face against z=0), but clone()
+    // only reproduces the inner scene, so every cloned weapon lost that
+    // placement and parts spread far off the long axis (the AKM's magazine,
+    // grip and compensator) ended up nine units from the muzzle. The clone IS
+    // the root for the caller, so the root transform must land on it.
+    copyPivot(src, clone);
+    // Anchors added after the fit (muzzle / adsAnchor / fitBox) are children
+    // of root, not of the inner scene, so a plain clone never carries them.
+    // Rebuild them on the clone from the source's own fitted box so callers
+    // that read userData.muzzle or userData.fitBox still get the truth.
+    if (src.userData && src.userData.muzzle) {
+      if (!clone.children.some(c => c.name === 'muzzle')) {
+        const tip = new T.Object3D(); tip.name = 'muzzle';
+        const tb = new T.Box3().setFromObject(clone);
+        if (!tb.isEmpty()) {
+          const tc = new T.Vector3(); tb.getCenter(tc);
+          tip.position.set(tc.x, tc.y, tb.min.z);
+        }
+        clone.add(tip);
+        clone.userData.muzzle = tip;
+      }
+    }
+    if (src.userData && src.userData.adsAnchor && !clone.userData.adsAnchor) {
+      const anchor = new T.Object3D(); anchor.name = 'adsAnchor';
+      anchor.position.copy(src.userData.adsAnchor.position);
+      clone.add(anchor);
+      clone.userData.adsAnchor = anchor;
+    }
+    if (src.userData && src.userData.fitBox) clone.userData.fitBox = src.userData.fitBox.clone();
     // Per-part visibility set by assembleParts (hidden spare magazines and
     // loose rounds) is not carried by clone(); propagate it by name so the
     // clone hides the same floating parts the original hid.
@@ -557,11 +574,33 @@
       if (fitted.isEmpty()) return null;
       const fs = new T.Vector3(); fitted.getSize(fs);
       const c = new T.Vector3(); fitted.getCenter(c);
+      // Bake the placement into the GEOMETRY, not into root.position. The
+      // viewmodel animation re-sets position every frame to place the gun in
+      // the camera frame, so a placement held in root.position is discarded
+      // the moment a weapon is equipped — the AKM then sat with its receiver
+      // 0.37m behind the pivot and the frustum solver measured the wrong near
+      // face. Folding the offset into the child transforms makes the fitted
+      // box intrinsic to the model.
       root.position.x -= c.x;
       root.position.y -= c.y;
       // Rear of the weapon at z=0, barrel to -Z: the whole gun then sits in
       // front of the camera whatever its internal pivot layout.
       root.position.z -= fitted.max.z;
+      root.updateMatrixWorld(true);
+      const shift = root.position.toArray();
+      // Only the DIRECT children: `inner` is root's child and carries the
+      // whole gun, so traversing deeper would add the shift to inner and again
+      // to every child of inner, moving the weapon by twice the offset.
+      // The shift is measured in WORLD units but child.position is in root's
+      // LOCAL frame, which root.scale compresses (the AKM's 0.1006 fit scale
+      // turned a -0.3717 offset into -0.0374). Divide through so the box lands
+      // where the measurement says it should.
+      const inv = scale > 0 ? 1 / scale : 1;
+      for (const child of root.children) {
+        child.position.x += shift[0] * inv; child.position.y += shift[1] * inv; child.position.z += shift[2] * inv;
+      }
+      root.position.set(0, 0, 0);
+      root.updateMatrixWorld(true);
       return fs;
     };
     const fs = place();

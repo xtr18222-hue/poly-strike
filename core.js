@@ -28,25 +28,23 @@
   // assets.js (PolyAsset.WEAPON_DEFS) so a weapon's balance and its model are
   // defined in one place; core re-exports them so the rest of the game keeps
   // reading C.WEAPONS.
+  // Strict roster: AKM assault rifle, L96 A1 and PGM Hecate II snipers, plus
+  // the Desert Eagle sidearm. The Mosin and the melee slots (MX Knife / Bayonet)
+  // were removed per the loadout reduction. The AKM no longer has an ADS
+  // mechanic - it is a hip-fire rifle, so `ads` is false and right-click does
+  // nothing while it is equipped.
   // Resolved lazily: core.js parses before assets.js, so PolyAsset is not
   // defined yet at module scope. WEAPON_DEFS is stable after first load.
   // The balance table is the single source of truth: assets.js reads it for
   // weaponDef(), and the game reads C.WEAPONS. Stats and model live together so
   // a weapon cannot drift out of sync with its own file.
   const WEAPONS = {
-    akm: { key:'akm', name:'AKM', slot:'primary', auto:true, mag:30, reserve:90, damage:36, headMult:4, legMult:0.75, fireInterval:0.1, reloadTime:1.35, spreadBase:0.0065, spreadScoped:0.0042, zoomFov:null, ads:true, price:2700, killAward:300, falloff:0.004, recoil:1.0 },
+    akm: { key:'akm', name:'AKM', slot:'primary', auto:true, mag:30, reserve:90, damage:36, headMult:4, legMult:0.75, fireInterval:0.1, reloadTime:1.35, spreadBase:0.0065, spreadScoped:0.0065, zoomFov:null, ads:false, price:2700, killAward:300, falloff:0.004, recoil:1.0 },
     l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
-    mosin: { key:'mosin', name:'Mosin Nagant', slot:'primary', auto:false, mag:5, reserve:40, damage:88, headMult:3.2, legMult:0.75, fireInterval:1.2, reloadTime:2.9, spreadBase:0.0015, spreadScoped:0.0005, zoomFov:20, ads:true, price:3300, killAward:300, falloff:0.0015, recoil:1.3 },
-    // "MX" is really a combat knife/bayonet, not a rifle: reclassified from the
-    // primary slot into melee, so it never appears in the buy menu or the
-    // primary rifle list.
-    mx: { key:'mx', name:'MX Knife', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:2, legMult:1, fireInterval:0.6, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0.5 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:true, price:700, killAward:300, falloff:0.006, recoil:0.85 },
-    // The bayonet stays as the default melee swap for the drop/pickup flow.
-    bayonet: { key:'bayonet', name:'Bayonet', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:2, legMult:1, fireInterval:0.6, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0.5 },
   };
-  const BUY_ITEMS = ['akm', 'l96', 'mosin', 'hecate', 'deagle', 'armor'];
+  const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'armor'];
 
 
 
@@ -55,15 +53,18 @@
   // scoped collapses AWP spread. Returns {yaw, pitch} aim offsets in radians.
   function pickSpread(weaponKey, moveFactor, crouch, air, scoped, rng) {
     const w = WEAPONS[weaponKey];
-    // Melee weapons have no spread at all.
     if (!w || w.slot === 'melee') return { yaw: 0, pitch: 0 };
     let s;
     if (air) s = w.spreadBase * 6;
     else {
       s = w.spreadBase * (1 + Math.max(0, moveFactor) * 2.5);
       if (crouch) s *= 0.6;
-      if (scoped && w.zoomFov) s = w.spreadScoped;
-      else if (scoped && w.ads) s *= w.spreadScoped / w.spreadBase;
+      // The AKM has no ADS mechanic: aiming down its sights only frames the
+      // target, it never tightens the spread, so scoped is ignored for it.
+      if (scoped && w.ads) {
+        if (w.zoomFov) s = w.spreadScoped;
+        else s *= w.spreadScoped / w.spreadBase;
+      }
     }
     return { yaw: (rng() * 2 - 1) * s, pitch: (rng() * 2 - 1) * s * 0.8 };
   }
@@ -245,16 +246,36 @@
   const BUY_TIME = 5, ROUND_TIME = 90, END_TIME = 4, WIN_ROUNDS = 5;
   const BOT_COUNT = 5;
 
-  function createMatch(mapOrContext = MAP) {
+  // Game modes the lobby lets the player pick. Both run on the same arenas and
+  // the same bot AI; only the win condition and the round clock change.
+  //   skirmish - the original mode: clear every bot to take the round, first
+  //              to WIN_ROUNDS wins the match.
+  //   ffa      - Free for All: the round clock runs out and every bot is a
+  //              score; the match ends after one round and the highest
+  //              kill count wins.
+  //   search   - Search & Destroy: one life each. There is no respawn and no
+  //              round clock, so a round is decided by who survives.
+  const MODES = {
+    skirmish: { key:'skirmish', name:'Skirmish', desc:'Eliminate every hostile. First to 5 rounds wins.', rounds:true, clock:ROUND_TIME, lives:Infinity, toWin:WIN_ROUNDS, bots:true, buy:true, endWhenCleared:true },
+    ffa:      { key:'ffa', name:'Free for All', desc:'Score as many kills as you can before the timer expires.', rounds:false, clock:120, lives:Infinity, toWin:1, bots:true, buy:false, endWhenCleared:false },
+    search:   { key:'search', name:'Search & Destroy', desc:'One life. No respawn, no timer - outlast the enemy.', rounds:true, clock:Infinity, lives:1, toWin:WIN_ROUNDS, bots:true, buy:false, endWhenCleared:true },
+  };
+
+  function createMatch(mapOrContext = MAP, modeKey) {
     const MAP = resolveMap(mapOrContext);
+    const MODE = MODES[modeKey] || MODES.skirmish;
     const NAVGRAPH = graphFor(MAP);
     const nearestNav = p => api.nearestNav(p, MAP);
     let cachedPlayerNode = -1, navSearches = 0;
     const distances = new Array(MAP.nav.length).fill(Infinity);
     const m = {
-      phase: 'buy',            // buy | live | end | matchover
-      buyClock: BUY_TIME,
-      roundClock: ROUND_TIME,
+      phase: MODE.buy ? 'buy' : 'live',  // buy | live | end | matchover
+      playerDead: false,       // FFA only: the operator is down, waiting to respawn
+      playerRespawnIn: 4,      // FFA only: seconds until the operator comes back
+      mode: MODE.key,
+      modeData: MODE,
+      buyClock: MODE.buy ? BUY_TIME : 0,
+      roundClock: MODE.clock,
       endClock: 0,
       round: 1,
       score: { player: 0, enemy: 0 },
@@ -320,9 +341,11 @@
     };
 
     m.resetRound = function () {
-      this.phase = 'buy';
-      this.buyClock = BUY_TIME;
-      this.roundClock = ROUND_TIME;
+      this.playerDead = false;
+      this.playerRespawnIn = 4;
+      this.phase = MODE.buy ? 'buy' : 'live';
+      this.buyClock = MODE.buy ? BUY_TIME : 0;
+      this.roundClock = MODE.clock;
       this.hp = 100;                 // armor persists, damaged
       this.lastWinner = null;
       for (const b of this.bots) {
@@ -391,19 +414,50 @@
         hpLost = dmg;
       }
       this.hp = Math.max(0, this.hp - hpLost);
-      if (this.hp <= 0 && this.phase === 'live') { this.deaths++; if(this.bots[botId])this.bots[botId].kills++; this.endRound('enemy'); }
+      if (this.hp <= 0 && this.phase === 'live') {
+        this.deaths++;
+        if (this.bots[botId]) this.bots[botId].kills++;
+        // Free for All gives the player unlimited lives: record the death and
+        // let the game layer respawn instead of ending the round.
+        if (this.modeData && !this.modeData.endWhenCleared) {
+          this.playerDead = true;
+          this.events.push({ type: 'death', who: 'player', name: this.lastAttackerName || '' });
+        } else {
+          this.endRound('enemy');
+        }
+      }
       return { dmg: hpLost };
     };
 
     m.step = function (dt, rng, sense) {
       if (this.phase === 'buy') {
+        if (this.modeData && !this.modeData.buy) { this.phase = 'live'; return; }
         this.buyClock -= dt;
         if (this.buyClock <= 0) this.phase = 'live';
         return;
       }
       if (this.phase === 'live') {
-        this.roundClock -= dt;
-        if (this.roundClock <= 0) { this.endRound('enemy'); return; }
+        // Free for All: a dead operator comes back after a short delay; the
+        // round itself is unaffected so the kill race keeps running.
+        if (this.playerDead && this.modeData && !this.modeData.endWhenCleared) {
+          this.playerRespawnIn -= dt;
+          if (this.playerRespawnIn <= 0) {
+            this.playerDead = false;
+            this.hp = 100;
+            this.events.push({ type: 'respawn', who: 'player' });
+          }
+        }
+        if (this.modeData && !this.modeData.endWhenCleared) {
+          // Free for All is decided by the clock alone: clearing the bots does
+          // not end it because they keep respawning.
+          this.roundClock -= dt;
+          if (this.roundClock <= 0) { this.endRound('player'); return; }
+        } else if (!(this.modeData && this.modeData.clock === Infinity)) {
+          this.roundClock -= dt;
+          if (this.roundClock <= 0) { this.endRound('enemy'); return; }
+        }
+        // Search & Destroy carries no clock: the round is decided by who is
+        // left standing, so it falls through to the aliveBots() check.
         const px = sense && sense.px !== undefined ? sense.px : null;
         const pz = sense && sense.pz !== undefined ? sense.pz : null;
         const playerNode = Number.isFinite(px) && Number.isFinite(pz) ? nearestNav({ x: px, z: pz }) : -1;
@@ -419,7 +473,23 @@
         }
         for (let i = 0; i < this.bots.length; i++) {
           const b = this.bots[i];
-          if (!b.alive || this.phase !== 'live') continue;
+          if (this.phase !== 'live') continue;
+          // Free for All keeps the arena populated: dead bots respawn after a
+          // short delay so the player always has a target.
+          if (!b.alive) {
+            if (this.modeData && !this.modeData.endWhenCleared) {
+              b.respawnIn = (b.respawnIn || 4) - dt;
+              if (b.respawnIn <= 0) {
+                const sp = MAP.spawnBots[i];
+                b.pos = { x: sp.x, z: sp.z };
+                b.node = nearestNav(sp);
+                b.prevPos.x = sp.x; b.prevPos.z = sp.z;
+                b.hp = 100; b.alive = true; b.cool = 1.2 + rng() * 1.2;
+                this.events.push({ type:'spawn', name: b.name });
+              }
+            }
+            continue;
+          }
           const perBot = sense && sense.bots ? sense.bots[i] : (Array.isArray(sense) ? sense[i] : sense);
           // --- movement: greedy step toward the player through the nav graph.
           // Test arenas pin their bots in place so the player can inspect the
@@ -505,8 +575,8 @@
   // targets that clang and fall when hit and never shoot back; the clock never
   // ends the round and the score is not tracked. Shooting the red switch box in
   // the arena flips the range to live moving bots, and back again.
-  function createTrainingMatch(mapOrContext = MAP) {
-    const base = createMatch(mapOrContext);
+  function createTrainingMatch(mapOrContext = MAP, modeKey) {
+    const base = createMatch(mapOrContext, modeKey);
     // Capture the base match's hostile-AI step before we override it, so
     // active trainer mode can delegate to the real bot logic.
     const hostileStep = base.step;
@@ -586,12 +656,17 @@
     mulberry32, WEAPONS, ECON, BUY_ITEMS,
     buildSprayPattern, pickSpread, shotDamage, rollVariance,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
-    createMatch, createTrainingMatch, NAV_TIME: BUY_TIME, ROUND_TIME,
+    createMatch, createTrainingMatch, MODES, NAV_TIME: BUY_TIME, ROUND_TIME,
   };
   function forMap(id = 'desert') {
     const map = resolveMap(id);
-    return { ...api, MAP: map, NAVGRAPH: graphFor(map), createMatch: () => createMatch(map),
-      createTrainingMatch: () => createTrainingMatch(map), nearestNav: p => nearestNav(p, map) };
+    return { ...api, MAP: map, NAVGRAPH: graphFor(map),
+      // game.js calls this as createMatch(C.MAP, modeKey) AND as createMatch(modeKey):
+      // take the last string argument as the mode so a map object passed
+      // positionally cannot shadow it and silently resolve to the default.
+      createMatch: (...a) => createMatch(map, a.filter(x => typeof x === 'string').pop()),
+      createTrainingMatch: (...a) => createTrainingMatch(map, a.filter(x => typeof x === 'string').pop()),
+      nearestNav: p => nearestNav(p, map) };
   }
   return api;
 });
