@@ -412,3 +412,32 @@ Tests 91/91 (was 85; +6 mode tests). Probes deleted. backup_v1/ kept.
 Tests 88/88 (was 91; 6 FFA/Search behaviour tests removed with the modes, new
 weapon/map assertions added). sw.js bumped to poly-strike-v28-range.
 backup_v1/ now gitignored (duplicate model copies, untracked).
+
+## 2026-09-24 — Final cleanup & rework
+1. Weapons reverted to the core roster: AKM, L96, PGM Hecate II, Deagle. The
+   Shotgun/SMG/LMG (خلاط) additions are gone from core WEAPONS, BUY_ITEMS, the
+   visuals builders (buildShotgun/buildSMG/buildLMG deleted along with their
+   WEAPON_BUILDERS/WEAPON_KEYS entries), the audio PROFILES, and the pellet
+   damage loop in game.js (single playerShot again). assets.js still keeps the
+   proceduralWeapon() fallback because the Bayonet has no GLB.
+2. Bayonet moved into the SECONDARY slot (slot:'secondary'), sharing the Deagle's
+   cycle instead of owning a blade slot. inventory() is two items again,
+   [primary, secondary]; the separate `blade` variable is gone and the loadout
+   panel renders it as a secondary card. core has no 'close' slot at all now.
+3. Mode selection removed: no #modeSelect and no #modeDescription in index.html,
+   the change listener deleted, deploy() hard-codes 'skirmish'. The MODES table
+   still drives the match from core, with skirmish as the only entry.
+4. Bots re-scaled to human height. TARGET_H in assets.js is back to 1.7, so the
+   Soldier rig matches the 1.7m operator; game.js BOT_H is 1.7 and every height
+   rule stays rig-relative (head tag = top ~18%, headshot check BOT_H*0.82, aim
+   pitch BOT_H*0.9). armBot carries the fitted rifle 1:1.
+   NOTE ON THE REPORT: the user described the bots as giants towering so only
+   their feet were visible. Measured live before the change they were 0.15m with
+   the eye at 1.7m - i.e. tiny, not giant - but either way the scale was broken
+   relative to the player; the fix is the same either way. Live now: all bots
+   1.7m tall, eye 1.7m.
+
+Tests 88/88. sw.js bumped to poly-strike-v29-revert. Probes deleted.
+Live-verified: inventory [akm,deagle], bayonet selectable into the secondary
+slot, all 5 weapons frame on screen, all 8 maps deploy (targetrange 7 bots),
+modeSelect absent from the DOM.

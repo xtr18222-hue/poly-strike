@@ -35,11 +35,6 @@ window.PolyAudio = (() => {
       deagle:  { barrel:'pistol', dur:.14, hz:1900, punch:160, crack:2500 },
       mx:      { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       bayonet: { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
-      // The three new firearms: a shotgun is a slow, fat report; an SMG is a
-      // tight high-rate crack; the LMG (خلاط) is a deep sustained chatter.
-      shotgun: { barrel:'shotgun', dur:.30, hz:1200, punch:90,  crack:1600 },
-      smg:     { barrel:'rifle',   dur:.09, hz:1800, punch:90,  crack:2300 },
-      lmg:     { barrel:'rifle',   dur:.11, hz:1400, punch:110, crack:2100 },
       ak47:    { barrel:'rifle',  dur:.20, hz:1500, punch:120, crack:2100 },
       awp:     { barrel:'sniper', dur:.50, hz:900,  punch:70,  crack:2600 },
       kar98:   { barrel:'sniper', dur:.45, hz:1000, punch:85,  crack:2400 },

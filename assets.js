@@ -731,7 +731,7 @@
     let g;
     try { g = V.buildWeapon(THREE, key); } catch (e) { return null; }
     if (!g) return null;
-    const len = { shotgun: 1.00, smg: 0.62, lmg: 1.10, bayonet: 0.34 }[key];
+    const len = { bayonet: 0.34 }[key];
     if (typeof len !== 'number') return null;
     const root = fitWeapon(g, { length: len, rot: [0, 0, 0], flip: 1 }, key);
     return root;
@@ -832,10 +832,10 @@
   // normalises the standing height to the player's own 1.7m so bots match the
   // human operator instead of towering over them. The clip FBXs are
   // animation-only, so this is the body every bot actually wears.
-  // Miniature target bots: 15 cm tall. The rig is normalised to this height
-  // the same way it was to the player's, so the proportions stay intact and the
-  // hitboxes scale with the model rather than being hand-placed.
-  const TARGET_H = 0.15;  // 15cm range bots
+  // The Soldier ships at 1.92m in metres, which reads as a giant next to the
+  // 1.7m operator, so the standing height is normalised to the player's own
+  // height and the hitboxes scale with the model rather than being hand-placed.
+  const TARGET_H = 1.7;  // bots match the human operator's height
   function soldierRig() {
     if (!soldierRigGLB) return null;
     const rig = cloneGLB(soldierRigGLB, true);

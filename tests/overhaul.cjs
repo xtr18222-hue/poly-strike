@@ -138,36 +138,36 @@ test('standard maps are combat arenas, not peaceful test maps', () => {
 // ---------- training mode: the player is not locked to the Mosin ----------
 const CORE = require(path.join(ROOT, 'core.js'));
 
-test('the roster is the six primaries, the Deagle sidearm and the Bayonet', () => {
+test('the roster is the three core rifles, the Deagle and the Bayonet', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
-  // The wheel cycles primary, secondary and the blade. The inventory lists the
-  // held guns plus the bayonet, which never runs out of ammo.
+  // The Shotgun/SMG/LMG additions were reverted, so the wheel cycles the three
+  // core primaries plus a two-item secondary slot (Deagle + Bayonet).
   const prim = game.match(/const primaries=\[([^\]]+)\]/);
   assert.ok(prim, 'primaries list present');
-  for (const k of ['akm', 'l96', 'hecate', 'shotgun', 'smg', 'lmg'])
+  for (const k of ['akm', 'l96', 'hecate'])
     assert.ok(prim[1].includes(`'${k}'`), `${k} is a selectable primary`);
-  for (const k of ['mosin', 'mx'])
-    assert.ok(!prim[1].includes(`'${k}'`), `${k} was removed from the primaries`);
-  // The bayonet is the close-quarters slot, not a primary.
-  assert.ok(CORE.WEAPONS.bayonet, 'the bayonet is back in the shared table');
-  assert.equal(CORE.WEAPONS.bayonet.slot, 'close', 'the bayonet occupies the blade slot');
+  for (const k of ['mosin', 'mx', 'shotgun', 'smg', 'lmg'])
+    assert.ok(!prim[1].includes(`'${k}'`), `${k} is not a primary`);
+  // The Bayonet shares the secondary slot with the Deagle, not its own cycle.
+  assert.ok(CORE.WEAPONS.bayonet, 'the bayonet is in the shared table');
+  assert.equal(CORE.WEAPONS.bayonet.slot, 'secondary', 'the bayonet sits in the secondary slot');
   assert.equal(CORE.WEAPONS.deagle.slot, 'secondary', 'the Deagle is still the sidearm');
-  // The dropped weapons stay dropped.
-  for (const k of ['mosin', 'mx'])
+  for (const k of ['mosin', 'mx', 'shotgun', 'smg', 'lmg'])
     assert.ok(!CORE.WEAPONS[k], `${k} is not a weapon`);
 });
 
-test('the close-quarters slot is exactly the Bayonet', () => {
-  // The Mosin and the MX knife stay gone; the Bayonet fills the blade slot.
-  for (const key of ['mosin', 'mx']) {
+test('the secondary slot holds the Deagle and the Bayonet', () => {
+  // The Mosin, the MX knife and the three new firearms stay gone.
+  for (const key of ['mosin', 'mx', 'shotgun', 'smg', 'lmg']) {
     assert.ok(!CORE.WEAPONS[key], `${key} is not a weapon`);
   }
-  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'close'), ['bayonet']);
-  // The Deagle is the only sidearm.
-  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary'), ['deagle']);
+  // The Bayonet joins the Deagle in the secondary slot; there is no separate
+  // 'close' slot anymore.
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'close'), [], 'no close-quarters slot remains');
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary').sort(), ['bayonet','deagle']);
   // Every gun has a magazine; the blade has none and never needs one.
   for (const w of Object.values(CORE.WEAPONS)) {
-    if (w.slot === 'close') continue;
+    if (w.key === 'bayonet') continue;
     assert.ok(w.slot === 'primary' || w.slot === 'secondary', `${w.key} has a gun slot`);
     assert.ok(w.mag > 0, `${w.key} has a magazine`);
   }

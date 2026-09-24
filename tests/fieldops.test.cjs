@@ -19,11 +19,11 @@ test('asset suite ships every weapon the game selects', () => {
   // game would spawn a weapon with no mesh.
   const fs = require('fs');
   const roster = Object.keys(C.WEAPONS);
-  assert.ok(roster.length >= 7, 'suite has the full roster: primaries, sidearm and the blade');
+  assert.equal(roster.length, 5, 'the reverted roster: three rifles, the sidearm and the blade');
   for (const k of roster) {
     const w = C.WEAPONS[k];
     assert.ok(typeof w.name === 'string' && w.name.length, k + ' has a name');
-    if (w.slot === 'close') continue;   // the blade has no magazine
+    if (k === 'bayonet') continue;   // the blade has no magazine
     assert.ok(w.mag > 0 && w.reserve > 0, k + ' has ammo');
     assert.ok(w.damage > 0, k + ' deals damage');
   }
@@ -67,14 +67,16 @@ test('createMatch honours the selected mode', () => {
 
 
 
-test('the menu offers Skirmish only', () => {
+test('the menu has no mode selection: skirmish only', () => {
   const html = src('index.html');
-  assert.ok(/id="modeSelect"/.test(html), 'mode select control present');
-  assert.ok(/value="skirmish"/.test(html), 'skirmish is a selectable mode');
+  assert.ok(!/id="modeSelect"/.test(html), 'the mode dropdown was removed entirely');
+  assert.ok(!/id="modeDescription"/.test(html), 'the mode description line was removed');
   for (const k of ['ffa', 'search'])
-    assert.ok(!new RegExp('value="' + k + '"').test(html), k + ' was removed from the menu');
-  assert.ok(/id="modeDescription"/.test(html), 'mode description line present');
-  assert.ok(src('game.js').includes('MODES'), 'the game reads the mode table');
+    assert.ok(!new RegExp('value="' + k + '"').test(html), k + ' stays removed from the menu');
+  // The MODES table still drives the simulation; the UI layer just no longer
+  // exposes a selector for it.
+  assert.ok(require(path.join(ROOT, 'core.js')).MODES, 'the mode table still drives the match');
+  assert.equal(Object.keys(require(path.join(ROOT, 'core.js')).MODES).join(), 'skirmish', 'skirmish is the only mode');
 });
 
 test('announcer packs map every clip and the Clutch line is gone', () => {
