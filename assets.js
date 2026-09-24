@@ -211,7 +211,7 @@
   // (root.userData.mag) and their basePos/baseRot caches, so the reload
   // animation then crashed reading .copy() off undefined. Walk the clone in
   // lockstep with the source and restore the real cloned node.
-  const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i, scope: /^scope/, stock: /stock/, adsAnchor: /^adsAnchor/ };
+  const NAME_HINTS = { mag: /^mag/, bolt: /^bolt|slide|charging/i, scope: /^scope/, stock: /stock/, adsAnchor: /^adsAnchor/, blade: /^blade$/i };
   function relinkParts(cloneRoot, srcRoot) {
     if (!cloneRoot || !srcRoot) return;
     // Prefer the pivot fitWeapon bound on the original: it is already the
@@ -404,7 +404,7 @@
       hidePart(root, o);
     });
     // Record rest poses for the parts the reload animation drives.
-    for (const field of ['mag', 'scope', 'stock', 'bolt']) {
+    for (const field of ['mag', 'scope', 'stock', 'bolt', 'blade']) {
       const p = root.userData[field];
       if (!p) continue;
       p.userData.basePos = p.position.clone();
@@ -707,10 +707,33 @@
   /* ------------------------------------------------------------ loading --- */
   async function loadWeapon(key, base) {
     const def = WEAPON_ASSETS[key];
-    if (!def) throw new Error('PolyAsset: unknown weapon ' + key);
+    // The three new firearms (Shotgun / SMG / LMG) and the Bayonet have no
+    // authored GLB: they are the procedural low-poly builders in PolyVisual,
+    // in the same style as the rest of the suite. Fall through to them so the
+    // asset layer still owns one fitted weapon per roster key.
+    if (!def) {
+      const proc = proceduralWeapon(key);
+      if (proc) { proc.name = 'weapon:' + key; return proc; }
+      throw new Error('PolyAsset: unknown weapon ' + key);
+    }
     const g = await loadGLB(base + 'assets/models/' + def.file);
     const root = fitWeapon(g.scene, def, key);
     root.name = 'weapon:' + key;
+    return root;
+  }
+
+  // Build one of PolyVisual's procedural weapons and fit it to real-world
+  // metres, exactly as a GLB would be, so the viewmodel framing code does not
+  // care where the geometry came from.
+  function proceduralWeapon(key) {
+    const V = global.PolyVisual;
+    if (!V || !V.buildWeapon) return null;
+    let g;
+    try { g = V.buildWeapon(THREE, key); } catch (e) { return null; }
+    if (!g) return null;
+    const len = { shotgun: 1.00, smg: 0.62, lmg: 1.10, bayonet: 0.34 }[key];
+    if (typeof len !== 'number') return null;
+    const root = fitWeapon(g, { length: len, rot: [0, 0, 0], flip: 1 }, key);
     return root;
   }
 
@@ -809,7 +832,10 @@
   // normalises the standing height to the player's own 1.7m so bots match the
   // human operator instead of towering over them. The clip FBXs are
   // animation-only, so this is the body every bot actually wears.
-  const TARGET_H = 1.7;   // player eye height; bots match the operator
+  // Miniature target bots: 15 cm tall. The rig is normalised to this height
+  // the same way it was to the player's, so the proportions stay intact and the
+  // hitboxes scale with the model rather than being hand-placed.
+  const TARGET_H = 0.15;  // 15cm range bots
   function soldierRig() {
     if (!soldierRigGLB) return null;
     const rig = cloneGLB(soldierRigGLB, true);
@@ -860,7 +886,7 @@
     rig.updateMatrixWorld(true);
     const box = skinnedBox(rig);
     const size = box.getSize(new THREE.Vector3());
-    const s = size.y > 0 && isFinite(size.y) ? 1.7 / size.y : 0.01;
+    const s = size.y > 0 && isFinite(size.y) ? TARGET_H / size.y : 0.01;
     rig.scale.setScalar(s);
     // Feet on the ground, centred on the origin the bot group expects.
     rig.updateMatrixWorld(true);

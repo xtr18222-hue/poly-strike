@@ -43,8 +43,17 @@
     l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:true, price:700, killAward:300, falloff:0.006, recoil:0.85 },
+    // The three new firearms. Slot stays 'primary' so the buy menu and the
+    // inventory keep working; each fills a distinct range niche: the shotgun
+    // is a short-range burst, the SMG a fast bullet hose, the LMG (خلاط) is
+    // the heavy sustained-fire workhorse.
+    shotgun: { key:'shotgun', name:'M870 Shotgun', slot:'primary', auto:false, mag:6, reserve:24, damage:22, headMult:2.2, legMult:0.7, fireInterval:0.75, reloadTime:0.55, spreadBase:0.055, spreadScoped:0.035, zoomFov:null, ads:true, price:2500, killAward:300, falloff:0.012, recoil:1.5, pellets:6 },
+    smg: { key:'smg', name:'MP7 SMG', slot:'primary', auto:true, mag:30, reserve:120, damage:22, headMult:2.4, legMult:0.75, fireInterval:0.07, reloadTime:1.3, spreadBase:0.011, spreadScoped:0.008, zoomFov:null, ads:true, price:1800, killAward:300, falloff:0.008, recoil:0.7 },
+    lmg: { key:'lmg', name:'خلاط LMG', slot:'primary', auto:true, mag:100, reserve:200, damage:30, headMult:2.0, legMult:0.75, fireInterval:0.08, reloadTime:4.2, spreadBase:0.014, spreadScoped:0.011, zoomFov:null, ads:true, price:5200, killAward:300, falloff:0.006, recoil:0.9 },
+    // The close-quarters blade: no magazine, no reserve, never needs a reload.
+    bayonet: { key:'bayonet', name:'Bayonet', slot:'close', auto:false, mag:0, reserve:0, damage:75, headMult:2.0, legMult:0.8, fireInterval:0.5, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:0, falloff:0, recoil:0 },
   };
-  const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'armor'];
+  const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'shotgun', 'smg', 'lmg', 'armor'];
 
 
 
@@ -94,6 +103,13 @@
       dmg = w.damage * mult * Math.max(0.4, 1 - dist * w.falloff) * (1 + v);
     }
     return Math.max(0, dmg);
+  }
+
+  // Shotguns fire several pellets per report; each pellet rolls its own damage
+  // against the part it actually hit. Rifles and pistols fire one projectile.
+  function pelletCount(weapon) {
+    const w = WEAPONS[weapon];
+    return (w && w.pellets) || 1;
   }
 
   // Classic AK spray: hard vertical climb for the first ~8 bullets, then the
@@ -246,19 +262,10 @@
   const BUY_TIME = 5, ROUND_TIME = 90, END_TIME = 4, WIN_ROUNDS = 5;
   const BOT_COUNT = 5;
 
-  // Game modes the lobby lets the player pick. Both run on the same arenas and
-  // the same bot AI; only the win condition and the round clock change.
-  //   skirmish - the original mode: clear every bot to take the round, first
-  //              to WIN_ROUNDS wins the match.
-  //   ffa      - Free for All: the round clock runs out and every bot is a
-  //              score; the match ends after one round and the highest
-  //              kill count wins.
-  //   search   - Search & Destroy: one life each. There is no respawn and no
-  //              round clock, so a round is decided by who survives.
+  // Skirmish is the sole core standard mode: clear every bot to take the round,
+  // first to WIN_ROUNDS wins the match. FFA and Search & Destroy were removed.
   const MODES = {
-    skirmish: { key:'skirmish', name:'Skirmish', desc:'Eliminate every hostile. First to 5 rounds wins.', rounds:true, clock:ROUND_TIME, lives:Infinity, toWin:WIN_ROUNDS, bots:true, buy:true, endWhenCleared:true },
-    ffa:      { key:'ffa', name:'Free for All', desc:'Score as many kills as you can before the timer expires.', rounds:false, clock:120, lives:Infinity, toWin:1, bots:true, buy:false, endWhenCleared:false },
-    search:   { key:'search', name:'Search & Destroy', desc:'One life. No respawn, no timer - outlast the enemy.', rounds:true, clock:Infinity, lives:1, toWin:WIN_ROUNDS, bots:true, buy:false, endWhenCleared:true },
+    skirmish: { key:'skirmish', name:'Skirmish', desc:'Eliminate every hostile. First to 5 rounds wins.', rounds:true, clock:ROUND_TIME, lives:Infinity, toWin:WIN_ROUNDS, bots:true, buy:true },
   };
 
   function createMatch(mapOrContext = MAP, modeKey) {
@@ -270,8 +277,7 @@
     const distances = new Array(MAP.nav.length).fill(Infinity);
     const m = {
       phase: MODE.buy ? 'buy' : 'live',  // buy | live | end | matchover
-      playerDead: false,       // FFA only: the operator is down, waiting to respawn
-      playerRespawnIn: 4,      // FFA only: seconds until the operator comes back
+      playerDead: false,       // the operator is down, waiting on the round to end
       mode: MODE.key,
       modeData: MODE,
       buyClock: MODE.buy ? BUY_TIME : 0,
@@ -293,7 +299,10 @@
       navGraph: { value: NAVGRAPH },
       navSearches: { get: () => navSearches },
     });
-    for (let i = 0; i < BOT_COUNT; i++) {
+    // A map may stage more targets than the standard five (the dedicated range
+  // adds reactive close targets), so take the bot count from the map itself.
+  const count = Math.max(1, Math.min(MAP.spawnBots.length, 12));
+  for (let i = 0; i < count; i++) {
       const rng = mulberry32(0xC0FFEE + i * 7919);
       const sp = MAP.spawnBots[i];
       m.bots.push({
@@ -342,7 +351,6 @@
 
     m.resetRound = function () {
       this.playerDead = false;
-      this.playerRespawnIn = 4;
       this.phase = MODE.buy ? 'buy' : 'live';
       this.buyClock = MODE.buy ? BUY_TIME : 0;
       this.roundClock = MODE.clock;
@@ -417,14 +425,7 @@
       if (this.hp <= 0 && this.phase === 'live') {
         this.deaths++;
         if (this.bots[botId]) this.bots[botId].kills++;
-        // Free for All gives the player unlimited lives: record the death and
-        // let the game layer respawn instead of ending the round.
-        if (this.modeData && !this.modeData.endWhenCleared) {
-          this.playerDead = true;
-          this.events.push({ type: 'death', who: 'player', name: this.lastAttackerName || '' });
-        } else {
-          this.endRound('enemy');
-        }
+        this.endRound('enemy');
       }
       return { dmg: hpLost };
     };
@@ -437,27 +438,10 @@
         return;
       }
       if (this.phase === 'live') {
-        // Free for All: a dead operator comes back after a short delay; the
-        // round itself is unaffected so the kill race keeps running.
-        if (this.playerDead && this.modeData && !this.modeData.endWhenCleared) {
-          this.playerRespawnIn -= dt;
-          if (this.playerRespawnIn <= 0) {
-            this.playerDead = false;
-            this.hp = 100;
-            this.events.push({ type: 'respawn', who: 'player' });
-          }
-        }
-        if (this.modeData && !this.modeData.endWhenCleared) {
-          // Free for All is decided by the clock alone: clearing the bots does
-          // not end it because they keep respawning.
-          this.roundClock -= dt;
-          if (this.roundClock <= 0) { this.endRound('player'); return; }
-        } else if (!(this.modeData && this.modeData.clock === Infinity)) {
+        if (!(this.modeData && this.modeData.clock === Infinity)) {
           this.roundClock -= dt;
           if (this.roundClock <= 0) { this.endRound('enemy'); return; }
         }
-        // Search & Destroy carries no clock: the round is decided by who is
-        // left standing, so it falls through to the aliveBots() check.
         const px = sense && sense.px !== undefined ? sense.px : null;
         const pz = sense && sense.pz !== undefined ? sense.pz : null;
         const playerNode = Number.isFinite(px) && Number.isFinite(pz) ? nearestNav({ x: px, z: pz }) : -1;
@@ -474,22 +458,6 @@
         for (let i = 0; i < this.bots.length; i++) {
           const b = this.bots[i];
           if (this.phase !== 'live') continue;
-          // Free for All keeps the arena populated: dead bots respawn after a
-          // short delay so the player always has a target.
-          if (!b.alive) {
-            if (this.modeData && !this.modeData.endWhenCleared) {
-              b.respawnIn = (b.respawnIn || 4) - dt;
-              if (b.respawnIn <= 0) {
-                const sp = MAP.spawnBots[i];
-                b.pos = { x: sp.x, z: sp.z };
-                b.node = nearestNav(sp);
-                b.prevPos.x = sp.x; b.prevPos.z = sp.z;
-                b.hp = 100; b.alive = true; b.cool = 1.2 + rng() * 1.2;
-                this.events.push({ type:'spawn', name: b.name });
-              }
-            }
-            continue;
-          }
           const perBot = sense && sense.bots ? sense.bots[i] : (Array.isArray(sense) ? sense[i] : sense);
           // --- movement: greedy step toward the player through the nav graph.
           // Test arenas pin their bots in place so the player can inspect the
@@ -654,7 +622,7 @@
   const api = {
     MAPS, forMap, NAVGRAPH: graphFor(MAP),
     mulberry32, WEAPONS, ECON, BUY_ITEMS,
-    buildSprayPattern, pickSpread, shotDamage, rollVariance,
+    buildSprayPattern, pickSpread, shotDamage, rollVariance, pelletCount,
     MAP, collideCircle, segmentClear, buildNavGraph, nearestNav,
     createMatch, createTrainingMatch, MODES, NAV_TIME: BUY_TIME, ROUND_TIME,
   };

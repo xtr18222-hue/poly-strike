@@ -153,8 +153,155 @@
       { x: 11, z: -32, w: 6, d: 1, h: 3.5, kind: 'wall' },
     ],
   };
+
+  // ==========================================================
+  // Dedicated shooting range: interactive pop-up targets.
+  // The existing Training Range above is untouched; this is a
+  // separate arena built specifically for testing weapons.
+  // ==========================================================
+  const targetrange = {
+    id: 'targetrange', name: 'Target Range', theme: 'training',
+    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
+    spawnPlayer: { x: 0, z: 34 },
+    spawnOpponent: { x: 0, z: -34 },
+    // A target range is for zeroing weapons, not for a firefight: the
+    // targets are static and never shoot back.
+    training: true,
+    targets: true,
+    spawnBots: [
+      // Five pop-up target lanes at staggered depth.
+      { x: -24, z: -22 }, { x: -12, z: -14 }, { x: 0, z: -26 },
+      { x: 12, z: -14 }, { x: 24, z: -22 },
+      // Two close reactive targets for shotgun/SMG work.
+      { x: -8, z: 10 }, { x: 8, z: 10 },
+    ],
+    solids: [
+      // The shooter's bench: a low barricade to brace over.
+      { x: 0, z: 28, w: 24, d: 2, h: 1, kind: 'wall' },
+      // Flanking cover so the walk forward is not a dead run.
+      { x: -14, z: 20, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 14, z: 20, w: 4, d: 4, h: 2, kind: 'crate' },
+      // Mid-lane baffles break up the crossfire between the lanes.
+      { x: -18, z: 2, w: 6, d: 1, h: 1.2, kind: 'wall' },
+      { x: 18, z: 2, w: 6, d: 1, h: 1.2, kind: 'wall' },
+      { x: 0, z: 4, w: 1, d: 14, h: 1.2, kind: 'wall' },
+      // Backstop wall behind the target line, with a gap so bots can cycle.
+      { x: -20, z: -30, w: 12, d: 1, h: 4, kind: 'wall' },
+      { x: 20, z: -30, w: 12, d: 1, h: 4, kind: 'wall' },
+      // Target-line side walls frame the range lanes.
+      { x: -34, z: -8, w: 1, d: 20, h: 3, kind: 'wall' },
+      { x: 34, z: -8, w: 1, d: 20, h: 3, kind: 'wall' },
+    ],
+  };
+
+  // ==========================================================
+  // Shipment: a tight container maze on a dock. The classic
+  // small-grid map: stacked containers as full-height cover and
+  // shallow crates for the lanes between them.
+  // ==========================================================
+  const shipment = {
+    id: 'shipment', name: 'Shipment', theme: 'industrial',
+    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
+    spawnPlayer: { x: 0, z: 34 },
+    spawnOpponent: { x: 0, z: -34 },
+    spawnBots: [
+      { x: -12, z: -24 }, { x: 12, z: -24 }, { x: 0, z: -34 },
+      { x: -24, z: -4 }, { x: 24, z: -4 },
+    ],
+    solids: [
+      // Central container stack: the map's pivot. Two side-by-side
+      // containers with a gap between them for the mid fight.
+      { x: -8, z: 0, w: 14, d: 6, h: 5, kind: 'container' },
+      { x: 8, z: 0, w: 14, d: 6, h: 5, kind: 'container' },
+      // A stacked second tier over one side, for the height advantage.
+      { x: -8, z: 0, w: 12, d: 4, h: 9, kind: 'container' },
+      // North and south container rows close the ends, each with a lane gap.
+      { x: -16, z: -20, w: 6, d: 12, h: 5, kind: 'container' },
+      { x: 16, z: 20, w: 6, d: 12, h: 5, kind: 'container' },
+      // East and west container walls with a centre lane.
+      { x: -30, z: -12, w: 6, d: 16, h: 5, kind: 'container' },
+      { x: 30, z: 12, w: 6, d: 16, h: 5, kind: 'container' },
+      // Low crate cover so the lanes stay breakable and the short
+      // sightlines are never a guaranteed death.
+      { x: -16, z: 14, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 16, z: -14, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 0, z: 18, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 0, z: -18, w: 4, d: 4, h: 2, kind: 'crate' },
+      // The perimeter is the dock wall, with gaps at both spawn corners.
+      { x: -20, z: 34, w: 20, d: 1, h: 4, kind: 'wall' },
+      { x: 20, z: 34, w: 20, d: 1, h: 4, kind: 'wall' },
+      { x: -20, z: -34, w: 20, d: 1, h: 4, kind: 'wall' },
+      { x: 20, z: -34, w: 20, d: 1, h: 4, kind: 'wall' },
+    ],
+  };
+
+  // ==========================================================
+  // Dust 2 variant: the classic three-lane layout (long A,
+  // cat/short, tunnels-to-B) rebuilt from the existing low-poly
+  // desert asset set. Reuses the desert theme so it slots into
+  // the same arena builder.
+  // ==========================================================
+  const dust2 = {
+    id: 'dust2', name: 'Dust 2', theme: 'desert',
+    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
+    spawnPlayer: { x: 0, z: 34 },
+    spawnOpponent: { x: 0, z: -34 },
+    spawnBots: [
+      // T-spawn pressure: two holding long A, one mid, two pushing B.
+      { x: 24, z: -14 }, { x: 28, z: -10 }, { x: 0, z: -24 },
+      { x: -30, z: -2 }, { x: -22, z: -26 },
+    ],
+    solids: [
+      // ---- T spawn area (north) ----
+      // The back wall closes T spawn, with the classic left-side exit.
+      { x: -20, z: -34, w: 16, d: 1, h: 4, kind: 'wall' },
+      { x: 20, z: -34, w: 16, d: 1, h: 4, kind: 'wall' },
+      // ---- Long A (the east corridor) ----
+      // The outer east wall runs the full length of long A.
+      { x: 33, z: 4, w: 1, d: 26, h: 4, kind: 'wall' },
+      // Goose / long doors: a crate stack that blocks the lane's bend.
+      { x: 26, z: 18, w: 6, d: 6, h: 4, kind: 'building' },
+      { x: 24, z: 8, w: 4, d: 4, h: 2, kind: 'crate' },
+      // The A-site platform: a raised building with crates on the site.
+      { x: 22, z: -22, w: 10, d: 8, h: 5, kind: 'building' },
+      { x: 12, z: -26, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: 30, z: -30, w: 4, d: 4, h: 2, kind: 'crate' },
+      // ---- Mid / catwalk ----
+      // The mid divider splits long A from mid and gives the catwalk cover.
+      { x: 16, z: -8, w: 1, d: 18, h: 4, kind: 'wall' },
+      { x: 16, z: 8, w: 4, d: 6, h: 2, kind: 'crate' },
+      // Mid doors: a wall pair with the classic centre gap.
+      { x: 8, z: 2, w: 8, d: 1, h: 3, kind: 'wall' },
+      { x: -4, z: 2, w: 8, d: 1, h: 3, kind: 'wall' },
+      // Xbox / mid crates: the low box that hides the crosshair.
+      { x: 4, z: 14, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: -4, z: 18, w: 4, d: 4, h: 2, kind: 'crate' },
+      // ---- Tunnels to B (the west lane) ----
+      // The outer west wall closes upper tunnels.
+      { x: -33, z: -6, w: 1, d: 28, h: 4, kind: 'wall' },
+      // The tunnel corridor: a building shell with the elbow at mid.
+      { x: -26, z: 0, w: 6, d: 14, h: 5, kind: 'building' },
+      { x: -20, z: -12, w: 8, d: 8, h: 5, kind: 'building' },
+      // The B tunnels entrance crate: the classic hide at the elbow.
+      { x: -30, z: 6, w: 4, d: 4, h: 2, kind: 'crate' },
+      // ---- B site ----
+      // The B site platform and its car/crate cover.
+      { x: -20, z: 20, w: 12, d: 8, h: 4, kind: 'building' },
+      { x: -12, z: 28, w: 4, d: 4, h: 2, kind: 'crate' },
+      { x: -30, z: 26, w: 4, d: 4, h: 2, kind: 'crate' },
+      // ---- CT spawn (south) ----
+      // The CT divider hides CT spawn from both sites.
+      { x: -2, z: 24, w: 6, d: 1, h: 4, kind: 'wall' },
+      { x: 12, z: 24, w: 10, d: 1, h: 4, kind: 'wall' },
+      { x: -16, z: 24, w: 10, d: 1, h: 4, kind: 'wall' },
+      // The south perimeter, with the CT exits left of B and right of A.
+      { x: -24, z: 34, w: 20, d: 1, h: 4, kind: 'wall' },
+      { x: 12, z: 34, w: 20, d: 1, h: 4, kind: 'wall' },
+    ],
+  };
+
   // Standard arenas only. The code-gated test maps (116791) and their authored
   // GLB geometry were removed: the rotation is the four core battlegrounds plus
   // the training range.
-  return { desert, industrial, urban, harbor, training };
+  return { desert, industrial, urban, harbor, training, targetrange, shipment, dust2 };
 });

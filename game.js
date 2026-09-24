@@ -6,7 +6,13 @@ let C=window.POLY_CORE, mapId='desert', preset='medium';
 // the core arenas and nothing else.
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
-const primaries=['akm','l96','hecate'];let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();
+// Miniature target bots: 15cm tall, scaled by assets.js (TARGET_H). The
+// hitboxes are the rig's own meshes, so they scale with it; the head is tagged
+// by its share of the figure rather than an absolute height.
+const BOT_H = 0.15;
+const primaries=['akm','l96','hecate','shotgun','smg','lmg'];
+const blades=['bayonet'];
+let primary='akm',secondary='deagle',blade='bayonet',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
 try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
 const secondaryOf=()=>secondary;
@@ -27,7 +33,7 @@ $('crosshairDot').onchange=()=>{crosshair.dot=$('crosshairDot').checked;try{loca
 // Inventory slots are derived from the equipped items: primary rifle,
 // secondary pistol. Dropping the
 // primary collapses the rifle slot, so the wheel never offers a gap.
-const inventory=()=>dropped?[secondary]:[primary,secondary];
+const inventory=()=>dropped?[secondary,blade]:[primary,secondary,blade];
 // Every weapon in the reduced roster is a firearm, so this is always true today,
 // this is always true today, but the ammo/tracer/reload paths stay guarded so
 // a future close-quarters pickup cannot break them.
@@ -35,7 +41,7 @@ const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close';};
 // Weapon skins: one chosen skin index per weapon, persisted locally.
 // Declared with the full key list (keys is only assigned further down).
 // Weapon keys span the strict roster: the three primary rifles and the pistol.
-const keys=['akm','l96','hecate','deagle'];
+const keys=['akm','l96','hecate','deagle','shotgun','smg','lmg','bayonet'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
 // The Mosin is an iron-sight bolt rifle: right-click aims, it does not mount a scope.
@@ -96,9 +102,13 @@ readyAll().then(()=>{bindModels();
     // is at weapon scale (~0.1). Parenting it directly into the hand makes it
     // render 100x too large and swallow the whole view, so carry it in a
     // pivot that cancels the rig's scale. The fitted subtree is untouched.
+    // The rig is 15cm and the fitted weapon is real-world sized, so a 1:1 carry
+    // would give the bot a rifle taller than itself. Shrink the gun into the
+    // bot's own scale, then cancel the rig's unit scale so the fitted subtree
+    // renders at the intended size.
     const rs = Math.max(1e-6, rig.scale.x || 0.01);
     const pivot = new T.Group();
-    pivot.scale.setScalar(1 / rs);
+    pivot.scale.setScalar((1 / rs) * (BOT_H / 1.7));
     pivot.add(w);
     // Compose the hold in the hand's local frame: barrel forward, muzzle down
     // the -Z of the weapon's own fitting space.
@@ -122,7 +132,9 @@ readyAll().then(()=>{bindModels();
         g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
         rig.traverse(n => { if (n.isMesh) {
           n.userData.botId = i;
-          n.userData.part = (n.geometry && n.geometry.boundingBox && n.geometry.boundingBox.max.y > 1.5) ? 'head' : 'body';
+          // The rig is 15cm now: the head is the top ~18% of the figure, the same
+          // fraction it was at full scale, so tag by relative height.
+          n.userData.part = (n.geometry && n.geometry.boundingBox && n.geometry.boundingBox.max.y > BOT_H * 0.82) ? 'head' : 'body';
         }});
         g.add(rig);
         mixer = new T.AnimationMixer(rig);
@@ -152,7 +164,7 @@ readyAll().then(()=>{bindModels();
       n.userData.botId = i;
       // Head tag = top ~18% of the rig, matching the old operator proportions.
       n.userData.part = (n.geometry && n.geometry.boundingBox)
-        ? (n.geometry.boundingBox.max.y > 1.5 ? 'head' : 'body') : 'body';
+        ? (n.geometry.boundingBox.max.y > BOT_H * 0.82 ? 'head' : 'body') : 'body';
     }});
     g.add(m);
     armBot(g, m);
@@ -192,11 +204,11 @@ const bindModels=()=>{
 // the fit. fitWeapon now maps the measured bore onto -Z with sights on +Y, so
 // the weapon already points forward and level: pose is identity, and each
 // entry only carries a small sight-line pitch so the bore meets the camera.
-const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],hecate:[0,0,0]};
+const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],hecate:[0,0,0],shotgun:[0,0,0],smg:[0,0,0],lmg:[0,0,0],bayonet:[0.35,0.1,0]};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
-let gameMode='skirmish',deadTimer=0,oldPlayerDead=false;
+let gameMode='skirmish',oldPlayerDead=false;
 let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
 let weapon='akm',previous='deagle',ammo={},reload=0,reloadKey=null,cool=0,equip=.3,scoped=false,trigger=false,burst=0,recoil=0,hit=0,hurt=0,flashTime=0;
 let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=performance.now(),fps=60,hudClock=0,stepClock=0;
@@ -243,10 +255,10 @@ const online=PolyOnline.create(C,{
 function finishMatch(won){if(finished)return;finished=true;running=false;clearInput();recordCareer(won);$('pauseTitle').textContent=won?'VICTORY':'DEFEAT';$('pauseText').textContent=`Final score ${match.score.player} : ${match.score.enemy}. ${match.kills} eliminations. Accuracy: ${accuracy()}%. MVP: ${mvp()}.`;$('rematchControls').hidden=false;$('nextMap').value=nextMapId();$('nextMap').disabled=onlineMode&&!online.hostRole;$('rematch').disabled=false;$('rematch').textContent=onlineMode?'REQUEST / ACCEPT REMATCH':'PLAY NEXT MATCH';$('rematchStatus').textContent=onlineMode?'Both players must consent. Host selects next map.':'';$('resume').hidden=true;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function accuracy(){const p=onlineMode?online.state?.players[online.localId]:match;return p?.shotsFired?Math.min(100,Math.round(100*(p.shotsHit||0)/p.shotsFired)):0;}
 function mvp(){const rows=onlineMode&&online.state?online.state.players.map((p,i)=>({name:p.name||'Opponent',score:p.kills*100+online.state.score[i]*250})):[{name:username,score:match.kills*100+match.score.player*250},...match.bots.map(b=>({name:b.name,score:(b.kills||0)*100}))];return rows.sort((a,b)=>b.score-a.score)[0].name;}
-function nextMapId(){const maps=['desert','industrial','urban','harbor'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
+function nextMapId(){const maps=['desert','industrial','urban','harbor','training','targetrange','shipment','dust2'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
 if($('modeSelect'))$('modeSelect').addEventListener('change',()=>{const md=C.MODES[$('modeSelect').value];if(md&&$('modeDescription'))$('modeDescription').textContent=md.desc.toUpperCase();});
 $('rematch').onclick=()=>{if(onlineMode){if(online.requestRematch($('nextMap').value)&&match.phase==='matchover'){$('rematchStatus').textContent='Consent sent — waiting for opponent';$('rematch').disabled=true;}}else{$('mapSelect').value=$('nextMap').value;deploy();}};
-function refill(){for(const k of keys)ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WEAPONS[k].reserve};reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
+function refill(){for(const k of keys)if(isFirearm(k))ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WEAPONS[k].reserve};else ammo[k]={mag:0,reserve:0};reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
 function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='deagle';ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
@@ -311,7 +323,7 @@ function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
  const cadence=4+spd*3;const phase=elapsed*cadence+i*1.7;
  pivots.forEach((p,j)=>{const swing=Math.sin(phase+j*Math.PI)*.3*stride;const lift=Math.max(0,Math.cos(phase+j*Math.PI))*.05*stride;p.rotation.x=swing;p.position.y=(p.userData.baseY||0)-lift;});});}
 function shoot(){const w=C.WEAPONS[weapon];if(!running||match.phase!=='live'||cool>0||reload>0||equip>0)return;if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
- cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;A.sound(weapon);flashTime=!isFirearm(weapon)?0:.045;recoil=!isFirearm(weapon)?.8:1;
+ cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}if(weapon==='bayonet')swing=w.fireInterval;match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;A.sound(weapon);flashTime=!isFirearm(weapon)?0:.045;recoil=!isFirearm(weapon)?.8:1;
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
  const rayMeshes=[...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)];
@@ -322,11 +334,24 @@ function shoot(){const w=C.WEAPONS[weapon];if(!running||match.phase!=='live'||co
 const hits=ray.intersectObjects(rayMeshes,true);let end=origin.clone().addScaledVector(dir,80);// Skip non-bot scenery that lands first (floor at distance 0, walls) and
 // take the first hit that is actually a target or the switch box.
 // The Soldier is a single mesh, so classify head/body by impact height.
-const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;let part=h.object.userData.part||'body';if(part==='body'){const g=bots[h.object.userData.botId];if(g&&h.point.y-g.position.y>1.28)part='head';}
+const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;let part=h.object.userData.part||'body';if(part==='body'){const g=bots[h.object.userData.botId];if(g&&h.point.y-g.position.y>BOT_H*0.82)part='head';}
   if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
    const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
   }
-  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){const result=match.playerShot(weapon,id,part,h.distance);if(result.dmg>0){match.shotsHit++;hit=.18;
+  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){
+   // Shotguns fire several pellets per report: each pellet rolls its own
+   // damage against the part it actually struck. Apply them in one pass so a
+   // single trigger pull can stack multiple hits and the damage is the total.
+   const pellets=Math.max(1,C.pelletCount(weapon));
+   let total=0,killedBy=false;
+   for(let p_i=0;p_i<pellets;p_i++){
+    const result=match.playerShot(weapon,id,part,h.distance);
+    total+=result.dmg;
+    killedBy=killedBy||result.killed;
+    if(result.killed)break;
+   }
+   const result={dmg:total,killed:killedBy};
+   if(result.dmg>0){match.shotsHit++;hit=.18;
    const stationary=match.training&&match.mode!=='active';
    A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
    // part is the height-classified hit zone (the Soldier is a single mesh).
@@ -366,7 +391,7 @@ function rebuildBots(){
  }
 }
 function loadMap(id){
- mapId=['desert','industrial','urban','harbor','training','range','depot'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
+ mapId=['desert','industrial','urban','harbor','training','targetrange','shipment','dust2'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
  // disposeWorld() pulled the bot groups out of the scene along with the arena
@@ -528,11 +553,11 @@ function renderScoreboard(){
  const body=table.createTBody();rows.forEach((row,i)=>{const tr=body.insertRow();if(row[0]===username)tr.className='self';for(const value of row)tr.insertCell().textContent=String(value);});$('scoreboard').replaceChildren(table);
 }
 function hud(){const w=C.WEAPONS[weapon];
-$('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=weapon==='knife'?0:ammo[weapon].mag;$('ammo').textContent=weapon==='knife'?'∞':rounds;
+$('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=(isFirearm(weapon)&&ammo[weapon])?ammo[weapon].mag:0;$('ammo').textContent=isFirearm(weapon)?rounds:'∞';
  // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
  const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=(!isFirearm(weapon))?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
- $('reserve').textContent=(!isFirearm(weapon))?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):match.mode==='ffa'?`${match.kills} ELIMINATIONS · ${Math.ceil(match.roundClock)}s LEFT`:match.mode==='search'?`${match.aliveBots().length} HOSTILES REMAIN · ONE LIFE`:`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
-$('status').textContent=isFirearm(weapon)&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
+ $('reserve').textContent=(!isFirearm(weapon)||!ammo[weapon])?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
+$('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
  $('primarySlot').dataset.slot=primary;$('primarySlot').querySelector('b').textContent=dropped?'DROPPED':C.WEAPONS[primary].name;$('primarySlot').classList.toggle('empty',dropped);
@@ -576,15 +601,16 @@ function animateWeapon(dt){
  // depth that keeps the span inside 85% of the half-height there, with a
  // per-weapon floor so a pistol does not sit on the player's nose.
  const span=Math.max(1e-4,bMaxY-bMinY);
- const HIP_DEPTH={akm:.7,l96:.78,hecate:.84,deagle:.42};
+ const HIP_DEPTH={akm:.7,l96:.78,hecate:.84,deagle:.42,shotgun:.68,smg:.62,lmg:.86,bayonet:.34};
  const needHh=span/0.85, needNear=needHh/Math.tan(fov/2);
- const dZ=Math.max(HIP_DEPTH[weapon]||.7, needNear-bMaxZ)+recoil*.06;
+ const dZ=Math.max((HIP_DEPTH[weapon]||.7)*0.82, needNear-bMaxZ)+recoil*.06;
  const halfH=dZ*Math.tan(fov/2), halfW=halfH*asp;
- // Top of the gun 5% of the half-height below the crosshair, right edge 26%
- // of the half-width out: the sights read just under the reticle and roughly
- // three quarters of the weapon fills the lower-right of the frame.
- const hx=(halfW*.26-box.max.x)+Math.sin(walk*1.7)*.006*moving;
- const hy=-(halfH*.05)-bMaxY-equip*.5;
+ // Weapons are held close in to the centre: the right edge sits 15% of the
+ // half-width out (was 26%) and the top is 2% of the half-height under the
+ // crosshair, so roughly three quarters of the gun fills the lower-centre of
+ // the frame instead of hanging at the right border.
+ const hx=(halfW*.15-box.max.x)+Math.sin(walk*1.7)*.006*moving;
+ const hy=-(halfH*.02)-bMaxY-equip*.5;
  const hz=-dZ;
  const adsZ=-.55;
  // The anchor is the point on the weapon the eye must occupy (scope glass or
@@ -622,6 +648,14 @@ function animateWeapon(dt){
   m.rotation.z=-Math.sin(progress*Math.PI)*.55;m.rotation.x=-Math.sin(progress*Math.PI)*.2;
   if(u.mag){u.mag.position.copy(u.mag.userData.basePos);u.mag.position.y-=mOut*.3;}}
  else if(u.mag)u.mag.position.copy(u.mag.userData.basePos);
+ // Bayonet swing: the blade arcs down and across on the swipe, then returns
+ // to guard. Only the blade group moves; the hilt stays anchored.
+ if(u.blade&&swing>0){
+  const t=1-swing/(C.WEAPONS[weapon].fireInterval||.5);
+  const a=Math.sin(Math.PI*Math.min(1,t*1.2));   // fast cut, eased return
+  u.blade.rotation.set(u.blade.userData.baseRot.x-a*.9,u.blade.userData.baseRot.y,u.blade.userData.baseRot.z+a*.25);
+  u.blade.position.set(u.blade.userData.basePos.x,u.blade.userData.basePos.y,u.blade.userData.basePos.z+a*.06);
+ }
  if(u.bolt){
   // Bolt stroke: pull straight back along the bore, then let it run forward
   // home under spring pressure. The bore is -Z in the fitted frame, so the
@@ -630,8 +664,16 @@ function animateWeapon(dt){
   const duration=C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval;
   const t=bolt>0?1-bolt/duration:0;
   const stroke=Math.sin(Math.PI*Math.min(1,t*1.4));   // quick pull, eased return
-  u.bolt.position.set(u.bolt.userData.basePos.x,u.bolt.userData.basePos.y,u.bolt.userData.basePos.z-stroke*.12);
-  u.bolt.rotation.set(u.bolt.userData.baseRot.x,u.bolt.userData.baseRot.y,u.bolt.userData.baseRot.z+stroke*.5);
+  // The green sniper (L96/PGM Hecate II) must read completely rigid: its bolt
+  // and charging handle hold their rest pose unless the action is actually
+  // cycling, so there is no wobble during idle, view turns or reloads.
+  if(scopedOnly(weapon)&&stroke<=0.001){
+   u.bolt.position.copy(u.bolt.userData.basePos);
+   u.bolt.rotation.copy(u.bolt.userData.baseRot);
+  }else{
+   u.bolt.position.set(u.bolt.userData.basePos.x,u.bolt.userData.basePos.y,u.bolt.userData.basePos.z-stroke*.12);
+   u.bolt.rotation.set(u.bolt.userData.baseRot.x,u.bolt.userData.baseRot.y,u.bolt.userData.baseRot.z+stroke*.5);
+  }
  }
  // The viewmodel is the weapon alone: no hands, no inspection turn. The
  // per-weapon VIEWMODEL_POSE orients the fitted model and ADS lerps the whole
@@ -642,12 +684,9 @@ function animateWeapon(dt){
 function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
  if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();
-      // Free for All: the operator falls, watches a short countdown, then
-      // respawns at the insertion point. S&D and Skirmish end the round here.
-      if(match.playerDead&&oldHp>0&&!oldPlayerDead){deadTimer=3.0;A.sound('death');}
-      if(match.playerDead){deadTimer=Math.max(0,deadTimer-dt);if(deadTimer<=0&&match.hp>0){spawn();match.playerDead=false;}}
-      if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,1.3,b.pos.z),new T.Vector3(x,y,z),0xff735e);}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
- killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
+      if(match.playerDead&&oldHp>0&&!oldPlayerDead){A.sound('death');}
+      if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,BOT_H*0.7,b.pos.z),new T.Vector3(x,y,z),0xff735e);}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
+ killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(swing>0)swing=Math.max(0,swing-dt);if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
  {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
  // The reload timer is decremented and resolved inside the running branch
  // above (line ~579); a second decrement here would count the same reload
@@ -699,14 +738,14 @@ requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
 });
 let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,ammo:JSON.parse(JSON.stringify(ammo)),bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,mode:gameMode,modeData:match.modeData,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},toMenu:()=>{started=false;running=false;finished=false;$('menu').hidden=false;$('hud').hidden=true;$('pause').hidden=true;if(document.pointerLockElement)document.exitPointerLock();},mode:(k)=>{gameMode=k;const sel=$('modeSelect');if(sel){sel.value=k;const md=C.MODES[k];if(md&&$('modeDescription'))$('modeDescription').textContent=md.desc.toUpperCase();}},// syncBots() writes the group transform; the nested Soldier pivot needs its
 // own world matrix refreshed or raycasts still see the pre-move position.
-select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig matches the 1.7m operator; aim at the head, not the old 1.5m centre.
+select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The rig is 15cm; aim at the head, not the old 1.5m centre.
 // Camera forward is -Z at yaw 0, so the bearing to a target is atan2(dx,-dz).
 // The old (dx,dz) form pointed away from bots behind the player and made
 // every trainer shot hit scenery instead.
 // Camera forward is -Z at yaw 0. Bearing to target: atan2(dx, -dz) puts a
 // target straight ahead (-Z) at yaw 0, which is what the trainer needs.
 // The Soldier's head box tops at y=1.7; aim at the upper chest/head line for a clean hit.
-aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.55-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase=match.modeData.buy?'buy':'live';match.roundClock=match.modeData.clock;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
+aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(BOT_H*0.9-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase=match.modeData.buy?'buy':'live';match.roundClock=match.modeData.clock;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 } catch(e){$('error').hidden=false;$('errorText').textContent=e.message;console.error(e);}
 })();

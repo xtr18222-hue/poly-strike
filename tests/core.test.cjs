@@ -7,13 +7,15 @@ const path = require('path');
 const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
-test('arsenal contains the four weapons with consistent stats', () => {
-  // The reduced roster: AKM, L96 A1 and PGM Hecate II as primaries, Desert
-  // Eagle as the sidearm. Mosin, the MX knife and the bayonet were removed.
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','l96']);
+test('arsenal contains every weapon with consistent stats', () => {
+  // The roster: AKM, L96 A1, PGM Hecate II and the three new primaries
+  // (Shotgun / SMG / LMG), Desert Eagle as the sidearm, and the Bayonet as
+  // the close-quarters blade. Mosin and the MX knife stay removed.
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','bayonet','deagle','hecate','l96','lmg','shotgun','smg']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
+    if (w.slot === 'close') continue;   // the bayonet has no magazine
     assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
     assert.ok(w.damage > 0 && w.reloadTime > 0);
     assert.equal(typeof w.auto, 'boolean');
@@ -24,7 +26,12 @@ test('arsenal contains the four weapons with consistent stats', () => {
   assert.equal(C.WEAPONS.l96.zoomFov < 40, true, 'L96 has scope zoom');
   assert.equal(C.WEAPONS.hecate.zoomFov < 40, true, 'Hecate has scope zoom');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
-    ['akm','hecate','l96'], 'three primaries remain');
+    ['akm','hecate','l96','lmg','shotgun','smg'], 'six primaries: the three core rifles plus the new Shotgun/SMG/LMG');
+  assert.equal(C.WEAPONS.shotgun.pellets >= 4, true, 'the shotgun fires multiple pellets');
+  assert.equal(C.WEAPONS.smg.auto, true, 'the SMG is automatic');
+  assert.equal(C.WEAPONS.lmg.auto, true, 'the LMG is automatic');
+  assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'close').sort(),
+    ['bayonet'], 'the bayonet is the close-quarters blade');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
     ['deagle'], 'the Deagle is the only sidearm');
 });

@@ -318,11 +318,18 @@
     function add(material,w,h,d,x,y,z){const m=box(THREE,material,w,h,d,x,y,z);root.add(m);objects.push(m);return m;}
     add(floorMat,hx*2,.5,hz*2,0,-.25,0);
     function solid(s){
-      const m=add(s.kind==='crate'?cargoMat:s.kind==='perimeter'?trimMat:wallMat,s.w,s.h,s.d,s.x,s.h/2,s.z);
+      const m=add(s.kind==='crate'||s.kind==='container'?cargoMat:s.kind==='perimeter'?trimMat:wallMat,s.w,s.h,s.d,s.x,s.h/2,s.z);
       m.userData.solid={x:s.x,z:s.z,w:s.w,d:s.d,h:s.h,kind:s.kind};hitMeshes.push(m);
       if(performance)return;
       // Caps stay within the registered footprint; no decorative blockers in lanes.
       add(accent,s.w,.08,s.d,s.x,s.h-.04,s.z);
+      if(s.kind==='container'){
+        // Shipping-container detail: the end corrugations and a rim cap, so
+        // full-height container cover reads as container cover, not a crate.
+        add(accent,s.w,.1,s.d,s.x,s.h-.05,s.z);
+        add(trimMat,.18,s.h,s.d,s.x-s.w/2+.09,s.h/2,s.z);
+        add(trimMat,.18,s.h,s.d,s.x+s.w/2-.09,s.h/2,s.z);
+      }
       if(s.kind==='building'){
         const rows=high?Math.max(2,Math.floor(s.h/2.6)):1, cols=Math.max(1,Math.floor(s.w/3));
         for(let row=0;row<rows;row++)for(let col=0;col<cols;col++)for(const side of [-1,1]){
@@ -1082,9 +1089,299 @@
     return g;
   }
 
+  /* --- Shotgun (M870-style pump): wood + steel, tube magazine, heat shield,
+   *      front bead sight. The pump forearm slides on the reload stroke. --- */
+  function buildShotgun(THREE, get) {
+    const g = new THREE.Group();
+    const mSteel  = get(THREE, 'sgSteel',  { color: 0x3a3f44, metalness: 0.6, roughness: 0.4 });
+    const mSteelD = get(THREE, 'sgSteelD', { color: 0x23272b, metalness: 0.65, roughness: 0.42 });
+    const mWood   = get(THREE, 'sgWood',   { color: 0x8a5a2b, roughness: 0.78 });
+    const mWoodD  = get(THREE, 'sgWoodD',  { color: 0x6e4426, roughness: 0.8 });
+    const mBead   = get(THREE, 'sgBead',   { color: 0xc9a951, metalness: 0.85, roughness: 0.3 });
+
+    // receiver
+    g.add(box(THREE, mSteel, 0.052, 0.075, 0.26, 0, 0.018, -0.01));
+    g.add(box(THREE, mSteelD, 0.046, 0.018, 0.24, 0, 0.052, -0.01));      // dust cover
+
+    // barrel + magazine tube underneath it, running parallel
+    g.add(zcyl(THREE, mSteelD, 0.0135, 0.5, 12, 0, 0.05, -0.3));
+    g.add(cyl(THREE, mSteel, 0.016, 0.016, 0.05, 12, 0, 0.05, -0.565));   // muzzle crown
+    g.add(zcyl(THREE, mSteel, 0.0085, 0.46, 10, 0, -0.022, -0.3));       // tube magazine
+    g.add(cyl(THREE, mSteelD, 0.011, 0.011, 0.022, 10, 0, -0.022, -0.555)); // tube cap
+
+    // heat shield: two perforated shells over the barrel
+    for (const side of [-1, 1]) {
+      const shield = box(THREE, mSteel, 0.012, 0.028, 0.26, side * 0.0175, 0.05, -0.3);
+      shield.name = 'heat-shield-' + (side < 0 ? 'l' : 'r');
+      g.add(shield);
+    }
+
+    // front bead sight: brass post on the muzzle
+    g.add(cyl(THREE, mBead, 0.005, 0.002, 0.02, 6, 0, 0.075, -0.5));
+    const bead = cyl(THREE, mBead, 0.0045, 0.0045, 0.012, 8, 0, 0.086, -0.5);
+    bead.userData.sight = 'front';
+    g.add(bead);
+
+    // pump forearm (slides on the reload stroke)
+    const pump = new THREE.Group();
+    pump.position.set(0, -0.022, -0.3);
+    pump.add(box(THREE, mWood, 0.05, 0.05, 0.14, 0, 0.022, 0));
+    pump.add(box(THREE, mWoodD, 0.052, 0.014, 0.15, 0, 0.05, 0));         // pump collar
+    g.add(pump);
+
+    // stock + pistol grip
+    const stock = box(THREE, mWood, 0.044, 0.082, 0.2, 0, 0.0, 0.28);
+    stock.rotation.x = -0.06;
+    g.add(stock);
+    g.add(box(THREE, mWoodD, 0.048, 0.062, 0.026, 0, 0.002, 0.39));       // butt plate
+    const grip = box(THREE, mWoodD, 0.03, 0.088, 0.044, 0, -0.056, 0.088);
+    grip.rotation.x = 0.34;
+    g.add(grip);
+    g.add(box(THREE, mSteelD, 0.008, 0.024, 0.008, 0, -0.026, 0.044));    // trigger
+
+    // hands
+    const gloveR = buildGlove(THREE, get);
+    gloveR.position.set(0, -0.05, 0.12);
+    gloveR.rotation.x = 0.5;
+    g.add(gloveR);
+    const gloveL = buildGlove(THREE, get);
+    gloveL.position.set(-0.006, -0.028, -0.3);
+    gloveL.rotation.x = 0.35;
+    g.add(gloveL);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.05, -0.59);
+    g.add(muzzle);
+
+    g.userData = { kind: 'shotgun', mag: null, bolt: null, pump: pump, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
+    return g;
+  }
+
+  /* --- SMG (MP5-style): compact folding stock, straight stick mag, curved
+   *      trigger guard, hooded front sight. Full-auto bullet hose. --- */
+  function buildSMG(THREE, get) {
+    const g = new THREE.Group();
+    const mBody   = get(THREE, 'smgBody',   { color: 0x43484d, metalness: 0.55, roughness: 0.45 });
+    const mBodyD  = get(THREE, 'smgBodyD',  { color: 0x2b2f33, metalness: 0.6, roughness: 0.45 });
+    const mSteel  = get(THREE, 'smgSteel',  { color: 0x23272b, metalness: 0.7, roughness: 0.35 });
+    const mAccent = get(THREE, 'smgAccent', { color: 0x2f8a86, metalness: 0.5, roughness: 0.4 });
+
+    // receiver
+    g.add(box(THREE, mBody, 0.05, 0.07, 0.24, 0, 0.016, -0.01));
+    g.add(box(THREE, mBodyD, 0.044, 0.016, 0.22, 0, 0.048, -0.01));      // top receiver cap
+
+    // short barrel + barrel shroud + muzzle
+    g.add(zcyl(THREE, mSteel, 0.011, 0.14, 12, 0, 0.024, -0.18));
+    g.add(zcyl(THREE, mBodyD, 0.017, 0.1, 12, 0, 0.024, -0.17));          // shroud
+    g.add(cyl(THREE, mAccent, 0.018, 0.018, 0.014, 12, 0, 0.024, -0.245));// muzzle ring
+
+    // hooded front sight
+    const hood = new THREE.Group();
+    hood.position.set(0, 0.062, -0.235);
+    hood.add(box(THREE, mSteel, 0.02, 0.022, 0.022, 0, 0, 0));
+    const fpost = cyl(THREE, mAccent, 0.004, 0.0018, 0.028, 6, 0, 0.01, -0.002);
+    fpost.userData.sight = 'front';
+    hood.add(fpost);
+    g.add(hood);
+    // rear drum sight
+    g.add(cyl(THREE, mSteel, 0.014, 0.014, 0.022, 8, 0, 0.052, 0.03));
+    g.add(cyl(THREE, mAccent, 0.011, 0.011, 0.024, 8, 0, 0.052, 0.03));
+
+    // trigger + curved guard
+    g.add(box(THREE, mSteel, 0.008, 0.022, 0.008, 0, -0.026, 0.035));
+    const guard = box(THREE, mSteel, 0.008, 0.008, 0.075, 0, -0.042, 0.035);
+    guard.rotation.x = -0.25;
+    g.add(guard);
+
+    // magazine: straight stick, slight forward taper
+    const mag = new THREE.Group();
+    mag.position.set(0, -0.036, -0.005);
+    mag.add(box(THREE, mSteel, 0.028, 0.14, 0.05, 0, -0.07, 0));
+    mag.add(box(THREE, mBodyD, 0.03, 0.012, 0.052, 0, -0.145, 0));         // baseplate
+    for (let i = 0; i < 3; i++) {                                         // visible rounds
+      mag.add(box(THREE, mAccent, 0.011, 0.012, 0.014, 0, 0.004 - i * 0.013, -0.001));
+    }
+    g.add(mag);
+
+    // folding stock: two arms + a butt pad
+    const stock = new THREE.Group();
+    stock.position.set(0, 0.014, 0.115);
+    for (const side of [-1, 1]) {
+      const arm = box(THREE, mBodyD, 0.009, 0.02, 0.16, side * 0.013, 0, 0.03);
+      arm.rotation.x = -0.08;
+      stock.add(arm);
+    }
+    stock.add(box(THREE, mBody, 0.04, 0.05, 0.018, 0, 0.002, 0.125));      // butt pad
+    g.add(stock);
+
+    // hands
+    const gloveR = buildGlove(THREE, get);
+    gloveR.position.set(0.01, -0.048, 0.095);
+    gloveR.rotation.x = 0.5;
+    g.add(gloveR);
+    const gloveL = buildGlove(THREE, get);
+    gloveL.position.set(-0.006, -0.026, -0.17);
+    gloveL.rotation.x = 0.35;
+    g.add(gloveL);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.024, -0.255);
+    g.add(muzzle);
+
+    g.userData = { kind: 'smg', mag: mag, bolt: null, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
+    return g;
+  }
+
+  /* --- LMG "خلاط" (M249-style SAW): full-length barrel, perforated heat
+   *      shroud, huge 200-round box, bipod folded forward, carry handle.
+   *      The heavy sustained-fire workhorse of the roster. --- */
+  function buildLMG(THREE, get) {
+    const g = new THREE.Group();
+    const mBody   = get(THREE, 'lmgBody',   { color: 0x3d423f, metalness: 0.5, roughness: 0.5 });
+    const mBodyD  = get(THREE, 'lmgBodyD',  { color: 0x262a27, metalness: 0.55, roughness: 0.5 });
+    const mSteel  = get(THREE, 'lmgSteel',  { color: 0x1f2326, metalness: 0.72, roughness: 0.35 });
+    const mAccent = get(THREE, 'lmgAccent', { color: 0xb08030, metalness: 0.6, roughness: 0.45 }); // khali mix brass
+
+    // receiver: long and tall for the belt feed
+    g.add(box(THREE, mBody, 0.058, 0.088, 0.32, 0, 0.026, -0.02));
+    g.add(box(THREE, mBodyD, 0.05, 0.018, 0.3, 0, 0.062, -0.02));         // top cover
+
+    // barrel + gas block + flash hider
+    g.add(zcyl(THREE, mSteel, 0.013, 0.52, 12, 0, 0.034, -0.36));
+    g.add(box(THREE, mBodyD, 0.026, 0.038, 0.055, 0, 0.05, -0.28));       // gas block
+    g.add(cyl(THREE, mSteel, 0.019, 0.019, 0.04, 12, 0, 0.034, -0.62));   // flash hider base
+    // tine-style flash hider: three slits suggested by thin boxes
+    for (let i = 0; i < 3; i++) {
+      const tine = box(THREE, mSteel, 0.006, 0.026, 0.028, 0, 0.034, -0.655 + i * 0.012);
+      g.add(tine);
+    }
+
+    // perforated heat shroud: a half-shell with three rows of slit windows
+    const shroud = new THREE.Group();
+    shroud.position.set(0, 0.034, -0.36);
+    shroud.add(cyl(THREE, mBodyD, 0.022, 0.022, 0.3, 12, 0, 0, 0));
+    for (let r = 0; r < 3; r++) {
+      for (const side of [-1, 1]) {
+        shroud.add(box(THREE, mSteel, 0.004, 0.012, 0.04, side * 0.0185, 0.006 - r * 0.012, -0.1 + r * 0.1));
+      }
+    }
+    g.add(shroud);
+
+    // belt-fed box magazine: a fat rectangular pouch under the feed
+    const mag = new THREE.Group();
+    mag.position.set(0, -0.04, -0.05);
+    mag.add(box(THREE, mBodyD, 0.048, 0.13, 0.09, 0, -0.065, 0));
+    mag.add(box(THREE, mSteel, 0.05, 0.012, 0.092, 0, -0.132, 0));         // baseplate
+    // visible belt loop tailing out of the feed tray
+    for (let i = 0; i < 3; i++) {
+      mag.add(box(THREE, mAccent, 0.012, 0.014, 0.02, 0, 0.03, 0.03 + i * 0.018));
+    }
+    g.add(mag);
+
+    // folding bipod: two legs angled forward under the gas block
+    const bipod = new THREE.Group();
+    bipod.position.set(0, -0.012, -0.3);
+    for (const side of [-1, 1]) {
+      const leg = cyl(THREE, mSteel, 0.005, 0.005, 0.2, 6, side * 0.014, -0.06, 0.0);
+      leg.rotation.z = side * 0.18;
+      leg.rotation.x = -0.12;
+      bipod.add(leg);
+    }
+    g.add(bipod);
+
+    // carry handle over the receiver
+    const handle = new THREE.Group();
+    handle.position.set(0, 0.062, -0.05);
+    handle.add(cyl(THREE, mBodyD, 0.005, 0.005, 0.14, 8, 0, 0.018, 0));
+    for (const side of [-1, 1]) handle.add(cyl(THREE, mBodyD, 0.005, 0.005, 0.02, 6, side * 0.012, 0.009, 0));
+    g.add(handle);
+
+    // stock: tall and wide for the supported firing posture
+    const stock = box(THREE, mBody, 0.05, 0.11, 0.22, 0, 0.0, 0.22);
+    stock.rotation.x = -0.05;
+    g.add(stock);
+    g.add(box(THREE, mBodyD, 0.054, 0.07, 0.024, 0, 0.002, 0.335));        // butt plate
+
+    // trigger + guard
+    g.add(box(THREE, mSteel, 0.008, 0.024, 0.008, 0, -0.028, 0.05));
+    g.add(box(THREE, mSteel, 0.008, 0.008, 0.09, 0, -0.044, 0.055));
+
+    // hands
+    const gloveR = buildGlove(THREE, get);
+    gloveR.position.set(0, -0.052, 0.1);
+    gloveR.rotation.x = 0.5;
+    g.add(gloveR);
+    const gloveL = buildGlove(THREE, get);
+    gloveL.position.set(-0.006, -0.024, -0.26);
+    gloveL.rotation.x = 0.35;
+    g.add(gloveL);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.034, -0.665);
+    g.add(muzzle);
+
+    g.userData = { kind: 'lmg', mag: mag, bolt: null, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
+    return g;
+  }
+
+  /* --- Bayonet: blade + hilt + fuller, held blade-forward. It is the
+   *      close-quarters slot: short reach, no magazine, infinite use. --- */
+  function buildBayonet(THREE, get) {
+    const g = new THREE.Group();
+    const mBlade = get(THREE, 'blade', { color: 0xb9c0c6, metalness: 0.85, roughness: 0.22 });
+    const mEdge  = get(THREE, 'bladeEdge', { color: 0x8d949b, metalness: 0.9, roughness: 0.2 });
+    const mHilt  = get(THREE, 'hilt', { color: 0x2b3138, metalness: 0.4, roughness: 0.55 });
+    const mGuard = get(THREE, 'guard', { color: 0x4a5054, metalness: 0.7, roughness: 0.35 });
+
+    // Spear-point blade: two tapered slabs forming the point, edge down.
+    const blade = new THREE.Group();
+    blade.name = 'blade';
+    blade.position.set(0, 0.004, -0.11);
+    const slab = box(THREE, mBlade, 0.006, 0.034, 0.22, 0, 0, 0);
+    slab.name = 'blade-slab';
+    blade.add(slab);
+    // Edge: a thin darker wedge underneath the slab.
+    blade.add(box(THREE, mEdge, 0.004, 0.012, 0.22, 0, -0.021, 0));
+    // Fuller groove suggested by a thin dark inset on each flat.
+    for (const side of [-1, 1])
+      blade.add(box(THREE, mEdge, 0.002, 0.008, 0.16, side * 0.0035, 0, 0.01));
+    g.add(blade);
+
+    // Crossguard: wider than the blade, stops a blade sliding back
+    g.add(box(THREE, mGuard, 0.03, 0.022, 0.012, 0, 0.004, 0.005));
+    // Hilt: two contoured grip panels over a full tang
+    for (const side of [-1, 1]) {
+      const panel = box(THREE, mHilt, 0.006, 0.028, 0.11, side * 0.008, 0.004, 0.06);
+      panel.rotation.x = 0.06;
+      g.add(panel);
+    }
+    // Pommel
+    g.add(cyl(THREE, mGuard, 0.011, 0.011, 0.018, 8, 0, 0.004, 0.125));
+    // Muzzle ring on the pommel end (the bayonet mounts over a rifle muzzle)
+    g.add(cyl(THREE, mGuard, 0.009, 0.007, 0.012, 10, 0, 0.004, 0.14));
+
+    // hands
+    const gloveR = buildGlove(THREE, get);
+    gloveR.position.set(0.01, -0.012, 0.075);
+    gloveR.rotation.x = 0.6;
+    g.add(gloveR);
+    const gloveL = buildGlove(THREE, get);
+    gloveL.position.set(-0.01, -0.008, 0.035);
+    gloveL.rotation.x = 0.6;
+    g.add(gloveL);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.004, -0.23);
+    g.add(muzzle);
+
+    g.userData = { kind: 'bayonet', mag: null, bolt: null, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
+    return g;
+  }
+
   // The procedural Butterfly knife is gone: only the MX Knife and Bayonet
   // asset models ship now, and every weapon resolves through PolyAsset.
-  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle };
+  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle,
+    shotgun: buildShotgun, smg: buildSMG, lmg: buildLMG, bayonet: buildBayonet };
 
   // View model: fires down -Z, origin at the grip so the parent can place it
   // at (0.32, -0.3, -0.65) with a fixed 65 FOV camera.
@@ -1124,6 +1421,6 @@
     CHAR_SKINS: CHAR_SKINS,
     buildCasing: buildCasing,
     buildMagazine: buildMagazine,
-    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle'],
+    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'shotgun', 'smg', 'lmg', 'bayonet'],
   };
 });

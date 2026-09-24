@@ -75,9 +75,10 @@ test('the fourth arena is wired into every map list', () => {
   assert.ok(/<option value="harbor">/.test(html), 'harbor is in the rematch select');
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
   assert.ok(/'harbor'/.test(game), 'harbor is in the loadMap allowlist');
-  // The post-match rotation cycles the four battlegrounds.
-  assert.ok(/maps=\['desert','industrial','urban','harbor'\]/.test(game),
-    'nextMapId rotates through harbor');
+  // The post-match rotation cycles every battleground, including the
+  // dedicated target range and the two new arenas.
+  assert.ok(/maps=\['desert','industrial','urban','harbor','training','targetrange','shipment','dust2'\]/.test(game),
+    'nextMapId rotates through every map');
   const vis = fs.readFileSync(path.join(ROOT, 'visuals.js'), 'utf8');
   // Without its own palette the theme check would silently fall back to desert.
   assert.ok(/harbor:\s*\[/.test(vis), 'harbor has its own palette');
@@ -137,33 +138,36 @@ test('standard maps are combat arenas, not peaceful test maps', () => {
 // ---------- training mode: the player is not locked to the Mosin ----------
 const CORE = require(path.join(ROOT, 'core.js'));
 
-test('the roster is exactly AKM, L96, Hecate and the Deagle sidearm', () => {
+test('the roster is the six primaries, the Deagle sidearm and the Bayonet', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
-  // No melee slot any more: the wheel cycles primary and secondary only, and
-  // the only "melee" text left is the isFirearm() guard comment.
-  assert.ok(/const inventory=\(\)=>dropped?\?\[secondary\]:\[primary,secondary\]/.test(game),
-    'inventory exposes primary and secondary, no melee');
-  assert.ok(!/melee slot|melee\]/.test(game), 'no melee handling left in game.js');
-  // The three primaries are the rifles that survived the roster cut.
+  // The wheel cycles primary, secondary and the blade. The inventory lists the
+  // held guns plus the bayonet, which never runs out of ammo.
   const prim = game.match(/const primaries=\[([^\]]+)\]/);
   assert.ok(prim, 'primaries list present');
-  for (const k of ['akm', 'l96', 'hecate'])
+  for (const k of ['akm', 'l96', 'hecate', 'shotgun', 'smg', 'lmg'])
     assert.ok(prim[1].includes(`'${k}'`), `${k} is a selectable primary`);
-  for (const k of ['mosin', 'mx', 'bayonet'])
+  for (const k of ['mosin', 'mx'])
     assert.ok(!prim[1].includes(`'${k}'`), `${k} was removed from the primaries`);
-  // And the cut weapons are gone from the shared table too.
-  assert.deepEqual(Object.keys(CORE.WEAPONS).sort(), ['akm', 'deagle', 'hecate', 'l96']);
+  // The bayonet is the close-quarters slot, not a primary.
+  assert.ok(CORE.WEAPONS.bayonet, 'the bayonet is back in the shared table');
+  assert.equal(CORE.WEAPONS.bayonet.slot, 'close', 'the bayonet occupies the blade slot');
+  assert.equal(CORE.WEAPONS.deagle.slot, 'secondary', 'the Deagle is still the sidearm');
+  // The dropped weapons stay dropped.
+  for (const k of ['mosin', 'mx'])
+    assert.ok(!CORE.WEAPONS[k], `${k} is not a weapon`);
 });
 
-test('the melee weapons were removed from the roster entirely', () => {
-  // The Mosin, MX knife and bayonet are gone: no key, no slot, nothing to buy.
-  for (const key of ['mosin', 'mx', 'bayonet']) {
+test('the close-quarters slot is exactly the Bayonet', () => {
+  // The Mosin and the MX knife stay gone; the Bayonet fills the blade slot.
+  for (const key of ['mosin', 'mx']) {
     assert.ok(!CORE.WEAPONS[key], `${key} is not a weapon`);
   }
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'close'), ['bayonet']);
   // The Deagle is the only sidearm.
   assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary'), ['deagle']);
-  // Nothing melee-shaped remains anywhere in the arsenal.
+  // Every gun has a magazine; the blade has none and never needs one.
   for (const w of Object.values(CORE.WEAPONS)) {
+    if (w.slot === 'close') continue;
     assert.ok(w.slot === 'primary' || w.slot === 'secondary', `${w.key} has a gun slot`);
     assert.ok(w.mag > 0, `${w.key} has a magazine`);
   }
@@ -238,7 +242,7 @@ test('the first-person viewmodel carries no hands', () => {
   // rolled weapons onto their side.
   assert.ok(/const VIEWMODEL_POSE=\{/.test(game), 'per-weapon viewmodel pose table exists');
   for (const k of Object.keys(CORE.WEAPONS)) {
-    if (k === 'mx') continue; // mx is a melee alt-skin, not a viewmodel key
+    if (k === 'bayonet') continue; // the blade is a hold, not a sight-aligned viewmodel
     assert.ok(new RegExp(`${k}:`).test(game), `${k} has a pose entry`);
   }
   // A pose entry that contains a full 90deg pitch would re-introduce the

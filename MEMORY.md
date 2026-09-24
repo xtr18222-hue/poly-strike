@@ -376,3 +376,39 @@ All four reported items closed and live-verified in headless Edge.
    player death (end), ffa respawns and continues.
 
 Tests 91/91 (was 85; +6 mode tests). Probes deleted. backup_v1/ kept.
+
+## 2026-09-24 — Target Range round: 15cm bots, 8-weapon roster, 8 maps
+1. Modes cleanup: FFA and Search & Destroy fully removed (core MODES table is
+   skirmish-only; FFA respawn loop + deadTimer deleted from game.js; menu has a
+   single Skirmish option; fieldops mode test rewritten). Skirmish is the sole
+   core standard mode.
+2. Bots are now exactly 15cm: TARGET_H 1.7 -> 0.15 in assets.js. Every
+   game.js height rule converted from absolute metres to a percentage of the
+   rig (head tag at BOT_H*0.82, headshot = top ~18%, aim pitch + tracer origins
+   re-derived, armBot shrinks the carried rifle by BOT_H/1.7). Live-verified:
+   all bots measure 0.15.
+3. Weapons pulled to ~3/4 visibility: framing tightened to right edge = 15% of
+   half-width, top anchor 2% of half-height below the crosshair, depth floor
+   HIP_DEPTH*0.82. Green sniper (L96/Hecate) bolt locked rigid at idle and
+   during view transitions (stroke suppressed when scopedOnly and at rest;
+   live probe: bolt rot [0,0,0]).
+4. Roster is now 8: AKM, L96, Hecate, Deagle, Shotgun, SMG, LMG (خلاط) and the
+   restored Bayonet as a third inventory slot (primary/secondary/blade) with a
+   swing animation. The three new firearms have no GLB, so assets.js gained a
+   proceduralWeapon() fallback that builds them and runs them through the same
+   fitWeapon path. Live NDC framing verified for all 8; nothing clipped.
+   HUD guarded: ammo[weapon] reads are isFirearm()-gated so the blade slot
+   never dereferences an undefined magazine.
+5. Maps: 8 total. Training Range untouched. Added Target Range (training,
+   7 static pop-up targets, bot count is now map-driven via MAP.spawnBots
+   capped by BOT_COUNT), Shipment (container maze, new 'container' solid kind
+   in buildArena) and Dust 2 (desert lanes, reusing the desert theme).
+6. LIVE-VERIFIED BUG THIS ROUND: loadMap() carried a stale map whitelist
+   ('range','depot' - names from an older map set), so targetrange/shipment/
+   dust2 silently fell back to 'desert' no matter what the menu selected.
+   Fixed to the real 8-map list. Live: all three new maps deploy with the right
+   mapId; Target Range fields 7 bots.
+
+Tests 88/88 (was 91; 6 FFA/Search behaviour tests removed with the modes, new
+weapon/map assertions added). sw.js bumped to poly-strike-v28-range.
+backup_v1/ now gitignored (duplicate model copies, untracked).

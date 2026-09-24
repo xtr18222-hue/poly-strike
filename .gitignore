@@ -4,3 +4,4 @@ tests/shots/
 *.log
 tests/*-performance.png
 tests/performance-results.json
+assets/models/backup_v1/

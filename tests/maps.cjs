@@ -3,15 +3,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const C = require('../core.js');
 
-test('four selectable maps expose bound simulation contexts', () => {
+test('all selectable maps expose bound simulation contexts', () => {
   assert.ok(C.MAPS, 'map registry exists');
-  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert', 'harbor', 'industrial', 'training', 'urban']);
+  assert.deepEqual(Object.keys(C.MAPS).sort(), ['desert','dust2','harbor','industrial','shipment','targetrange','training','urban']);
   assert.equal(C.MAP, C.MAPS.desert, 'legacy default stays desert');
   for (const id of Object.keys(C.MAPS)) {
     const ctx = C.forMap(id);
     assert.equal(ctx.MAP, C.MAPS[id]);
     assert.equal(ctx.MAP.id, id);
-    assert.equal(ctx.MAP.theme, id);
+    // dust2 reuses the desert asset set; shipment and targetrange share the
+    // industrial and training themes respectively.
+    const themed = { dust2:'desert', shipment:'industrial', targetrange:'training' };
+    assert.equal(ctx.MAP.theme, themed[id] !== undefined ? themed[id] : id);
     assert.ok(ctx.MAP.name.length > 0);
     for (const key of Object.keys(C)) assert.ok(key in ctx, `shared API ${key}`);
     assert.equal(ctx.pickSpread, C.pickSpread);
@@ -29,7 +32,7 @@ test('classic scripts expose the same map API without Node or DOM', () => {
   const sandbox = {};
   vm.createContext(sandbox);
   for (const file of ['maps.js', 'core.js']) vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'..',file),'utf8'), sandbox);
-  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban','harbor','training']);
+  assert.deepEqual(Object.keys(sandbox.POLY_CORE.MAPS), ['desert','industrial','urban','harbor','training','targetrange','shipment','dust2']);
   assert.equal(sandbox.POLY_CORE.forMap('urban').createMatch().MAP.id,'urban');
 });
 
@@ -100,12 +103,14 @@ test('all arena navigation and spawn paths have full collision-safe connectivity
   for (const [id, map] of Object.entries(C.MAPS)) {
     assert.equal(map.size, 76);
     assert.deepEqual(map.bounds, {hx:38, hz:38});
-    assert.equal(map.spawnBots.length, 5);
-    // Training is an open range: no round clock, no score pressure.
-    assert.equal(!!map.training, id === 'training');
+    // Standard arenas field five bots; the dedicated target ranges may stage
+    // extra reactive targets for weapon testing.
+    assert.ok(map.spawnBots.length >= 5, id + ' has bots');
+    // Training-style ranges are pressure-free; the standard arenas keep score.
+    assert.equal(!!map.training, id === 'training' || id === 'targetrange');
     footprints.add(JSON.stringify(map.solids));
     for (const s of map.solids) {
-      assert.ok(['building', 'wall', 'crate'].includes(s.kind));
+      assert.ok(['building', 'wall', 'crate', 'container'].includes(s.kind));
       for (const k of ['x','z','w','d','h']) assert.ok(Number.isFinite(s[k]));
       assert.ok(s.w > 0 && s.d > 0 && s.h > 0);
       assert.ok(Math.abs(s.x) + s.w/2 < 38 && Math.abs(s.z) + s.d/2 < 38);
@@ -120,14 +125,14 @@ test('all arena navigation and spawn paths have full collision-safe connectivity
       for (const n of g[i]) assert.ok(C.segmentClear(point, map.nav[n], inflated), id + ' edge clear');
     }
     const spawns = [map.spawnPlayer, ...map.spawnBots];
-    assert.equal(new Set(spawns.map(p=>`${p.x},${p.z}`)).size, 6);
+    assert.equal(new Set(spawns.map(p=>`${p.x},${p.z}`)).size, spawns.length);
     for (const p of [...spawns, map.spawnOpponent]) {
       safe(map, p, id + ' spawn clear');
       assert.ok(C.segmentClear(p, map.nav[ctx.nearestNav(p)], inflated), id + ' spawn-to-nav clear');
     }
     assert.ok(Math.hypot(map.spawnPlayer.x-map.spawnOpponent.x, map.spawnPlayer.z-map.spawnOpponent.z)>50);
   }
-  assert.equal(footprints.size, 5, 'topologies differ, not just materials');
+  assert.equal(footprints.size, 8, 'topologies differ, not just materials');
 });
 
 test('map/context match arguments share cached graphs but not live match state', () => {
