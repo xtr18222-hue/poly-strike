@@ -340,3 +340,39 @@ deagle -0.16, bayonet -0.15). Player eye 1.7 m, bots 1.7 m x5.
 Note for next session: the service worker caches aggressively. When
 live-probing after an edit, unregister the SW from inside the page origin and
 reload, or bump CACHE in sw.js, or the probe silently measures the old bundle.
+
+## 2026-09-24 — viewmodel framing, strict roster, modes — DONE, pushed 175c71a, SW v27
+
+All four reported items closed and live-verified in headless Edge.
+
+1. Viewmodel positioning. The "too low" symptom had three stacked causes, not
+   the two originally suspected:
+   - game.js animateWeapon() ran m.scale.set(1,1,1) every frame, destroying the
+     fit scale the AKM needs (0.10063x on its 8.94-unit export). The L96 looked
+     fine only because its fit scale is ~1.
+   - cloneGLB cloned only the inner scene, discarding the fit's root-space
+     recentring on every clone.
+   - fitWeapon applied world-space offsets to local child positions; divided by
+     root.scale they under-travelled, so the gun's rear never landed at z=0.
+   Fixed all three, then replaced the fixed-metre hip offset with
+   frustum-derived placement: measure each weapon's own box, solve depth so the
+   vertical span fits in 85% of the half-height at the near face, anchor the top
+   5% below the crosshair. Live: akm/l96/hecate/deagle all on screen, ndcY
+   bottom >= -0.635, right edge at +0.26, nothing clipped.
+2. Strict roster: AKM, L96 (AWP), PGM Hecate II + Deagle sidearm only. Mosin,
+   MX Knife and Bayonet gone from core/assets/game/HUD/manual/tests. Melee slot
+   removed from inventory; the six slot==='melee' guards now go through
+   isFirearm(). AKM ADS removed: ads:false, spreadScoped==spreadBase, right-click
+   no longer enters ADS, pickSpread only honours scoped when w.ads is true.
+3. Bots: already 1.7 m x5 from the previous round; re-verified unchanged.
+4. Modes: MODES = skirmish (buy, first to 5), ffa (120s kill race, no buy,
+   player + bots respawn), search (no clock, one life, no respawn). Menu has a
+   #modeSelect dropdown with a description line. THE CRITICAL BUG: forMap()'s
+   per-map createMatch closed over the map and took one mode arg, but game.js
+   calls createMatch(C.MAP, modeKey) - the map object became the mode key,
+   MODES[mapObject] fell back to skirmish, and every match silently ran as
+   skirmish. Fixed by taking the last string argument. Verified live: all three
+   modes start in the right phase with the right objective text; search ends on
+   player death (end), ffa respawns and continues.
+
+Tests 91/91 (was 85; +6 mode tests). Probes deleted. backup_v1/ kept.
