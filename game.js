@@ -314,7 +314,7 @@ function shoot(){const w=C.WEAPONS[weapon];if(!running||match.phase!=='live'||co
 const hits=ray.intersectObjects(rayMeshes,true);let end=origin.clone().addScaledVector(dir,80);// Skip non-bot scenery that lands first (floor at distance 0, walls) and
 // take the first hit that is actually a target or the switch box.
 // The Soldier is a single mesh, so classify head/body by impact height.
-const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;let part=h.object.userData.part||'body';if(part==='body'){const g=bots[h.object.userData.botId];if(g&&h.point.y-g.position.y>1.45)part='head';}
+const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData.switchMesh);if(target){const h=target;end=h.point;let part=h.object.userData.part||'body';if(part==='body'){const g=bots[h.object.userData.botId];if(g&&h.point.y-g.position.y>1.28)part='head';}
   if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
    const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
   }
@@ -546,7 +546,12 @@ function animateWeapon(dt){
  // move the viewmodel until that anchor sits on the camera axis. Lerping
  // between two hand-crafted offsets never lands on the sight, which is why
  // zoomed aim looked past the iron sights.
+ // Hip-fire holds the weapon off the shoulder and below the sight line: the
+ // camera is 1.7m, so 0.14 below is a natural low-ready carry. Pulling hz in
+ // to 0.55 at full ADS brings the rear-sight post to the eye instead of
+ // stopping mid-barrel, which is what made aim look past the iron sights.
  const hx=.32+Math.sin(walk*1.7)*.006*moving, hy=-.3-equip*.5, hz=-.65+recoil*.06;
+ const adsZ=-.55;
  // The anchor is the point on the weapon the eye must occupy (scope glass or
  // the rear-sight post). m.position is set in the parent frame (viewScene) and
  // the anchor offset must be expressed in that same frame, so read the anchor's
@@ -566,10 +571,10 @@ function animateWeapon(dt){
  }
  // ADS slides the anchor onto the camera forward axis: viewCam sits at the
  // origin looking down -Z, so the target places the anchor at (0,0,hz) —
- // centred horizontally and at hip-fire depth. Hip-fire keeps the weapon
+ // centred horizontally and at ADS depth. Hip-fire keeps the weapon
  // offset to the player's right and below the sight line.
- const tx=0-ax, ty=0-ay, tz=hz-az;
- m.position.set(hx+(tx-hx)*adsBlend, hy+(ty-hy)*adsBlend, hz+(tz-hz)*adsBlend);
+ const tx=0-ax, ty=0-ay, tz=adsZ-az;
+ m.position.set(hx+(tx-hx)*adsBlend, (hy-.14)+(ty-hy+.14)*adsBlend, hz+(tz-hz)*adsBlend);
  m.rotation.set(pose[0]+recoil*.09,pose[1],pose[2]);
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
@@ -654,14 +659,14 @@ requestAnimationFrame(()=>{ // keep the render loop alive even if assets stall
 });
 let bootTime=performance.now();window.Game=Object.freeze({state:()=>({running,online:onlineMode,role:onlineMode?(online.hostRole?'host':'guest'):null,room:online.code,locked,fallback,frames,fps:Math.round(frames/(Math.max(.001,performance.now()-bootTime)/1000)),x,z,y,yaw,pitch,weapon,primary,dropped,inventory:inventory(),drops:onlineMode?(online.state?.drops||[]):localDrops,scoped,ads,slide,preset,map:mapId,pixels:renderer.domElement.width*renderer.domElement.height,reload,ammo:JSON.parse(JSON.stringify(ammo)),bolt,effects:effects.length,accuracy:accuracy(),phase:match.phase,hp:match.hp,score:{...match.score},kills:match.kills,alive:match.aliveBots().length,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,audio:A.ready}),...(new URLSearchParams(location.search).has('test')?{test:{empty:()=>{ammo[weapon].mag=0;},lowHealth:()=>{match.hp=19;},kill:addKill,damageFrom,online:online.test,place:(px,pz)=>{x=px;z=pz;},// syncBots() writes the group transform; the nested Soldier pivot needs its
 // own world matrix refreshed or raycasts still see the pre-move position.
-select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig is 1.9m tall; aim at the head, not the old 1.5m centre.
+select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{const m=match.bots[id];m.pos.x=bx;m.pos.z=bz;syncBots();(window.__bots||[]).forEach(o=>o.updateMatrixWorld(true));},// The Soldier rig matches the 1.7m operator; aim at the head, not the old 1.5m centre.
 // Camera forward is -Z at yaw 0, so the bearing to a target is atan2(dx,-dz).
 // The old (dx,dz) form pointed away from bots behind the player and made
 // every trainer shot hit scenery instead.
 // Camera forward is -Z at yaw 0. Bearing to target: atan2(dx, -dz) puts a
 // target straight ahead (-Z) at yaw 0, which is what the trainer needs.
-// The Soldier's head box tops at y=1.93; aim there for a clean headshot.
-aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.88-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
+// The Soldier's head box tops at y=1.7; aim at the upper chest/head line for a clean hit.
+aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(1.55-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase='live';match.roundClock=90;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 } catch(e){$('error').hidden=false;$('errorText').textContent=e.message;console.error(e);}
 })();

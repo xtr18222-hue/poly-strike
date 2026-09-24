@@ -255,8 +255,9 @@ test('the weapon fit maps the bore onto -Z with sights on +Y', () => {
 });
 
 test('per-asset muzzle direction is recorded, not assumed', () => {
-  // Measured by vertex slicing: AKM/Deagle/L96/Mosin/Bayonet point +X, but
-  // Hecate and MX point -X. A universal assumption flips those two.
+  // Measured on the loaded exports in world space: AKM/Deagle/L96/Mosin/
+  // Bayonet/Hecate/MX all carry the muzzle at +X in asset space, so every
+  // entry records flip:1 and fitWeapon aligns +X onto the camera's forward.
   const m = src.match(/const\s+WEAPON_ASSETS\s*=\s*\{([\s\S]*?)\n\s*\};/);
   assert.ok(m, 'WEAPON_ASSETS table found');
   // The entries are multi-line, so read each block rather than each row.
@@ -271,8 +272,13 @@ test('per-asset muzzle direction is recorded, not assumed', () => {
     assert.ok(blocks[k], `${k} present in WEAPON_ASSETS`);
     assert.ok(/flip\s*:/.test(blocks[k]), `${k} records its muzzle direction (flip)`);
   }
-  assert.ok(/flip\s*:\s*-1/.test(blocks.hecate), 'hecate is flipped (muzzle at -X)');
-  assert.ok(/flip\s*:\s*-1/.test(blocks.mx), 'mx is flipped (muzzle at -X)');
+  for (const k of Object.keys(blocks)) {
+    assert.ok(/flip\s*:\s*1/.test(blocks[k]),
+      `${k} records flip:1 (muzzle at +X in asset space, matching the measured exports)`);
+  }
+  // The direction is derived from named muzzle/stock pivots at load time, not
+  // hardcoded per asset, so a new export with a different facing self-corrects.
+  assert.ok(/MUZZLE_WORDS/.test(src), 'fitWeapon derives the direction from part names');
 });
 
 test('cloneGLB preserves the fitted orientation and hidden parts', () => {

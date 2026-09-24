@@ -330,49 +330,20 @@ test('buildWeapon awp: ~1.2m sniper, mag/bolt/muzzle + 3D scope', function () {
   assertFinite(w, 'awp');
 });
 test('buildWeapon deagle: ~0.5m pistol, slide+mag+muzzle', weaponCommon('deagle', 0.5, ['mag', 'bolt', 'muzzle']));
-test('buildWeapon knife: ~0.5m butterfly, pivoted handles + blade', function () {
-  const w = PolyVisual.buildWeapon(THREE, 'knife');
-  for (const k of ['blade', 'handleA', 'handleB']) assert.ok(w.userData[k], 'knife userData.' + k);
-  const bb = new THREE.Box3().setFromObject(w);
-  const len = Math.max(bb.max.z - bb.min.z, bb.max.x - bb.min.x, bb.max.y - bb.min.y);
-  assert.ok(len > 0.2 && len < 0.7, 'knife overall ~0.5m scale (got ' + len.toFixed(2) + ')');
-  // blade points down -Z: its bounding box extends forward, handles backward
-  const bladeBB = new THREE.Box3().setFromObject(w.userData.blade);
-  assert.ok(bladeBB.max.z < 0.05 && bladeBB.min.z < -0.15, 'blade extends down -Z');
-  // butterfly pivots: rotating a handle about X swings it out of the blade plane
-  for (const h of [w.userData.handleA, w.userData.handleB]) {
-    const before = h.rotation.x;
-    h.rotation.x = Math.PI / 2;      // half flip around the pivot pin
-    h.updateWorldMatrix(true, false);
-    const swung = new THREE.Box3().setFromObject(h);
-    assert.ok(swung.max.y - swung.min.y > 0.1,
-      'handle swings out of the blade plane (span=' + (swung.max.y - swung.min.y).toFixed(3) + ')');
-    h.rotation.x = before;
-  }
-  // blade pivot group can swing
-  w.userData.blade.rotation.x = 0.8;
-  w.userData.blade.rotation.x = 0;
-  assertFinite(w, 'knife');
-});
-
-test('knife: continuous tapered blade and machined handle channels', function () {
-  const w=PolyVisual.buildWeapon(THREE,'knife'),blade=w.userData.blade;
-  const steel=blade.getObjectByName('knife-blade');assert.ok(steel);
-  const p=steel.geometry.attributes.position;
-  const tip=[],heel=[];for(let i=0;i<p.count;i++){if(p.getZ(i)<-.2)tip.push(Math.abs(p.getX(i)));if(p.getZ(i)>-.04)heel.push(Math.abs(p.getX(i)));}
-  assert.ok(tip.length&&heel.length&&Math.max(...tip)<Math.max(...heel));
-  const n=steel.geometry.attributes.normal;
-  for(let i=0;i<p.count;i++)if(Math.abs(p.getY(i))>.002)assert.ok(p.getY(i)*n.getY(i)>0,'blade faces outward');
-  assert.ok(!allMeshes(blade).some(m=>m.geometry.type==='ConeGeometry'));
-  for(const h of [w.userData.handleA,w.userData.handleB])assert.ok(h.getObjectByName('handle-channel'));
-  assert.ok(allMeshes(w).length<=24);assertFinite(w,'clean knife');
-});
-
-test('weapons: all five keys build and are distinct', function () {
-  const keys = ['ak47', 'awp', 'deagle', 'kar98', 'knife'];
+test('weapons: all four procedural keys build and are distinct', function () {
+  const keys = ['ak47', 'awp', 'deagle', 'kar98'];
   const built = keys.map(function (k) { return PolyVisual.buildWeapon(THREE, k); });
   built.forEach(function (w, i) { assert.equal(w.userData.kind, keys[i]); });
   assert.notEqual(built[0].uuid, built[1].uuid);
+});
+
+// The Butterfly knife was purged: only the MX Knife and Bayonet assets ship.
+// buildWeapon must reject it rather than silently fall back to a builder.
+test('weapons: the Butterfly knife builder is gone', function () {
+  assert.throws(function () { PolyVisual.buildWeapon(THREE, 'knife'); },
+    /unknown weapon "knife"/, 'knife is no longer a buildable key');
+  assert.ok(!/knife/.test(PolyVisual.WEAPON_KEYS.join(' ')),
+    'WEAPON_KEYS no longer lists knife: ' + PolyVisual.WEAPON_KEYS.join(','));
 });
 
 test('weapons: muzzle is at the visual barrel tip (beyond every other -Z mesh)', function () {
@@ -406,7 +377,7 @@ test('weapons: exposed glove groups can be detached for independent spins', func
   for(const key of PolyVisual.WEAPON_KEYS) {
     const w=PolyVisual.buildWeapon(THREE,key), hands=w.userData.hands;
     assert.ok(Array.isArray(hands),key+' exposes hands');
-    assert.equal(hands.length,key==='knife'?1:2);
+    assert.equal(hands.length,2);
     const scene=new THREE.Scene();scene.add(w);w.position.set(.32,-.3,-.65);
     scene.updateMatrixWorld(true);
     const positions=hands.map(h=>{assert.equal(h.parent,w);assert.ok(h.isGroup);return h.getWorldPosition(new THREE.Vector3());});
@@ -464,7 +435,7 @@ test('deagle: beveled slab slide, barrel shelf, raked grip, sight posts', functi
 test('weapons: glove hands present with cuff accents', function () {
   // Robotic white tactical gloves: palm/back/finger/cuff armour with a ribbed
   // dark cuff. The glove shell and cuff materials identify the hands.
-  for (const key of ['ak47', 'awp', 'deagle', 'knife']) {
+  for (const key of ['ak47', 'awp', 'deagle', 'kar98']) {
     const w = PolyVisual.buildWeapon(THREE, key);
     const gloveMeshes = allMeshes(w).filter(function (m) {
       return m.material && m.material.color &&
@@ -496,11 +467,11 @@ test('arena: rectangular bounds produce correct perimeter ray hits', function ()
 });
 
 test('weapons: wood, olive, silver and chrome materials', function () {
-  const expected={ak47:['akWood',0x8a5a2b],awp:['awpBody',0x3d4a3f],deagle:['dgSlide',0x4a525a],knife:['kfBlade',0xd3e0ec]};
+  const expected={ak47:['akWood',0x8a5a2b],awp:['awpBody',0x3d4a3f],deagle:['dgSlide',0x4a525a]};
   for(const [key,[name,color]] of Object.entries(expected)) {
     const material=allMeshes(PolyVisual.buildWeapon(THREE,key)).find(m=>m.material.name===name).material;
     assert.equal(material.color.getHex(),color);
-    if(key==='knife'||key==='deagle')assert.ok(material.metalness>=.8&&material.roughness<=.35);
+    if(key==='deagle')assert.ok(material.metalness>=.8&&material.roughness<=.35);
   }
 });
 

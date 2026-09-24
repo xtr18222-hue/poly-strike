@@ -49,11 +49,15 @@
     },
     mx: {
       file: 'low-poly_mx-8054.glb',
-      length: 0.75, rot: [0, 0, 0], flip: -1,
+      // The MX export measures 6.43 units long and the bayonet 2.23, so at a
+      // raw fit the knife lands at ~2.9x the bayonet. 0.42m is a realistic
+      // fighting-knife length (the real blade is ~30cm plus the hilt) and
+      // keeps it visually distinct from the 0.30m bayonet in hand.
+      length: 0.42, rot: [0, 0, 0], flip: 1,
     },
     hecate: {
       file: 'low-poly_pgm_hecate_ii.glb',
-      length: 1.30, rot: [0, 0, 0], flip: -1,
+      length: 1.30, rot: [0, 0, 0], flip: 1,
     },
     bayonet: {
       file: 'low-poly_fa-03_bayonet.glb',
@@ -335,14 +339,22 @@
     let internal = false;
     root.traverse(o => { if (INTERNAL_MAG.test(o.name || '')) internal = true; });
     if (internal) return null;
-    let best = null, bestN = 0;
+    const cands = [];
     root.traverse(o => {
       if (o.isMesh || !o.name || !/mag/i.test(o.name)) return;
-      if (/release|well|catch|empty/.test(o.name)) return;
+      if (/release|well|catch/.test(o.name)) return;   // a catch, not a magazine
       let n = 0; o.traverse(x => { if (x.isMesh) n++; });
-      if (n > bestN) { best = o; bestN = n; }
+      if (n) cands.push({ o, n });
     });
-    return best;
+    if (!cands.length) return null;
+    // The clean base models ship exactly ONE seated magazine, and "empty" is
+    // not a reliable discriminator on them — the AKM's seated mag is literally
+    // named ak_30rnd_empty_steel_mag_14. When only one magazine pivot exists it
+    // is the magazine the player is holding; only break ties by mesh count
+    // where a loaded mag and a spare both ship (the L96's 762x51_mag_1 vs
+    // magrel_10, one mesh each — prefer the one that is not the spare).
+    if (cands.length === 1) return cands[0].o;
+    return cands.sort((a, b) => b.n - a.n)[0].o;
   }
   function assembleParts(root) {
     const T = needThree();
@@ -438,12 +450,37 @@
     const long = Math.max(size.x, size.y, size.z);
     const axis = size.x >= size.y && size.x >= size.z ? 'x' : (size.y >= size.z ? 'y' : 'z');
 
-    // Asset forward: the axis the muzzle points along. Measured per model
-    // (probes/probe_slice.mjs): AKM/Deagle/L96/Mosin/Bayonet muzzle at +X,
-    // Hecate and MX at -X. A def.flip lets the table correct either case.
-    const assetFwd = { x: new T.Vector3(def.flip === -1 ? -1 : 1, 0, 0),
-                       y: new T.Vector3(0, def.flip === -1 ? -1 : 1, 0),
-                       z: new T.Vector3(0, 0, def.flip === -1 ? -1 : 1) }[axis];
+    // Asset forward: the signed direction the muzzle points along the long
+    // axis. The old table hardcoded this per file, which silently inverted any
+    // export whose barrel runs the other way — the L96 and Hecate both shipped
+    // with the muzzle at -X, so a blanket +X pointed them at the player and
+    // the rifle vanished behind the camera. Measure it instead: the muzzle
+    // pivot is named on every clean export, so take the sign of its offset
+    // from the stock. Falling back to def.flip keeps the table as a manual
+    // override for a model without named parts.
+    const MUZZLE_WORDS = /muzzle|barrel|compensator|brake/i;
+    const STOCK_WORDS = /stock|butt|pistol_grip|grip/i;
+    let muzzleC = null, stockC = null, muzzleNode = null;
+    group.traverse(o => {
+      if (!o.name || o.isMesh) return;
+      if (!muzzleC && MUZZLE_WORDS.test(o.name)) {
+        const bb = new T.Box3().setFromObject(o);
+        if (!bb.isEmpty()) { muzzleC = bb.getCenter(new T.Vector3()); muzzleNode = o; }
+      }
+      if (!stockC && STOCK_WORDS.test(o.name)) {
+        const bb = new T.Box3().setFromObject(o);
+        if (!bb.isEmpty()) stockC = bb.getCenter(new T.Vector3());
+      }
+    });
+    let dirSign = def.flip === -1 ? -1 : 1;
+    if (muzzleC && stockC) {
+      const a = axis === 'x' ? 'x' : axis === 'y' ? 'y' : 'z';
+      const sep = muzzleC[a] - stockC[a];
+      if (Math.abs(sep) > 1e-6) dirSign = sep > 0 ? 1 : -1;
+    }
+    const assetFwd = { x: new T.Vector3(dirSign, 0, 0),
+                       y: new T.Vector3(0, dirSign, 0),
+                       z: new T.Vector3(0, 0, dirSign) }[axis];
     const assetUp = new T.Vector3(0, 1, 0);   // sights up on every asset measured
     const assetRgt = new T.Vector3().crossVectors(assetUp, assetFwd).normalize();
     // Guard against a degenerate (collinear) pair.
@@ -478,6 +515,26 @@
     if (def.rot) inner.rotateOnAxis(new T.Vector3(1, 0, 0), T.MathUtils.degToRad(def.rot[0]));
     if (def.rot) inner.rotateOnAxis(new T.Vector3(0, 1, 0), T.MathUtils.degToRad(def.rot[1]));
     if (def.rot) inner.rotateOnAxis(new T.Vector3(0, 0, 1), T.MathUtils.degToRad(def.rot[2]));
+    inner.updateMatrix();
+
+    // Self-check, AFTER the orientation is committed: the quaternion chain is
+    // built from basis vectors, and a degenerate pairing (assetUp parallel to
+    // assetFwd, or a box whose long axis is not the bore) can leave the barrel
+    // pointing at +Z — behind the camera, where the weapon is invisible.
+    // Verify against the real muzzle pivot and flip 180 deg about up if it
+    // missed. This must run after the quaternion write above, or the write
+    // silently discards the correction.
+    if (muzzleNode) {
+      root.updateMatrixWorld(true);
+      const mw = new T.Vector3();
+      muzzleNode.getWorldPosition(mw);
+      if (mw.z > 0.05) {
+        const half = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), Math.PI);
+        inner.quaternion.premultiply(half);
+        inner.rotation.setFromQuaternion(inner.quaternion);
+        inner.updateMatrix();
+      }
+    }
 
     // Scale to real-world length. Blender-unit exports come out ~8-18x too big.
     const scale = long > 0 ? def.length / long : 1;
@@ -488,16 +545,26 @@
     // The offset is applied in the PRE-rotation frame on the same pivot as the
     // rotation, so it travels with it: the rear of the weapon lands on z=0
     // along the barrel instead of being shunted sideways.
-    root.updateMatrixWorld(true);
-    const fitted = new T.Box3().setFromObject(root);
-    const fs = new T.Vector3();
-    fitted.getSize(fs);
-    const centre = new T.Vector3();
-    fitted.getCenter(centre);
-    inner.position.x -= centre.x;
-    inner.position.y -= centre.y;
-    // Grip at origin: keep the rear of the weapon near z=0.
-    inner.position.z -= fitted.min.z;
+    // Normalise the placement in WORLD space. root has no parent yet, so its
+    // world frame IS the frame the caller sees; translating root.position by a
+    // world-space box offset is therefore frame-safe. The previous code
+    // subtracted a post-rotation box z from inner.position (the pre-rotation
+    // pivot), which mixed frames and left some guns entirely behind the
+    // camera: the L96 sat at z in [0, 1.18] and was invisible.
+    const place = () => {
+      root.updateMatrixWorld(true);
+      const fitted = new T.Box3().setFromObject(root);
+      if (fitted.isEmpty()) return null;
+      const fs = new T.Vector3(); fitted.getSize(fs);
+      const c = new T.Vector3(); fitted.getCenter(c);
+      root.position.x -= c.x;
+      root.position.y -= c.y;
+      // Rear of the weapon at z=0, barrel to -Z: the whole gun then sits in
+      // front of the camera whatever its internal pivot layout.
+      root.position.z -= fitted.max.z;
+      return fs;
+    };
+    const fs = place();
 
     // Muzzle anchor at the barrel tip. The bore now runs along -Z with the
     // receiver centred on the origin, so the tip is simply min.z at the fitted
@@ -699,9 +766,11 @@
   function soldier() { return cloneSoldier(); }
 
   // A skinned Soldier rig the Pro Rifle Pack clips can drive. Mixamo exports
-  // in centimetres; 0.01 puts the ~180cm figure into metres, matching the
-  // game's other 1.7-1.9m actors. The clip FBXs are animation-only, so this
-  // is the body every bot actually wears.
+  // in centimetres; 0.01 puts the figure into metres, and TARGET_H then
+  // normalises the standing height to the player's own 1.7m so bots match the
+  // human operator instead of towering over them. The clip FBXs are
+  // animation-only, so this is the body every bot actually wears.
+  const TARGET_H = 1.7;   // player eye height; bots match the operator
   function soldierRig() {
     if (!soldierRigGLB) return null;
     const rig = cloneGLB(soldierRigGLB, true);
@@ -714,10 +783,18 @@
     // and the whole figure collapses into a small block.
     rig.traverse(n => { if (n.isSkinnedMesh && n.skeleton) n.skeleton.calculateInverses(); });
     rig.updateMatrixWorld(true);
+    // Normalise the standing height to the player's. The Soldier ships at
+    // 1.92m in metres, which reads as a giant next to the 1.7m operator.
+    // skinnedBox is measured AFTER the inverse recompute above so the bound is
+    // real, and the uniform scale keeps the rig's proportions intact.
+    const box0 = skinnedBox(rig);
+    const h0 = box0.getSize(new (needThree()).Vector3()).y;
+    if (h0 > 0 && isFinite(h0)) rig.scale.setScalar(rig.scale.x * (TARGET_H / h0));
+    rig.updateMatrixWorld(true);
     const box = skinnedBox(rig);
     if (!box.isEmpty() && isFinite(box.min.y)) {
       rig.position.y -= box.min.y;
-      const c = box.getCenter(new THREE.Vector3());
+      const c = box.getCenter(new (needThree()).Vector3());
       rig.position.x -= c.x; rig.position.z -= c.z;
     }
     rig.name = 'soldierRig';
@@ -735,7 +812,8 @@
     if (!src) return null;
     const rig = cloneGLB(src, true);
     if (!rig) return null;
-    // Mixamo FBX is in cm; the Soldier is ~1.9m, so match that height.
+    // Mixamo FBX is in cm; normalise the standing figure to the player's
+    // height so the clip-rig fallback matches the 1.7m Soldier rig.
     // Skinned meshes only bound correctly once the skeleton has been updated,
     // and Box3.setFromObject on a SkeletonUtils clone of a bound rig can hand
     // back NaN (the bone matrices are still identity), which would silently
@@ -743,7 +821,7 @@
     rig.updateMatrixWorld(true);
     const box = skinnedBox(rig);
     const size = box.getSize(new THREE.Vector3());
-    const s = size.y > 0 && isFinite(size.y) ? 1.9 / size.y : 0.01;
+    const s = size.y > 0 && isFinite(size.y) ? 1.7 / size.y : 0.01;
     rig.scale.setScalar(s);
     // Feet on the ground, centred on the origin the bot group expects.
     rig.updateMatrixWorld(true);

@@ -1046,66 +1046,6 @@
   }
 
 
-  /* --- Butterfly knife: pivoted handles A/B + swinging blade -------------- */
-  function buildKnife(THREE, get) {
-    const g = new THREE.Group();
-    const mBlade = get(THREE, 'kfBlade', { color: 0xd3e0ec, metalness: 0.95, roughness: 0.16 });              // satin steel
-    const mEdge = get(THREE, 'kfEdge', { color: 0xeef2f4 });
-    const mHandle = get(THREE, 'kfHandle', { color: 0x23262b });            // black handles
-    const mTeal = get(THREE, 'kfTeal', { color: 0x2fa8a0 });
-    const mBlue = get(THREE, 'kfBlue', { color: 0x2b6fb8 });
-
-    // blade: flat stock tapering to a spear point, pivot at origin
-    const blade = new THREE.Group();
-    blade.position.set(0, 0, 0);
-    // Single continuous spear profile, with a shallow central bevel ridge.
-    const outline=[[-.013,-.015],[-.015,-.14],[0,-.21],[.015,-.14],[.013,-.015]];
-    const vertices=[];
-    for(const side of [-1,1])for(let i=0;i<outline.length;i++){
-      const a=outline[i],b=outline[(i+1)%outline.length];
-      const tri=[[0,side*.003,-.09],[a[0],0,a[1]],[b[0],0,b[1]]];
-      if(side>0)tri.reverse();tri.forEach(v=>vertices.push(...v));
-    }
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geometry.computeVertexNormals();
-    const stock=new THREE.Mesh(geometry,mBlade);stock.name='knife-blade';blade.add(stock);
-    // pivot pins
-    blade.add(cyl(THREE, mTeal, 0.006, 0.006, 0.036, 8, 0, 0, 0));
-    blade.children[blade.children.length - 1].rotation.z = Math.PI / 2;
-    g.add(blade);
-
-    // two handles, both pivoting on X at the junction (butterfly flip anim)
-    const handleA = new THREE.Group();
-    handleA.position.set(0, 0.014, 0.006);
-    handleA.add(box(THREE, mHandle, 0.016, 0.01, 0.16, 0, 0, 0.088));
-    handleA.add(box(THREE, mTeal, 0.018, 0.012, 0.02, 0, 0, 0.172));        // latch end
-    handleA.add(cyl(THREE, mBlue, 0.005, 0.005, 0.02, 8, 0, 0, 0.03));
-    handleA.children[handleA.children.length - 1].rotation.z = Math.PI / 2;
-    handleA.add(cyl(THREE, mBlue, 0.005, 0.005, 0.02, 8, 0, 0, 0.14));
-    handleA.children[handleA.children.length - 1].rotation.z = Math.PI / 2;
-    const channelA=bevelBox(THREE,mEdge,.017,.003,.105,0,.006,.089);channelA.name='handle-channel';handleA.add(channelA);
-    g.add(handleA);
-
-    const handleB = new THREE.Group();
-    handleB.position.set(0, -0.014, 0.006);
-    handleB.add(box(THREE, mHandle, 0.016, 0.01, 0.16, 0, 0, 0.088));
-    handleB.add(box(THREE, mBlue, 0.018, 0.012, 0.02, 0, 0, 0.172));        // tail end
-    handleB.add(cyl(THREE, mTeal, 0.005, 0.005, 0.02, 8, 0, 0, 0.03));
-    handleB.children[handleB.children.length - 1].rotation.z = Math.PI / 2;
-    handleB.add(cyl(THREE, mTeal, 0.005, 0.005, 0.02, 8, 0, 0, 0.14));
-    handleB.children[handleB.children.length - 1].rotation.z = Math.PI / 2;
-    const channelB=bevelBox(THREE,mEdge,.017,.003,.105,0,.006,.089);channelB.name='handle-channel';handleB.add(channelB);
-    g.add(handleB);
-
-    // grip hand wraps the lower handle
-    const gloveR = buildGlove(THREE, get);
-    gloveR.position.set(0, -0.016, 0.11);
-    gloveR.rotation.x = 0.4;
-    g.add(gloveR);
-
-    g.userData = { kind: 'knife', blade: blade, handleA: handleA, handleB: handleB };
-    return g;
-  }
-
   /* --- Shell casing: brass box with a rim, pooled by the controller. ------
    * Carried by scene (not the view camera) so ejected brass arcs away from
    * the player. Caller disposes it through the shared effects pool. */
@@ -1142,7 +1082,9 @@
     return g;
   }
 
-  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle, knife: buildKnife };
+  // The procedural Butterfly knife is gone: only the MX Knife and Bayonet
+  // asset models ship now, and every weapon resolves through PolyAsset.
+  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle };
 
   // View model: fires down -Z, origin at the grip so the parent can place it
   // at (0.32, -0.3, -0.65) with a fixed 65 FOV camera.
@@ -1160,9 +1102,9 @@
     g.userData.hands = g.children.filter(o => o.name === 'glove-hand');
     g.userData.key = key;
     g.userData.skin = 'Natural';
-    // Pistol and knife have compact real-world proportions; enlarge just
-    // these view models for legibility at the fixed view-camera placement.
-    const size = key === 'deagle' ? 1.4 : key === 'knife' ? 1.2 : 1;
+    // Pistols have compact real-world proportions; enlarge just these view
+    // models for legibility at the fixed view-camera placement.
+    const size = key === 'deagle' ? 1.4 : 1;
     if (size !== 1) {
       // Bake a uniform scale into the top-level transforms so exposed
       // animation pivots and muzzle.position retain group-local units.
@@ -1182,6 +1124,6 @@
     CHAR_SKINS: CHAR_SKINS,
     buildCasing: buildCasing,
     buildMagazine: buildMagazine,
-    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'knife'],
+    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle'],
   };
 });
