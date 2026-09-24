@@ -299,3 +299,44 @@ renders with zero lighting cost in Three.js.
 - Reload bug fixed: the timer was decremented twice (once in the `running`
   branch, once after), so every reload completed at double speed.
 - sw.js cache bumped v17 → v18.
+
+## 2026-09-24 — critical visual/asset fixes round — DONE, pushed 41f232a, SW v20
+
+All 8 reported items closed and live-verified in headless Edge against the dev
+server; `node --test` over the six-file suite is 85/85.
+
+1. Hecate orientation: fitWeapon now derives the muzzle direction from the
+   named muzzle/stock pivots at load time instead of trusting a per-file flip
+   table, and a post-rotation self-check flips any gun whose measured muzzle
+   lands at +z (behind the camera). Hecate and MX measure +X in asset space,
+   so all entries now carry flip:1; the old overhaul.cjs assertion that
+   encoded the stale "-X" measurement was corrected.
+2. L96 invisible: two causes. (a) its loaded mag pivot `762x51_mag_1` was
+   matched by LOOSE_ROUND's `762\d*_*\d*$` alternative and hidden — pickMag no
+   longer selects by mesh count or rejects empty-named mags. (b) placement
+   mixed frames: a post-rotation box offset was written onto the pre-rotation
+   pivot, leaving whole guns behind the camera. Placement is now normalised in
+   world space on root (rear at z=0, barrel to -z).
+3. Bot scale: soldierRig and the clipRig fallback normalise to the 1.7 m
+   player eye height. Live: all 5 bots measure exactly 1.7 m. Head-shot zone
+   and trainer aim pitch rescaled for the new rig.
+4. AKM/L96 magazine: pickMag rewrite keeps the loaded mag picked and visible
+   on both; the spare empty mag stays hidden.
+5. ADS: weapon lowered 0.14 at hip; ADS depth pulls to z=-0.55 so the rear
+   sight meets the eye instead of stopping mid-barrel.
+6. Knife: procedural Butterfly builder removed from visuals.js; only MX Knife
+   (scaled to 0.42 m) and Bayonet remain. HUD slot reads "3 KNIFE", inspect
+   hint updated, zero butterfly strings in the shipped DOM/JS. The two dead
+   butterfly tests were replaced by a purge assertion.
+7. Announcer: verified already correct — Monster Kill/Godlike sit at kills
+   13/14 in the male pack. No change.
+8. Polish: fit diagnostics removed; stray probe scripts in tests/ and
+   backrooms-3am deleted. backup_v1/ kept as the pre-swap rollback path.
+
+Live measurements (headless Edge): all 7 weapons finite, visible, muzzle ahead
+of the camera (akm -0.74, l96 -1.64, mosin -0.74, mx -0.24, hecate -0.78,
+deagle -0.16, bayonet -0.15). Player eye 1.7 m, bots 1.7 m x5.
+
+Note for next session: the service worker caches aggressively. When
+live-probing after an edit, unregister the SW from inside the page origin and
+reload, or bump CACHE in sw.js, or the probe silently measures the old bundle.
