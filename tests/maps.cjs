@@ -82,12 +82,13 @@ test('ADS tightens the guns that have it, and the AKM has none', () => {
   for (const key of ['l96','hecate']) {
     assert.ok(spread(key,0,false,false,true) < spread(key,0,false,false,false), key + ' scoping tightens');
   }
-  // The Deagle keeps its ADS and its movement penalties.
+  // The Deagle's ADS was removed entirely: right-click no longer changes its
+  // spread, and its movement/crouch/air penalties still apply.
+  assert.equal(C.WEAPONS.deagle.ads, false, 'the Deagle advertises no ADS');
   const dHip = spread('deagle',0,false,false,false), dAds = spread('deagle',0,false,false,true);
+  assert.ok(dAds === dHip && dAds > 0, 'deagle right-click is a spread no-op');
   const dMoving = spread('deagle',1,false,false,true);
-  assert.ok(dAds < dHip && dAds > 0, 'deagle ADS tightens');
   assert.ok(dMoving > dAds, 'deagle moving is not perfectly accurate');
-  assert.ok(dMoving < spread('deagle',1,false,false,false), 'deagle moving ADS still helps');
   assert.ok(spread('deagle',0,true,false,true) < dAds, 'deagle crouch helps');
   assert.ok(spread('deagle',0,false,true,true) > dMoving, 'deagle airborne penalty remains');
 });

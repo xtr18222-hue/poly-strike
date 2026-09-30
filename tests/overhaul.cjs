@@ -157,19 +157,20 @@ test('the roster is the three core rifles and the Deagle', () => {
     assert.ok(!CORE.WEAPONS[k], `${k} is not a weapon`);
 });
 
-test('the secondary slot holds only the Deagle', () => {
-  // The Mosin, the MX knife, the Bayonet and the three new firearms stay gone.
+test('the secondary slot holds the Deagle and the FA-03 bayonet', () => {
+  // The Mosin, the MX knife and the three new firearms stay gone.
   for (const key of ['mosin', 'mx', 'shotgun', 'smg', 'lmg', 'bayonet']) {
     assert.ok(!CORE.WEAPONS[key], `${key} is not a weapon`);
   }
-  // The Deagle alone occupies the secondary slot; there is no separate
-  // 'close' slot anymore and no second sidearm.
+  // The Deagle and the knife share the secondary slot; there is no separate
+  // 'close' slot anymore and no third sidearm.
   assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'close'), [], 'no close-quarters slot remains');
-  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary').sort(), ['deagle']);
-  // Every gun has a magazine.
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary').sort(), ['deagle', 'knife']);
+  // Every firearm has a magazine; the knife is the only melee and has none.
   for (const w of Object.values(CORE.WEAPONS)) {
     assert.ok(w.slot === 'primary' || w.slot === 'secondary', `${w.key} has a gun slot`);
-    assert.ok(w.mag > 0, `${w.key} has a magazine`);
+    if (w.melee) assert.ok(w.mag === 0, `${w.key} melee has no magazine`);
+    else assert.ok(w.mag > 0, `${w.key} has a magazine`);
   }
 });
 
@@ -209,9 +210,10 @@ test('every weapon has a firing voice', () => {
 // ---------- inspection: the old framework is gone, replaced by a minimal F key ----------
 // The old standalone inspection.js framework (with inspectRest/inspectFade/
 // variants and its own PolyInspection object) was deleted as bloat. A new,
-// minimal in-place inspection is now part of the viewmodel: the F key eases the
-// held weapon toward the centre and returns it to the exact ready pose. The
-// test guards that the heavy framework stays gone while the small keybind exists.
+// minimal in-place inspection is part of the viewmodel: F runs a small explicit
+// state machine (READY -> IN -> HOLD -> OUT -> READY) that tilts the weapon and
+// moves it to the right of the screen, then returns it to the exact ready pose.
+// The test guards that the heavy framework stays gone while the new machine exists.
 test('the old inspection framework is fully removed', () => {
   assert.ok(!fs.existsSync(path.join(ROOT, 'inspection.js')), 'inspection.js deleted');
   assert.ok(!fs.existsSync(path.join(__dirname, 'inspection.cjs')), 'inspection.cjs deleted');
@@ -220,12 +222,17 @@ test('the old inspection framework is fully removed', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   assert.ok(!/inspection\.js/.test(sw), 'no inspection service-worker entry');
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
-  for (const sym of ['inspectRest', 'inspectFade', 'inspectVariant', 'cancelInspect', 'PolyInspection'])
+  for (const sym of ['inspectRest', 'inspectFade', 'inspectVariant', 'PolyInspection'])
     assert.ok(!game.includes(sym), `${sym} removed from game.js`);
-  // The new minimal inspection keybind is present and drives the eased blend.
-  assert.ok(/KeyF'\)\{inspectHold=true/.test(game), 'F inspect keybind present');
-  assert.ok(/inspectHold=false/.test(game), 'F release ends inspection');
-  assert.ok(/insp\+=\(\(inspectHold\?1:0\)-insp\)/.test(game), 'inspection blend eases in animateWeapon');
+  // The new state machine is present: the F keybind starts it and the machine
+  // drives the eased blend in animateWeapon.
+  assert.ok(/KeyF'\)\{startInspect\(\)/.test(game), 'F inspect keybind starts the machine');
+  assert.ok(/if\(e\.code==='KeyF'\)inspectHold=false/.test(game), 'F release ends inspection');
+  assert.ok(/function stepInspect\(dt\)/.test(game), 'inspection state machine advances per frame');
+  assert.ok(/function inspectBlend\(\)/.test(game), 'inspection blend weight exists');
+  assert.ok(/READY.*IN.*HOLD.*OUT/.test(game), 'READY/IN/HOLD/OUT phases documented');
+  // Firing is blocked while inspecting, so the weapon cannot be shot mid-examine.
+  assert.ok(/if\(inspecting\(\)\)return;/.test(game), 'firing is blocked during inspection');
 });
 
 // ---------- top-down camera (removed) ----------

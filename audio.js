@@ -35,6 +35,7 @@ window.PolyAudio = (() => {
       deagle:  { barrel:'pistol', dur:.14, hz:1900, punch:160, crack:2500 },
       mx:      { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       bayonet: { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
+      knife:   { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       ak47:    { barrel:'rifle',  dur:.20, hz:1500, punch:120, crack:2100 },
       awp:     { barrel:'sniper', dur:.50, hz:900,  punch:70,  crack:2600 },
       kar98:   { barrel:'sniper', dur:.45, hz:1000, punch:85,  crack:2400 },

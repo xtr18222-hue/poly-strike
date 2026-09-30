@@ -14,7 +14,7 @@ const BOT_H = 1.7;  // bot eye height, kept level with the operator's eye
 const primaries=['akm','l96','hecate'];
 let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
-try{const savedSecondary=localStorage.getItem('poly-secondary');if(savedSecondary==='deagle')secondary=savedSecondary;}catch(_){}
+try{const savedSecondary=localStorage.getItem('poly-secondary');if(savedSecondary==='deagle'||savedSecondary==='knife')secondary=savedSecondary;}catch(_){}
 const secondaryOf=()=>secondary;
 // Crosshair customization, persisted locally.
 const crosshair={color:'#d9f577',gap:6,length:7,thickness:2,dot:true};
@@ -37,11 +37,15 @@ const inventory=()=>dropped?[secondary]:[primary,secondary];
 // Every weapon in the reduced roster is a firearm, so this is always true today,
 // this is always true today, but the ammo/tracer/reload paths stay guarded so
 // a future close-quarters pickup cannot break them.
-const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close';};
+// Melee weapons are not firearms even though the knife shares the secondary
+// slot with the Deagle: isFirearm gates the ammo/reload/ADS paths, and the
+// knife has no magazine, so it must read false here. The melee flag is the
+// authoritative signal (slot:'close' no longer exists in the roster).
+const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close'&&!w.melee;};
 // Weapon skins: one chosen skin index per weapon, persisted locally.
 // Declared with the full key list (keys is only assigned further down).
 // Weapon keys span the strict roster: the three primary rifles and the pistol.
-const keys=['akm','l96','hecate','deagle'];
+const keys=['akm','l96','hecate','deagle','knife'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
 // The Mosin is an iron-sight bolt rifle: right-click aims, it does not mount a scope.
@@ -128,7 +132,11 @@ readyAll().then(()=>{bindModels();
       const rig = PolyAsset.soldierRig();
       if (rig) {
         g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
-        rig.traverse(n => { if (n.isMesh) {
+        // The rig's body is a single SkinnedMesh; isMesh is false for it, so a
+        // plain isMesh filter left the figure untagged and NO shot could hit
+        // it (the knife ray found no botId target at all). isSkinnedMesh must
+        // be included, and every tagged mesh needs the same head/body call.
+        rig.traverse(n => { if (n.isMesh || n.isSkinnedMesh) {
           n.userData.botId = i;
           // The head is the top ~18% of the figure, so tag by relative height.
           n.userData.part = (n.geometry && n.geometry.boundingBox && n.geometry.boundingBox.max.y > BOT_H * 0.82) ? 'head' : 'body';
@@ -157,7 +165,7 @@ readyAll().then(()=>{bindModels();
     }
     const m = PolyAsset.soldier(); if (!m) return;
     g.children.filter(c => !c.isLight).forEach(c => g.remove(c));
-    m.traverse(n => { if (n.isMesh) {
+    m.traverse(n => { if (n.isMesh || n.isSkinnedMesh) {   // see the rig branch above
       n.userData.botId = i;
       // Head tag = top ~18% of the rig, matching the operator proportions.
       n.userData.part = (n.geometry && n.geometry.boundingBox)
@@ -197,20 +205,64 @@ const bindModels=()=>{
  // Hands are gone: the player viewmodel is the weapon only. Bot rigs keep their
  // own arms (they are whole-character models, not first-person arms).
 };
-// Viewmodel pose per weapon (radians): [pitch, yaw, roll] applied on top of
-// the fit. fitWeapon now maps the measured bore onto -Z with sights on +Y, so
-// the weapon already points forward and level: pose is identity, and each
-// entry only carries a small sight-line pitch so the bore meets the camera.
-const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],hecate:[0,0,0]};
+// Viewmodel pose per weapon (radians): [pitch, yaw, roll] applied on top of the
+// fit. fitWeapon maps the measured bore onto -Z with sights on +Y, so the
+// weapon arrives level and forward. The roll is the SUBTLE RIGHTWARD CANT that
+// makes the weapon read as held rather than glued to the screen: a few degrees,
+// never sideways. Yaw is a small rightward turn so the off side faces the player.
+// Long rifles cant less (they sit low and diagonal), the pistol a touch more,
+// the knife most because it is short and held blade-down in the fist.
+const VIEWMODEL_POSE={
+ akm:[0.015,-0.045,0.10],
+ l96:[0.012,-0.030,0.075],
+ hecate:[0.012,-0.030,0.075],
+ deagle:[0.02,-0.06,0.14],
+ knife:[0.05,-0.30,0.30],
+};
+// Per-weapon READY placement, as fractions of the view frustum so every weapon
+// reads consistently whatever its real-world length. x>0 is toward the player's
+// right, y<0 is below the crosshair. The right offset places the weapon in the
+// lower-right area of the frame - NOT centred, NOT directly under the crosshair -
+// and the depth keeps enough of it visible that the player can see what they hold.
+const READY={
+ akm:{fx:.30,fy:-.52,d:.72},
+ l96:{fx:.28,fy:-.50,d:.80},
+ hecate:{fx:.28,fy:-.50,d:.86},
+ deagle:{fx:.34,fy:-.48,d:.50},
+ knife:{fx:.30,fy:-.44,d:.48},
+};
+// Per-weapon INSPECTION target, in the same frustum-fraction units. The weapon
+// tilts (the existing good motion) and then moves toward the RIGHT side of the
+// screen, where it is held for the player to examine. x is pushed well right of
+// the ready position but stays inside the frame; y is raised only slightly so
+// the weapon stays in view and the camera never moves.
+const INSPECT={
+ akm:{fx:.55,fy:-.30,d:.60,rx:-.30,ry:.55,rz:.16},
+ l96:{fx:.50,fy:-.26,d:.66,rx:-.30,ry:.55,rz:.16},
+ hecate:{fx:.50,fy:-.26,d:.70,rx:-.30,ry:.55,rz:.16},
+ deagle:{fx:.58,fy:-.26,d:.52,rx:-.32,ry:.60,rz:.18},
+ knife:{fx:.56,fy:-.18,d:.50,rx:-.42,ry:.75,rz:.22},
+};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
 let gameMode='skirmish',oldPlayerDead=false;
 let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
-// Weapon inspection (F): insp is the eased 0..1 blend the viewmodel reads.
-// inspectHold is true while F is held; the blend eases toward it so the
-// transition in and out is smooth and the return lands on the ready pose.
-let inspectHold=false,insp=0,inspWeapon='akm';
+// Weapon inspection (F): a small explicit state machine.
+//   READY -> INSPECTING_IN -> INSPECTING_HOLD -> INSPECTING_OUT -> READY
+// INSPECTING_IN plays the existing tilt/rotation motion and then carries the
+// weapon toward the RIGHT side of the screen (never the centre). HOLD keeps it
+// there to be examined. OUT eases back to the exact ready transform. While F is
+// held the machine lingers in HOLD; releasing F from any state routes through
+// OUT so the return is always smooth. Firing/reloading/switching/death all
+// cancel by routing to OUT, and no shot is possible while inspPhase !== READY.
+const INSP = { READY: 0, IN: 1, HOLD: 2, OUT: 3 };
+let inspPhase = INSP.READY;
+let inspT = 0;              // 0..1 progress within the IN/OUT phase
+let inspectHold = false;
+// The exact ready transform captured at the moment inspection began. Returning
+// to this every time guarantees zero drift across repeated inspections.
+let inspFrom = null;
 let weapon='akm',previous='deagle',ammo={},reload=0,reloadKey=null,cool=0,equip=.3,scoped=false,trigger=false,burst=0,recoil=0,hit=0,hurt=0,flashTime=0;
 let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=performance.now(),fps=60,hudClock=0,stepClock=0;
 const spray=C.buildSprayPattern(4815,30),effects=[];let feed=[];
@@ -267,13 +319,50 @@ function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=f
  const target=$('mapSelect').value;
  loadMap(target);match=C.MAP.training?C.createTrainingMatch('skirmish'):C.createMatch(C.MAP,'skirmish');rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
-function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;previous=weapon;weapon=k;bolt=0;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;equip=.35;cool=.15;A.sound('switch');}
+function cancelInspect(){ if(inspPhase===INSP.READY) return; inspectHold=false; if(inspPhase===INSP.HOLD||inspPhase===INSP.IN){ inspPhase=INSP.OUT; inspT=1-Math.max(0,Math.min(1,inspT)); } }
+function startInspect(){ if(inspPhase!==INSP.READY) return; inspectHold=true; inspPhase=INSP.IN; inspT=0; }
+// Advances the inspection machine. animateWeapon() calls this every frame.
+// IN and OUT use an ease-in-out curve; HOLD has no timer of its own (it lasts
+// as long as F is held) so the examine step cannot be cut short by a clock.
+function stepInspect(dt) {
+ if (inspPhase === INSP.READY) { inspFrom = null; return; }
+ if (inspPhase === INSP.HOLD) { if (!inspectHold) { inspPhase = INSP.OUT; inspT = 0; } return; }
+ const IN_DUR = 0.42, OUT_DUR = 0.34;
+ const dur = inspPhase === INSP.IN ? IN_DUR : OUT_DUR;
+ if (inspPhase === INSP.IN) {
+  inspT += dt / IN_DUR;
+  if (inspT >= 1) { inspT = 1; inspPhase = inspectHold ? INSP.HOLD : INSP.OUT; }
+ } else {
+  inspT += dt / OUT_DUR;
+  if (inspT >= 1) { inspT = 1; inspPhase = INSP.READY; inspFrom = null; }
+ }
+}
+// Eased 0..1 used by animateWeapon to blend between the ready and inspection
+// transforms. IN ramps up (with the tilt leading the slide), OUT ramps down.
+function inspectBlend() {
+ if (inspPhase === INSP.READY) return 0;
+ if (inspPhase === INSP.HOLD) return 1;
+ const t = Math.max(0, Math.min(1, inspT));
+ return t * t * (3 - 2 * t);   // smoothstep
+}
+// Weight for the RIGHTWARD slide specifically. The tilt begins immediately, but
+// the lateral movement lags it, so the sequence reads TILT then MOVE RIGHT.
+function inspectSlideW() {
+ if (inspPhase === INSP.READY) return 0;
+ if (inspPhase === INSP.HOLD) return 1;
+ const t = Math.max(0, Math.min(1, inspT));
+ // The slide starts at ~35% of the way in and finishes at ~80%.
+ const s = Math.max(0, Math.min(1, (t - 0.35) / 0.45));
+ return s * s * (3 - 2 * s);
+}
+function inspecting() { return inspPhase !== INSP.READY; }
+function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;cancelInspect();previous=weapon;weapon=k;bolt=0;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;equip=.35;cool=.15;A.sound('switch');}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
 function nearestDrop(){return currentDrops().find(d=>(!onlineMode||d.weapon===primary)&&Math.hypot(x-d.x,z-d.z)<2.5&&C.segmentClear({x,z},d,C.MAP.solids));}
 function dropPrimary(){if(dropped||weapon!==primary||reload>0||!['buy','live'].includes(match.phase))return;if(onlineMode){online.drop();return;}localDrops=[{id:'local',weapon:primary,x:x-Math.sin(yaw),z:z-Math.cos(yaw),ammo:{...ammo[primary]}}];dropped=true;select(secondary);}
 function pickupPrimary(){const d=nearestDrop();if(!d||!dropped||!['buy','live'].includes(match.phase))return;if(onlineMode){online.pickup(d.id);return;}primary=d.weapon;if(d.ammo)ammo[primary]={...d.ammo};localDrops=[];dropped=false;select(primary);}
 function syncDrops(){const live=new Set();for(const d of currentDrops().slice(0,8)){if(!C.WEAPONS[d.weapon])continue;live.add(d.id);let o=dropNodes.get(d.id);if(!o){o=PolyVisual.buildWeapon(T,d.weapon);for(const h of o.userData.hands||[])h.removeFromParent();scene.add(o);dropNodes.set(d.id,o);}o.position.set(d.x,.22,d.z);o.rotation.set(0,elapsed*.2,Math.PI/2);}for(const [id,o] of dropNodes)if(!live.has(id)){scene.remove(o);o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});dropNodes.delete(id);}}
-function doReload(){const w=C.WEAPONS[weapon];if(!isFirearm(weapon)||reload>0||ammo[weapon].mag===w.mag||ammo[weapon].reserve===0)return;if(onlineMode)online.reload(weapon);reload=w.reloadTime;reloadKey=weapon;scoped=false;ads=false;reloadStage=0;A.sound('magout');}
+function doReload(){const w=C.WEAPONS[weapon];if(!isFirearm(weapon)||reload>0||ammo[weapon].mag===w.mag||ammo[weapon].reserve===0)return;cancelInspect();if(onlineMode)online.reload(weapon);reload=w.reloadTime;reloadKey=weapon;scoped=false;ads=false;reloadStage=0;A.sound('magout');}
 // Tactical magazine swap: the old mag detaches, drops free and is thrown clear,
 // then a fresh mag is seated. Stages key off reload progress in animateWeapon.
 function dropMag(){
@@ -322,9 +411,20 @@ function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
  const spd=(b.speed||0)*(b.alive?1:0);const stride=Math.min(1,spd/4);
  const cadence=4+spd*3;const phase=elapsed*cadence+i*1.7;
  pivots.forEach((p,j)=>{const swing=Math.sin(phase+j*Math.PI)*.3*stride;const lift=Math.max(0,Math.cos(phase+j*Math.PI))*.05*stride;p.rotation.x=swing;p.position.y=(p.userData.baseY||0)-lift;});});}
-function shoot(){const w=C.WEAPONS[weapon];if(!running||match.phase!=='live'||cool>0||reload>0||equip>0)return;if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
- cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;A.sound(weapon);flashTime=.045;recoil=1;
+function shoot(){const w=C.WEAPONS[weapon];
+ // Inspection takes priority over firing: while the weapon is being examined
+ // there is no shot, no ammo use, no flash and no sound. FIRE while inspecting
+ // cancels the inspection and returns the weapon to ready; the shot itself is
+ // dropped, so the player must press fire again after the weapon is back.
+ if(inspecting())return;
+ if(!running||match.phase!=='live'||cool>0||reload>0||equip>0)return;
+ // Melee weapons have no magazine, so the empty-magazine bail-out does not
+ // apply to them: it would read the knife's mag:0 as "empty" and dry-fire
+ // every swing instead of attacking. Only firearms can be out of ammo.
+ if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
+ cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;if(!isFirearm(weapon))swing=w.fireInterval;A.sound(weapon);flashTime=.045;recoil=1;
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
+
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
  const rayMeshes=[...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)];
  // The viewmodel weapon sits at the camera, so it lands at distance 0 and
@@ -468,8 +568,8 @@ const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0
 function renderLoadoutCards(){
  const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
- // Only one secondary remains in the reduced roster: the Deagle.
- $('secondaryCards').replaceChildren(...['deagle'].map(k=>mk(k,'Semi-auto pistol')));}
+ // Secondaries: the Desert Eagle and the FA-03 bayonet (melee, no ammo).
+ $('secondaryCards').replaceChildren(...['deagle','knife'].map(k=>mk(k,C.WEAPONS[k].slot==='close'?'Blade · melee':'Semi-auto pistol')));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
@@ -496,6 +596,16 @@ function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=m
 window.__bots=bots;Object.defineProperty(window,'__match',{get:()=>match});Object.defineProperty(window,'__arena',{get:()=>arena});
 /* DIAGNOSTIC: expose the view scene graph so tests can verify the viewmodel. */
 window.__viewScene=viewScene;window.__models=models;window.__viewCam=viewCam;window.__worldCam=cam;
+/* DIAGNOSTIC: expose the inspection phase so tests can verify the state machine. */
+Object.defineProperty(window,'__inspPhase',{get:()=>inspPhase});
+/* DIAGNOSTIC: expose the shoot() gate values so tests can see why a shot was
+ * dropped (equip/cool/reload/phase/inspection) instead of guessing. */
+Object.defineProperty(window,'__gates',{get:()=>({running,phase:match.phase,cool,reload,equip,inspecting:inspecting(),scoped,weapon,trigger})});
+/* DIAGNOSTIC: aim the player at a world point. yaw/pitch are module-locals the
+ * test API cannot reach, so expose a setter that writes them directly. Pitch
+ * sign follows the mousemove convention (positive = look up), matching the
+ * game's own aim(): atan2(targetY - y, horizontal), NOT negated. */
+window.__aimAt=(wx,wy,wz)=>{const dx=wx-x,dy=wy-y,dz=wz-z;yaw=Math.atan2(dx,-dz);pitch=Math.max(-1.45,Math.min(1.45,Math.atan2(dy,Math.hypot(dx,dz))));};
 function openCareer(){ // Career reads real stats tracked during matches. A first-time
  // player sees a starter service record so the panel is not all zeros; the
  // grant is one-time (guarded by a localStorage key) and never overwrites
@@ -513,8 +623,8 @@ $('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').on
 document.addEventListener('pointerlockchange',()=>{locked=!!document.pointerLockElement;if(!locked&&running&&!fallback)pause();});document.addEventListener('pointerlockerror',()=>{fallback=true;});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});window.addEventListener('blur',pause);
 document.addEventListener('mousemove',e=>{if(!running||(!locked&&!drag))return;const s=.002*Number($('sensitivity').value)*((scoped||ads)?Number($('adsSensitivity').value):1);yaw-=e.movementX*s;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*s));});
-$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;inspectHold=false;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2'].indexOf(e.code);if(i>=0)select([primary,'deagle'][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){inspectHold=true;ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
+$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){ if(inspecting()){cancelInspect();return;} trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;inspectHold=false;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2'].indexOf(e.code);if(i>=0)select([primary,secondary][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){startInspect();ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
 document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;if(e.code==='KeyF')inspectHold=false;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
 function move(dt){
  const crouch=held.has('ControlLeft')||held.has('ControlRight')||held.has('KeyC');
@@ -556,17 +666,15 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);rc.fillStyle='#b5baa650';for(const s of C.MAP.solids)rc.fillRect(85+(s.x-s.w/2)*2,85+(s.z-s.d/2)*2,s.w*2,s.d*2);rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85+x*2,85+z*2,3,0,Math.PI*2);rc.fill();rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85+x*2,85+z*2);rc.lineTo(85+x*2-Math.sin(yaw)*10,85+z*2-Math.cos(yaw)*10);rc.stroke();rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive){rc.beginPath();rc.arc(85+b.pos.x*2,85+b.pos.z*2,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
- // Inspection blend: ease toward whether F is held. Slow enough to read as a
- // deliberate turn, fast enough not to drag; on release it decays to 0 and the
- // weapon returns to its exact ready pose below.
- insp+=((inspectHold?1:0)-insp)*Math.min(1,dt*6);
- if(weapon!==inspWeapon){inspWeapon=weapon;inspectHold=false;insp=0;}
  if(match.playerDead)inspectHold=false;
+ stepInspect(dt);
  for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
  const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
  // The fit maps the measured bore onto -Z with sights on +Y, so the weapon
  // already faces forward and level. Position and recoil rotate in that same
  // frame: a forward kick is -Z, the hip offset is +X to the player's right.
+ // pose: the subtle per-weapon rightward cant, plus recoil pitch. Inspection
+ // layers on top of this and never touches the camera or the FOV.
  const pose=VIEWMODEL_POSE[weapon]||[0,0,0];
  // ADS does NOT lerp a fixed eye offset: the anchor is the exact point on the
  // weapon the eye must occupy (scope glass centre or the rear-sight post), so
@@ -596,16 +704,18 @@ function animateWeapon(dt){
  // depth that keeps the span inside 85% of the half-height there, with a
  // per-weapon floor so a pistol does not sit on the player's nose.
  const span=Math.max(1e-4,bMaxY-bMinY);
- const HIP_DEPTH={akm:.7,l96:.78,hecate:.84,deagle:.42};
+ // READY placement is authored per weapon as fractions of the frame, so each
+ // gun sits in the lower-right at a depth that keeps the whole thing visible.
+ // needNear is still respected as a floor so a long gun never clips its muzzle
+ // out of the top of the frame at the authored depth.
  const needHh=span/0.85, needNear=needHh/Math.tan(fov/2);
- const dZ=Math.max((HIP_DEPTH[weapon]||.7)*0.82, needNear-bMaxZ)+recoil*.06;
+ const rd=READY[weapon]||READY.akm;
+ const dZ=Math.max(rd.d, needNear-bMaxZ)+recoil*.06;
  const halfH=dZ*Math.tan(fov/2), halfW=halfH*asp;
- // Weapons are held close in to the centre: the right edge sits 15% of the
- // half-width out (was 26%) and the top is 2% of the half-height under the
- // crosshair, so roughly three quarters of the gun fills the lower-centre of
- // the frame instead of hanging at the right border.
- const hx=(halfW*.15-box.max.x)+Math.sin(walk*1.7)*.006*moving;
- const hy=-(halfH*.02)-bMaxY-equip*.5;
+ // Lower-right ready position: fx of the half-width to the right, fy of the
+ // half-height below the crosshair. Sway while moving; the equip dip on draw.
+ const hx=(halfW*rd.fx-box.max.x)+Math.sin(walk*1.7)*.006*moving;
+ const hy=-(halfH*(-rd.fy))-bMaxY-equip*.5;
  const hz=-dZ;
  const adsZ=-.55;
  // The anchor is the point on the weapon the eye must occupy (scope glass or
@@ -632,6 +742,22 @@ function animateWeapon(dt){
  const tx=0-ax, ty=0-ay, tz=adsZ-az;
  m.position.set(hx+(tx-hx)*adsBlend, hy+(ty-hy)*adsBlend, hz+(tz-hz)*adsBlend);
  m.rotation.set(pose[0]+recoil*.09,pose[1],pose[2]);
+ if(inspecting()){ // tilt then slide right, on top of the pose and recoil above
+  const in_=INSPECT[weapon]||INSPECT.akm;
+  const e=inspectBlend(), sw=inspectSlideW();
+  const ix=halfW*in_.fx-box.max.x, iy=-(halfH*(-in_.fy))-bMaxY, iz=-in_.d;
+  m.position.set(hx+(ix-hx)*sw, hy+(iy-hy)*e, hz+(iz-hz)*e);
+  m.rotation.set(pose[0]*(1-e)+in_.rx*e, pose[1]*(1-e)+in_.ry*e, pose[2]*(1-e)+in_.rz*e);
+ }
+ // Melee swing: the knife has no muzzle, so the attack is a swing of the
+ // blade itself. swing is set on fire and decays in tick(); this drives a
+ // single outward arc (pitch down and away, then back) on top of the pose.
+ if(swing>0){
+  const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
+  m.rotation.x-=arc*.9;
+  m.rotation.z+=arc*.35;
+  m.position.y+=arc*.06;
+ }
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
   // seat the fresh mag (.55-1). The old mag is thrown as a world effect once.
@@ -667,16 +793,6 @@ function animateWeapon(dt){
  // group toward the camera centre so the scope glass meets the eye.
  flash.visible=flashTime>0&&!scoped&&budget.effects;
  if(flash.visible&&u.muzzle){m.updateMatrixWorld(true);u.muzzle.getWorldPosition(flash.position);flash.scale.setScalar(.8+rng()*.5);}
- // Weapon inspection (F): a smooth blend on top of the pose above. The weapon
- // slides toward the centre and rotates so the off side faces the camera,
- // without leaving the fitted frame or changing scale. insp eases in and out
- // so the return lands on the exact ready position above.
- if(insp>0.001){
-  const e=insp; // 0..1 eased
-  const cx=hx+(tx-hx)*adsBlend, cy=hy+(ty-hy)*adsBlend, cz=hz+(tz-hz)*adsBlend;
-  m.position.set(cx*(1-e)+0*e, cy*(1-e)+(-halfH*.18)*e, cz*(1-e)+(-.42)*e);
-  m.rotation.set(pose[0]*(1-e)+(-.28)*e, pose[1]*(1-e)+(.62)*e, pose[2]*(1-e)+(.14)*e);
- }
 }
 function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());

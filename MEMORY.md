@@ -492,3 +492,54 @@ modeSelect absent from the DOM.
 
 Tests 79/79 (npm test), maps.cjs 9/9 standalone. sw.js v30 -> v31.
 All temp probes deleted before commit.
+
+## 2026-09-30 — Viewmodel polish + secondary knife — DONE, SW v32
+1. VIEWMODEL POSITIONING: replaced the single HIP_DEPTH constant with a
+   per-weapon READY table authored as fractions of the frame, plus a
+   per-weapon VIEWMODEL_POSE [pitch,yaw,roll] table carrying a subtle rightward
+   cant (roll 0.075-0.30 rad). Weapons sit lower-right of centre, fully
+   visible, never under the crosshair. The camera and FOV are untouched.
+2. INSPECTION: kept the Phase-B motion as the base and layered tilt-then-slide-
+   right on top via an explicit state machine
+   READY -> INSPECTING_IN -> INSPECTING_HOLD -> INSPECTING_OUT -> READY
+   (INSP/inspPhase/inspT in game.js, startInspect/cancelInspect/stepInspect,
+   inspecting(), inspectBlend(), inspectSlideW()). F starts it; right-click and
+   mousedown cancel it; reload and weapon-switch cancel it. Hold lingers while
+   F is held; OUT returns to the EXACT ready transform. No redesign of the
+   original motion, no 360 viewer, no camera move, no FOV change.
+3. FIRING vs INSPECTION: shoot() early-returns while inspecting (no shot, no
+   ammo, no flash, no sound); fire while inspecting cancels the inspection
+   instead, so the player presses fire again once the weapon is back.
+4. DEAGLE ADS REMOVED: C.WEAPONS.deagle.ads is now false. L96 keeps its scope
+   (ads:true, zoomFov 12). The core test was REWRITTEN to the new intent
+   (deagle.ads===false, hip and scoped spread identical) - not weakened.
+5. SECONDARY KNIFE: `low-poly_fa-03_bayonet.glb` (glTF 2.0, long axis +X,
+   2.226 units) reuses the existing fitWeapon pipeline mapped to -Z, and is
+   fitted to 0.30m. Roster is now akm, l96, hecate, deagle, knife; secondaries
+   are deagle + knife. Added a `knife` entry to C.WEAPONS (damage 55, headMult
+   1.6, legMult 0.7, fireInterval 0.55, mag/reserve 0, melee:true, no ADS) and
+   a `knife` audio profile (barrel 'melee', 2400Hz, dur .10) next to the legacy
+   `bayonet` entry so the roster key matches the weapon key.
+   Loadout panel renders a knife secondary card; localStorage secondary guard
+   accepts 'deagle'|'knife'. FIXED: Digit2 was hardcoded to 'deagle' and
+   ignored the chosen secondary - it now selects [primary,secondary][i], so
+   the knife is actually reachable in play.
+6. KNIFE MELEE FIX (two real defects):
+   - isFirearm(k) only excluded slot:'close', so the knife counted as a
+     firearm. shoot() therefore hit the empty-magazine bail-out (mag:0 ->
+     dry-fire click + cool=.25) and never reached the melee path. isFirearm
+     now also excludes melee weapons.
+   - The bot-attach tag pass used only n.isMesh, but the rig body is a
+     SkinnedMesh (which is NOT a Mesh), so it was untagged. Both tag passes
+     now use `n.isMesh || n.isSkinnedMesh`.
+   Verified live on the running page: knife swing 100 -> 45 hp (exactly the
+   55 damage), AKM regression 100 -> 64, zero page errors.
+7. GOTCHA worth remembering: the camera rotation order is YXZ and pitch follows
+   the mousemove convention (positive = look up). A diagnostic aim helper that
+   negated atan2(targetY-y, horizontal) made every close-range shot appear to
+   miss by pointing the ray up and over the bot's head. The game's firing math
+   was correct; the probe was wrong.
+
+Field manual in index.html now reads "1 primary / 2 secondary (Deagle or
+bayonet) / R reload". sw.js v31 -> v32 (poly-strike-v32-knife-viewmodel).
+All temp probes deleted before commit.

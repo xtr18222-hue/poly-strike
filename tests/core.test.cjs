@@ -8,13 +8,14 @@ const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
 test('arsenal contains every weapon with consistent stats', () => {
-  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle.
-  // The Shotgun/SMG/LMG additions were reverted; Mosin, the MX knife and the
-  // Bayonet stay removed.
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','l96']);
+  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle and the FA-03 bayonet.
+  // The Shotgun/SMG/LMG additions were reverted; Mosin and the MX knife stay
+  // removed. The bayonet is the player's melee secondary.
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','knife','l96']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
+    if (w.melee) continue;                 // the bayonet has no magazine/reload
     assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
     assert.ok(w.damage > 0 && w.reloadTime > 0);
     assert.equal(typeof w.auto, 'boolean');
@@ -27,7 +28,7 @@ test('arsenal contains every weapon with consistent stats', () => {
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
     ['akm','hecate','l96'], 'the three core rifles are the primaries');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
-    ['deagle'], 'the Deagle is the sole secondary');
+    ['deagle','knife'], 'the Deagle and the bayonet are the secondaries');
 });
 
 /* ---------- 2. Spray pattern ---------- */
@@ -64,11 +65,14 @@ test('spread model: crouch tightens, movement loosens, AWP unscoped is wild', ()
   // The L96's hipfire base is 4.5x its scoped spread, so an unscoped sniper
   // is genuinely wild rather than merely loose.
   assert.ok(noscope > scoped * 4, 'sniper noscope is wildly inaccurate');
-  // The Deagle keeps a tight base spread and real ADS improvement.
+  // The Deagle keeps a tight base spread. Its ADS was removed entirely, so
+  // right-click no longer changes anything about how it fires: scoped and hip
+  // spread are exactly the same distribution.
   const deagleHip = acc(() => C.pickSpread('deagle', 0, false, false, false, rng));
   const deagleAds = acc(() => C.pickSpread('deagle', 0, false, false, true, rng));
   assert.ok(deagleHip > 0 && deagleAds > 0, 'the sidearm has real spread values');
-  assert.ok(deagleAds <= deagleHip, 'the sidearm ADS never widens spread');
+  assert.ok(!C.WEAPONS.deagle.ads, 'the sidearm has no ADS mechanic');
+  assert.ok(Math.abs(deagleAds - deagleHip) < deagleHip * 0.25, 'the sidearm spread is unchanged by right-click');
 });
 
 /* ---------- 4. Collision ---------- */

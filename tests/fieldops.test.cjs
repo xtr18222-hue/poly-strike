@@ -19,13 +19,17 @@ test('asset suite ships every weapon the game selects', () => {
   // game would spawn a weapon with no mesh.
   const fs = require('fs');
   const roster = Object.keys(C.WEAPONS);
-  assert.equal(roster.length, 4, 'the reverted roster: three rifles and the sidearm');
+  assert.equal(roster.length, 5, 'the roster: three rifles, the sidearm and the knife');
   for (const k of roster) {
     const w = C.WEAPONS[k];
     assert.ok(typeof w.name === 'string' && w.name.length, k + ' has a name');
+    if (w.melee) continue;                 // the bayonet has no magazine
     assert.ok(w.mag > 0 && w.reserve > 0, k + ' has ammo');
     assert.ok(w.damage > 0, k + ' deals damage');
   }
+  // The knife's model file is on disk, or the game would spawn a weapon with
+  // no mesh.
+  assert.ok(fs.existsSync(path.join(ROOT, 'assets/models/low-poly_fa-03_bayonet.glb')), 'the bayonet GLB is shipped');
 });
 
 /* --------------------------------------------------------------- modes -- */

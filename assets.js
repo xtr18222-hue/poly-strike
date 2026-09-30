@@ -47,6 +47,14 @@
       file: 'low-poly_pgm_hecate_ii.glb',
       length: 1.30, rot: [0, 0, 0], flip: 1,
     },
+    // The FA-03 bayonet. The export runs along +X with the blade's tip at the
+    // +X end, so the stock/muzzle sign detection picks the right direction.
+    // Length is a real blade length: the model is 2.226 units raw, so this
+    // scales it down to a knife that reads at FPS viewmodel distance.
+    knife: {
+      file: 'low-poly_fa-03_bayonet.glb',
+      length: 0.30, rot: [0, 0, 0], flip: 1,
+    },
   };
 
   // First-person rigs: arms + weapon + clips already bound. Used for the
@@ -59,10 +67,10 @@
   // Game balance for the new suite. Firearm identity maps to the old slots so
   // the inventory code keeps working: primary / secondary / melee.
 
-  // Strict roster: AKM, L96 A1, PGM Hecate II and the Desert Eagle. The
-  // Mosin and both knives were removed from the loadout, so the loader never
-  // builds them.
-  const ROSTER = ['akm', 'l96', 'hecate', 'deagle'];
+  // Strict roster: AKM, L96 A1, PGM Hecate II, the Desert Eagle and the FA-03
+  // bayonet. The Mosin and the older knives are gone from the loadout, so the
+  // loader never builds them.
+  const ROSTER = ['akm', 'l96', 'hecate', 'deagle', 'knife'];
   // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
   const WEAPON_KEYS = ROSTER.slice();
 
