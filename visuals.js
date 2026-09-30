@@ -1089,64 +1089,10 @@
     return g;
   }
 
-  /* --- Shotgun (M870-style pump): wood + steel, tube magazine, heat shield,
-   *      front bead sight. The pump forearm slides on the reload stroke. --- */
-  function buildBayonet(THREE, get) {
-    const g = new THREE.Group();
-    const mBlade = get(THREE, 'blade', { color: 0xb9c0c6, metalness: 0.85, roughness: 0.22 });
-    const mEdge  = get(THREE, 'bladeEdge', { color: 0x8d949b, metalness: 0.9, roughness: 0.2 });
-    const mHilt  = get(THREE, 'hilt', { color: 0x2b3138, metalness: 0.4, roughness: 0.55 });
-    const mGuard = get(THREE, 'guard', { color: 0x4a5054, metalness: 0.7, roughness: 0.35 });
-
-    // Spear-point blade: two tapered slabs forming the point, edge down.
-    const blade = new THREE.Group();
-    blade.name = 'blade';
-    blade.position.set(0, 0.004, -0.11);
-    const slab = box(THREE, mBlade, 0.006, 0.034, 0.22, 0, 0, 0);
-    slab.name = 'blade-slab';
-    blade.add(slab);
-    // Edge: a thin darker wedge underneath the slab.
-    blade.add(box(THREE, mEdge, 0.004, 0.012, 0.22, 0, -0.021, 0));
-    // Fuller groove suggested by a thin dark inset on each flat.
-    for (const side of [-1, 1])
-      blade.add(box(THREE, mEdge, 0.002, 0.008, 0.16, side * 0.0035, 0, 0.01));
-    g.add(blade);
-
-    // Crossguard: wider than the blade, stops a blade sliding back
-    g.add(box(THREE, mGuard, 0.03, 0.022, 0.012, 0, 0.004, 0.005));
-    // Hilt: two contoured grip panels over a full tang
-    for (const side of [-1, 1]) {
-      const panel = box(THREE, mHilt, 0.006, 0.028, 0.11, side * 0.008, 0.004, 0.06);
-      panel.rotation.x = 0.06;
-      g.add(panel);
-    }
-    // Pommel
-    g.add(cyl(THREE, mGuard, 0.011, 0.011, 0.018, 8, 0, 0.004, 0.125));
-    // Muzzle ring on the pommel end (the bayonet mounts over a rifle muzzle)
-    g.add(cyl(THREE, mGuard, 0.009, 0.007, 0.012, 10, 0, 0.004, 0.14));
-
-    // hands
-    const gloveR = buildGlove(THREE, get);
-    gloveR.position.set(0.01, -0.012, 0.075);
-    gloveR.rotation.x = 0.6;
-    g.add(gloveR);
-    const gloveL = buildGlove(THREE, get);
-    gloveL.position.set(-0.01, -0.008, 0.035);
-    gloveL.rotation.x = 0.6;
-    g.add(gloveL);
-
-    const muzzle = new THREE.Object3D();
-    muzzle.position.set(0, 0.004, -0.23);
-    g.add(muzzle);
-
-    g.userData = { kind: 'bayonet', mag: null, bolt: null, muzzle: muzzle, muzzleTip: muzzle.position.clone() };
-    return g;
-  }
-
-  // The procedural Butterfly knife is gone: only the MX Knife and Bayonet
-  // asset models ship now, and every weapon resolves through PolyAsset.
-  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle,
-    bayonet: buildBayonet };
+  /* --- Legacy procedural fallback builders. Only the MX Knife asset models
+   *      ship now, and every weapon resolves through PolyAsset; these remain
+   *      as the fallback for any key PolyAsset cannot serve. --- */
+  const WEAPON_BUILDERS = { ak47: buildAK47, awp: buildAWP, kar98: buildKar98, deagle: buildDeagle };
 
   // View model: fires down -Z, origin at the grip so the parent can place it
   // at (0.32, -0.3, -0.65) with a fixed 65 FOV camera.
@@ -1186,6 +1132,6 @@
     CHAR_SKINS: CHAR_SKINS,
     buildCasing: buildCasing,
     buildMagazine: buildMagazine,
-    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle', 'bayonet'],
+    WEAPON_KEYS: ['ak47', 'awp', 'kar98', 'deagle'],
   };
 });

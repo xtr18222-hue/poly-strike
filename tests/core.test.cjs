@@ -8,14 +8,13 @@ const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
 test('arsenal contains every weapon with consistent stats', () => {
-  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle, and the Bayonet.
-  // The Shotgun/SMG/LMG additions were reverted; Mosin and the MX knife stay
-  // removed.
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','bayonet','deagle','hecate','l96']);
+  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle.
+  // The Shotgun/SMG/LMG additions were reverted; Mosin, the MX knife and the
+  // Bayonet stay removed.
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','l96']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
-    if (k === 'bayonet') continue;   // the bayonet has no magazine
     assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
     assert.ok(w.damage > 0 && w.reloadTime > 0);
     assert.equal(typeof w.auto, 'boolean');
@@ -28,7 +27,7 @@ test('arsenal contains every weapon with consistent stats', () => {
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
     ['akm','hecate','l96'], 'the three core rifles are the primaries');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
-    ['bayonet','deagle'], 'the Deagle and the Bayonet share the secondary slot');
+    ['deagle'], 'the Deagle is the sole secondary');
 });
 
 /* ---------- 2. Spray pattern ---------- */
@@ -65,8 +64,11 @@ test('spread model: crouch tightens, movement loosens, AWP unscoped is wild', ()
   // The L96's hipfire base is 4.5x its scoped spread, so an unscoped sniper
   // is genuinely wild rather than merely loose.
   assert.ok(noscope > scoped * 4, 'sniper noscope is wildly inaccurate');
-  const knife = acc(() => C.pickSpread('bayonet', 1, false, true, false, rng));
-  assert.equal(knife, 0, 'knife has no spread');
+  // The Deagle keeps a tight base spread and real ADS improvement.
+  const deagleHip = acc(() => C.pickSpread('deagle', 0, false, false, false, rng));
+  const deagleAds = acc(() => C.pickSpread('deagle', 0, false, false, true, rng));
+  assert.ok(deagleHip > 0 && deagleAds > 0, 'the sidearm has real spread values');
+  assert.ok(deagleAds <= deagleHip, 'the sidearm ADS never widens spread');
 });
 
 /* ---------- 4. Collision ---------- */

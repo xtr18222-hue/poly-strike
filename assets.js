@@ -707,10 +707,9 @@
   /* ------------------------------------------------------------ loading --- */
   async function loadWeapon(key, base) {
     const def = WEAPON_ASSETS[key];
-    // The three new firearms (Shotgun / SMG / LMG) and the Bayonet have no
-    // authored GLB: they are the procedural low-poly builders in PolyVisual,
-    // in the same style as the rest of the suite. Fall through to them so the
-    // asset layer still owns one fitted weapon per roster key.
+    // Weapons without an authored GLB (if any) fall through to the procedural
+    // low-poly builders in PolyVisual, in the same style as the rest of the
+    // suite, so the asset layer still owns one fitted weapon per roster key.
     if (!def) {
       const proc = proceduralWeapon(key);
       if (proc) { proc.name = 'weapon:' + key; return proc; }
@@ -731,7 +730,9 @@
     let g;
     try { g = V.buildWeapon(THREE, key); } catch (e) { return null; }
     if (!g) return null;
-    const len = { bayonet: 0.34 }[key];
+    // The procedural builders report their own real-world length, so the fit
+    // stays grounded in metres rather than a per-key table.
+    const len = g.userData && g.userData.length;
     if (typeof len !== 'number') return null;
     const root = fitWeapon(g, { length: len, rot: [0, 0, 0], flip: 1 }, key);
     return root;
@@ -836,6 +837,24 @@
   // 1.7m operator, so the standing height is normalised to the player's own
   // height and the hitboxes scale with the model rather than being hand-placed.
   const TARGET_H = 1.7;  // bots match the human operator's height
+  // Rebind a SkeletonUtils clone to the CURRENT world state so the skinning
+  // matches the clone's own scale. The clone's skeleton keeps the source's
+  // boneInverses (SkeletonUtils.clone passes them straight through), and the
+  // exported node scale is baked into the mesh's LOCAL matrix (Cube011 sits at
+  // scale 100 with the rig's 0.01 cancelling it). Both are still in the
+  // SOURCE's bind units; the rebind makes each inverse the inverse of the
+  // clone bone's own world matrix at bind time. Without it the offset matrix
+  // is off by exactly the inverse of the rig scale, and the idle clip drives
+  // every deformed vertex ~113x out — the bot explodes to fill the whole view.
+  function rebindSkin(root) {
+    root.updateMatrixWorld(true);
+    root.traverse(n => {
+      if (!n.isSkinnedMesh || !n.skeleton) return;
+      n.skeleton.calculateInverses();
+      n.bind(n.skeleton);
+    });
+    root.updateMatrixWorld(true);
+  }
   function soldierRig() {
     if (!soldierRigGLB) return null;
     const rig = cloneGLB(soldierRigGLB, true);
@@ -846,8 +865,7 @@
     // applied. Baking them before leaves them at Mixamo's centimetre scale
     // while the bones end up in metres; the mismatch cancels the skinning
     // and the whole figure collapses into a small block.
-    rig.traverse(n => { if (n.isSkinnedMesh && n.skeleton) n.skeleton.calculateInverses(); });
-    rig.updateMatrixWorld(true);
+    rebindSkin(rig);
     // Normalise the standing height to the player's. The Soldier ships at
     // 1.92m in metres, which reads as a giant next to the 1.7m operator.
     // skinnedBox is measured AFTER the inverse recompute above so the bound is
@@ -855,7 +873,10 @@
     const box0 = skinnedBox(rig);
     const h0 = box0.getSize(new (needThree()).Vector3()).y;
     if (h0 > 0 && isFinite(h0)) rig.scale.setScalar(rig.scale.x * (TARGET_H / h0));
-    rig.updateMatrixWorld(true);
+    // A second rebind after the final scale, or the same 1/scale mismatch
+    // returns for the difference between the 0.01 metre step and the 1.7m
+    // normalisation (which is what blew bots up at runtime).
+    rebindSkin(rig);
     const box = skinnedBox(rig);
     if (!box.isEmpty() && isFinite(box.min.y)) {
       rig.position.y -= box.min.y;

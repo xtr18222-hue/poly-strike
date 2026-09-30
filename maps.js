@@ -155,46 +155,6 @@
   };
 
   // ==========================================================
-  // Dedicated shooting range: interactive pop-up targets.
-  // The existing Training Range above is untouched; this is a
-  // separate arena built specifically for testing weapons.
-  // ==========================================================
-  const targetrange = {
-    id: 'targetrange', name: 'Target Range', theme: 'training',
-    size: 76, bounds: { hx: 38, hz: 38 }, nav: [],
-    spawnPlayer: { x: 0, z: 34 },
-    spawnOpponent: { x: 0, z: -34 },
-    // A target range is for zeroing weapons, not for a firefight: the
-    // targets are static and never shoot back.
-    training: true,
-    targets: true,
-    spawnBots: [
-      // Five pop-up target lanes at staggered depth.
-      { x: -24, z: -22 }, { x: -12, z: -14 }, { x: 0, z: -26 },
-      { x: 12, z: -14 }, { x: 24, z: -22 },
-      // Two close reactive targets for shotgun/SMG work.
-      { x: -8, z: 10 }, { x: 8, z: 10 },
-    ],
-    solids: [
-      // The shooter's bench: a low barricade to brace over.
-      { x: 0, z: 28, w: 24, d: 2, h: 1, kind: 'wall' },
-      // Flanking cover so the walk forward is not a dead run.
-      { x: -14, z: 20, w: 4, d: 4, h: 2, kind: 'crate' },
-      { x: 14, z: 20, w: 4, d: 4, h: 2, kind: 'crate' },
-      // Mid-lane baffles break up the crossfire between the lanes.
-      { x: -18, z: 2, w: 6, d: 1, h: 1.2, kind: 'wall' },
-      { x: 18, z: 2, w: 6, d: 1, h: 1.2, kind: 'wall' },
-      { x: 0, z: 4, w: 1, d: 14, h: 1.2, kind: 'wall' },
-      // Backstop wall behind the target line, with a gap so bots can cycle.
-      { x: -20, z: -30, w: 12, d: 1, h: 4, kind: 'wall' },
-      { x: 20, z: -30, w: 12, d: 1, h: 4, kind: 'wall' },
-      // Target-line side walls frame the range lanes.
-      { x: -34, z: -8, w: 1, d: 20, h: 3, kind: 'wall' },
-      { x: 34, z: -8, w: 1, d: 20, h: 3, kind: 'wall' },
-    ],
-  };
-
-  // ==========================================================
   // Shipment: a tight container maze on a dock. The classic
   // small-grid map: stacked containers as full-height cover and
   // shallow crates for the lanes between them.
@@ -303,5 +263,5 @@
   // Standard arenas only. The code-gated test maps (116791) and their authored
   // GLB geometry were removed: the rotation is the four core battlegrounds plus
   // the training range.
-  return { desert, industrial, urban, harbor, training, targetrange, shipment, dust2 };
+  return { desert, industrial, urban, harbor, training, shipment, dust2 };
 });

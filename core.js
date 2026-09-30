@@ -43,10 +43,6 @@
     l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:true, price:700, killAward:300, falloff:0.006, recoil:0.85 },
-    // The close-quarters blade: no magazine, no reserve, never needs a reload.
-    // It lives in the secondary slot alongside the Deagle rather than its own
-    // cycle, so the loadout stays two slots: primary + secondary.
-    bayonet: { key:'bayonet', name:'Bayonet', slot:'secondary', auto:false, mag:0, reserve:0, damage:75, headMult:2.0, legMult:0.8, fireInterval:0.5, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:0, falloff:0, recoil:0 },
   };
   const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'armor'];
 

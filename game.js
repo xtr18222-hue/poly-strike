@@ -11,12 +11,9 @@ let budget=PolySettings.PRESETS[preset];
 // with the model; the head is the top ~18% of the figure.
 const BOT_H = 1.7;
 const primaries=['akm','l96','hecate'];
-// The Bayonet shares the secondary slot with the Deagle instead of owning a
-// separate blade cycle, so the loadout stays two slots.
-const blades=['bayonet'];
 let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
-try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle','bayonet'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
+try{const savedSecondary=localStorage.getItem('poly-secondary');if(savedSecondary==='deagle')secondary=savedSecondary;}catch(_){}
 const secondaryOf=()=>secondary;
 // Crosshair customization, persisted locally.
 const crosshair={color:'#d9f577',gap:6,length:7,thickness:2,dot:true};
@@ -43,7 +40,7 @@ const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close';};
 // Weapon skins: one chosen skin index per weapon, persisted locally.
 // Declared with the full key list (keys is only assigned further down).
 // Weapon keys span the strict roster: the three primary rifles and the pistol.
-const keys=['akm','l96','hecate','deagle','bayonet'];
+const keys=['akm','l96','hecate','deagle'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
 // The Mosin is an iron-sight bolt rifle: right-click aims, it does not mount a scope.
@@ -203,7 +200,7 @@ const bindModels=()=>{
 // the fit. fitWeapon now maps the measured bore onto -Z with sights on +Y, so
 // the weapon already points forward and level: pose is identity, and each
 // entry only carries a small sight-line pitch so the bore meets the camera.
-const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],hecate:[0,0,0],bayonet:[0.35,0.1,0]};
+const VIEWMODEL_POSE={akm:[0,0,0],deagle:[0,0,0],l96:[0,0,0],hecate:[0,0,0]};
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
@@ -254,7 +251,7 @@ const online=PolyOnline.create(C,{
 function finishMatch(won){if(finished)return;finished=true;running=false;clearInput();recordCareer(won);$('pauseTitle').textContent=won?'VICTORY':'DEFEAT';$('pauseText').textContent=`Final score ${match.score.player} : ${match.score.enemy}. ${match.kills} eliminations. Accuracy: ${accuracy()}%. MVP: ${mvp()}.`;$('rematchControls').hidden=false;$('nextMap').value=nextMapId();$('nextMap').disabled=onlineMode&&!online.hostRole;$('rematch').disabled=false;$('rematch').textContent=onlineMode?'REQUEST / ACCEPT REMATCH':'PLAY NEXT MATCH';$('rematchStatus').textContent=onlineMode?'Both players must consent. Host selects next map.':'';$('resume').hidden=true;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function accuracy(){const p=onlineMode?online.state?.players[online.localId]:match;return p?.shotsFired?Math.min(100,Math.round(100*(p.shotsHit||0)/p.shotsFired)):0;}
 function mvp(){const rows=onlineMode&&online.state?online.state.players.map((p,i)=>({name:p.name||'Opponent',score:p.kills*100+online.state.score[i]*250})):[{name:username,score:match.kills*100+match.score.player*250},...match.bots.map(b=>({name:b.name,score:(b.kills||0)*100}))];return rows.sort((a,b)=>b.score-a.score)[0].name;}
-function nextMapId(){const maps=['desert','industrial','urban','harbor','training','targetrange','shipment','dust2'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
+function nextMapId(){const maps=['desert','industrial','urban','harbor','training','shipment','dust2'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
 $('rematch').onclick=()=>{if(onlineMode){if(online.requestRematch($('nextMap').value)&&match.phase==='matchover'){$('rematchStatus').textContent='Consent sent — waiting for opponent';$('rematch').disabled=true;}}else{$('mapSelect').value=$('nextMap').value;deploy();}};
 function refill(){for(const k of keys)if(isFirearm(k))ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WEAPONS[k].reserve};else ammo[k]={mag:0,reserve:0};reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
 function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='deagle';ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
@@ -321,7 +318,7 @@ function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
  const cadence=4+spd*3;const phase=elapsed*cadence+i*1.7;
  pivots.forEach((p,j)=>{const swing=Math.sin(phase+j*Math.PI)*.3*stride;const lift=Math.max(0,Math.cos(phase+j*Math.PI))*.05*stride;p.rotation.x=swing;p.position.y=(p.userData.baseY||0)-lift;});});}
 function shoot(){const w=C.WEAPONS[weapon];if(!running||match.phase!=='live'||cool>0||reload>0||equip>0)return;if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
- cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}if(weapon==='bayonet')swing=w.fireInterval;match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;A.sound(weapon);flashTime=!isFirearm(weapon)?0:.045;recoil=!isFirearm(weapon)?.8:1;
+ cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;A.sound(weapon);flashTime=.045;recoil=1;
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
  const rayMeshes=[...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)];
@@ -378,7 +375,7 @@ function rebuildBots(){
  }
 }
 function loadMap(id){
- mapId=['desert','industrial','urban','harbor','training','targetrange','shipment','dust2'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
+ mapId=['desert','industrial','urban','harbor','training','shipment','dust2'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
  // disposeWorld() pulled the bot groups out of the scene along with the arena
@@ -467,7 +464,7 @@ function renderLoadoutCards(){
  const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
  // Only one secondary remains in the reduced roster: the Deagle.
- $('secondaryCards').replaceChildren(...['deagle','bayonet'].map(k=>mk(k, C.WEAPONS[k].slot==='secondary'&&k==='bayonet'?'Blade · close quarters':'Semi-auto pistol')));}
+ $('secondaryCards').replaceChildren(...['deagle'].map(k=>mk(k,'Semi-auto pistol')));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
@@ -588,7 +585,7 @@ function animateWeapon(dt){
  // depth that keeps the span inside 85% of the half-height there, with a
  // per-weapon floor so a pistol does not sit on the player's nose.
  const span=Math.max(1e-4,bMaxY-bMinY);
- const HIP_DEPTH={akm:.7,l96:.78,hecate:.84,deagle:.42,bayonet:.34};
+ const HIP_DEPTH={akm:.7,l96:.78,hecate:.84,deagle:.42};
  const needHh=span/0.85, needNear=needHh/Math.tan(fov/2);
  const dZ=Math.max((HIP_DEPTH[weapon]||.7)*0.82, needNear-bMaxZ)+recoil*.06;
  const halfH=dZ*Math.tan(fov/2), halfW=halfH*asp;
@@ -635,14 +632,6 @@ function animateWeapon(dt){
   m.rotation.z=-Math.sin(progress*Math.PI)*.55;m.rotation.x=-Math.sin(progress*Math.PI)*.2;
   if(u.mag){u.mag.position.copy(u.mag.userData.basePos);u.mag.position.y-=mOut*.3;}}
  else if(u.mag)u.mag.position.copy(u.mag.userData.basePos);
- // Bayonet swing: the blade arcs down and across on the swipe, then returns
- // to guard. Only the blade group moves; the hilt stays anchored.
- if(u.blade&&swing>0){
-  const t=1-swing/(C.WEAPONS[weapon].fireInterval||.5);
-  const a=Math.sin(Math.PI*Math.min(1,t*1.2));   // fast cut, eased return
-  u.blade.rotation.set(u.blade.userData.baseRot.x-a*.9,u.blade.userData.baseRot.y,u.blade.userData.baseRot.z+a*.25);
-  u.blade.position.set(u.blade.userData.basePos.x,u.blade.userData.basePos.y,u.blade.userData.basePos.z+a*.06);
- }
  if(u.bolt){
   // Bolt stroke: pull straight back along the bore, then let it run forward
   // home under spring pressure. The bore is -Z in the fitted frame, so the
