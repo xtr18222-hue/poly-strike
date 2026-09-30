@@ -441,3 +441,54 @@ Tests 88/88. sw.js bumped to poly-strike-v29-revert. Probes deleted.
 Live-verified: inventory [akm,deagle], bayonet selectable into the secondary
 slot, all 5 weapons frame on screen, all 8 maps deploy (targetrange 7 bots),
 modeSelect absent from the DOM.
+
+## 2026-09-30 — Bot scale, animation, wall-shots, weapon inspection — DONE, pushed b9c31b1, SW v31
+1. BOT SCALE: bots were 1.61-1.62m with the head top at 1.629m, i.e. the whole
+   head sat BELOW the player's 1.7m eye. Root cause: TARGET_H normalised the
+   rig's TOTAL height to 1.7m, and this rig has NO eye bones (only
+   mixamorigHead/mixamorigHeadTop_End), so eye level is below the head top.
+   Fix: TARGET_H 1.7 -> 1.9 in assets.js soldierRig(). Bot total is now
+   1.80-1.81m on all 7 maps, feet at y=0, head/eye level with the operator's
+   1.7m eye. game.js BOT_H stays 1.7 (it is the EYE height used for hitbox
+   tagging, tracer origin and aim pitch, not the total height). rebindSkin
+   untouched, as required.
+2. WALK FORWARD->BACKWARD LOOP: root cause was the Mixamo locomotion clips
+   themselves. walk/run/sprint/walkBack/runBack/crouchWalk bake translation
+   into the mixamorigHips POSITION track (~2.06m per walk cycle, ~3.9m sprint),
+   so the mixer fought the nav graph and every LoopRepeat wrap snapped the rig
+   backward. Fix: makeClipInPlace() in assets.js zeroes Hips.position X/Z at
+   clip load (keeping the Y bob). Verified live: Hips local X and Z range
+   exactly 0.0000 on desert/urban/shipment, zero >1m backward teleports,
+   mixer time advancing, idle/walk transitions intact. NOT smoothing: the
+   baked root motion is gone, nav is the sole driver.
+3. WALL SHOTS: LOS is a 2D zero-thickness slab computed once per frame from
+   PRE-MOVE positions and never re-verified at damage time, so a corner-grazing
+   or stale ray could deliver damage through cover. Fix: core.js enemyShot()
+   now re-verifies segmentClear(playerPos, bot.pos) before applying damage
+   (returns {dmg:0,blocked:true} otherwise) and step() records the
+   authoritative playerPos each tick. Verified: crafted stale-los probe had
+   2/3 shots blocked; the one that landed was a genuine flank around the wall
+   corner. 20000-sample run: 0 inside-solid violations, 0 shots with los=false.
+   NOTE: the subagent also flagged that solids carry an unused `h` (height)
+   field, so low cover never blocks a shot. That is a real follow-up but a
+   larger change; the re-verify closes the reported bug.
+4. BOT AKM GRIP: NOT A BUG. armBot is numerically correct - the fitted AKM is
+   0.884m long, barrel forward, held in the right hand with the left hand
+   0.267m forward on the foregrip. The "clamped to the palm" reading was a
+   probe artifact (cloneGLB rebuilds userData.muzzle from a world box into
+   local space). The perceived bad grip was the bot being too small; fixed by
+   item 1. armBot unchanged.
+5. WEAPON INSPECTION (F): new, minimal, reuses the existing viewmodel. F sets
+   inspectHold; animateWeapon eases insp 0..1 (dt*6) and blends the viewmodel
+   toward centre with a small turn; release eases back to the EXACT ready pose.
+   Verified live on all 4 weapons: before/after transforms match to 4dp, the
+   weapon stays visible, never scales, and ADS/scope cancel it cleanly. The
+   old standalone inspection.js framework stays deleted (test updated to guard
+   that while asserting the new keybind).
+   NOTE: index.html still has a dead `<button id="loadoutInspect" hidden>`
+   labelled "INSPECT WEAPON (F)" in the loadout panel - no handler, never
+   unhidden. Safe to remove next cleanup.
+6. Field manual in index.html now lists "F inspect weapon".
+
+Tests 79/79 (npm test), maps.cjs 9/9 standalone. sw.js v30 -> v31.
+All temp probes deleted before commit.
