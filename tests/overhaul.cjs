@@ -206,8 +206,13 @@ test('every weapon has a firing voice', () => {
       `weapon ${k} has a firing profile`);
 });
 
-// ---------- inspection: gone entirely ----------
-test('the inspection system is fully removed', () => {
+// ---------- inspection: the old framework is gone, replaced by a minimal F key ----------
+// The old standalone inspection.js framework (with inspectRest/inspectFade/
+// variants and its own PolyInspection object) was deleted as bloat. A new,
+// minimal in-place inspection is now part of the viewmodel: the F key eases the
+// held weapon toward the centre and returns it to the exact ready pose. The
+// test guards that the heavy framework stays gone while the small keybind exists.
+test('the old inspection framework is fully removed', () => {
   assert.ok(!fs.existsSync(path.join(ROOT, 'inspection.js')), 'inspection.js deleted');
   assert.ok(!fs.existsSync(path.join(__dirname, 'inspection.cjs')), 'inspection.cjs deleted');
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -217,8 +222,10 @@ test('the inspection system is fully removed', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
   for (const sym of ['inspectRest', 'inspectFade', 'inspectVariant', 'cancelInspect', 'PolyInspection'])
     assert.ok(!game.includes(sym), `${sym} removed from game.js`);
-  // The F keybind that drove it must be gone too.
-  assert.ok(!/KeyF'/.test(game), 'F inspect keybind removed');
+  // The new minimal inspection keybind is present and drives the eased blend.
+  assert.ok(/KeyF'\)\{inspectHold=true/.test(game), 'F inspect keybind present');
+  assert.ok(/inspectHold=false/.test(game), 'F release ends inspection');
+  assert.ok(/insp\+=\(\(inspectHold\?1:0\)-insp\)/.test(game), 'inspection blend eases in animateWeapon');
 });
 
 // ---------- top-down camera (removed) ----------

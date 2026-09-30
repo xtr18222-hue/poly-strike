@@ -778,6 +778,7 @@
     for (const [key, file] of Object.entries(CLIP_FILES)) {
       try {
         const clip = await loadFBX(base + 'assets/models/' + file);
+        makeClipInPlace(clip, key);
         clips.set(key, clip);
         report.push('clip:' + key + ' ok ' + (clip.animations ? clip.animations.length : 0) + ' clips');
       } catch (e) { console.error('[assets] clip failed', key, e.message); report.push('clip:' + key + ' FAIL ' + e.message); }
@@ -830,13 +831,14 @@
 
   // A skinned Soldier rig the Pro Rifle Pack clips can drive. Mixamo exports
   // in centimetres; 0.01 puts the figure into metres, and TARGET_H then
-  // normalises the standing height to the player's own 1.7m so bots match the
-  // human operator instead of towering over them. The clip FBXs are
+  // normalises the standing height so the bot's head comes up to the
+  // operator's eye instead of sitting well below it. The clip FBXs are
   // animation-only, so this is the body every bot actually wears.
-  // The Soldier ships at 1.92m in metres, which reads as a giant next to the
-  // 1.7m operator, so the standing height is normalised to the player's own
-  // height and the hitboxes scale with the model rather than being hand-placed.
-  const TARGET_H = 1.7;  // bots match the human operator's height
+  // The Soldier ships at 1.92m in metres. The operator's eye is at 1.7m and
+  // this rig has no eye bones, so normalising the standing height to 1.9m puts
+  // the bot's head/eye level with the operator's while staying human-proportioned
+  // (a tall figure, not a giant); hitboxes scale with the model.
+  const TARGET_H = 1.9;  // bot eye/head comes up to the operator's eye (1.7m)
   // Rebind a SkeletonUtils clone to the CURRENT world state so the skinning
   // matches the clone's own scale. The clone's skeleton keeps the source's
   // boneInverses (SkeletonUtils.clone passes them straight through), and the
@@ -947,6 +949,32 @@
     const c = clips.get(key);
     if (!c || !c.animations || !c.animations.length) return null;
     return c.animations[0];
+  }
+
+  // Gameplay (core.js nav chase) is the ONE authoritative source of bot world
+  // movement, but the Mixamo locomotion clips also bake translation into the
+  // Hips root bone: walk carries ~2.06m of forward travel per cycle, sprint
+  // ~3.9m, and the walkBack/runBack clips carry the same backwards. The mixer
+  // applies that on top of the nav step every frame, and on each loop wrap the
+  // Hips key snaps from the cycle's last position back to the first — the
+  // visible symptom is the bot walking forward, jumping/teleporting backward,
+  // and repeating (FORWARD -> BACKWARD -> FORWARD).
+  // Zeroing the Hips POSITION track's X/Z (keeping Y, which is only a small
+  // vertical bob) leaves the pose untouched while removing the root motion, so
+  // the nav graph stays the sole driver of position. Death/crouch/idle clips
+  // have no meaningful root travel but are harmless to pass through here.
+  function makeClipInPlace(gltf, key) {
+    if (!gltf || !gltf.animations) return;
+    for (const clip of gltf.animations) {
+      if (!clip.tracks) continue;
+      for (const track of clip.tracks) {
+        if (!/^(mixamorig)?Hips\.position$/.test(track.name)) continue;
+        const v = track.values, n = v.length;
+        // Hips.position's times array matches values 3:1; zeroing X and Z in
+        // place keeps the vertical component and the keyframe count intact.
+        for (let i = 0; i < n; i += 3) { v[i] = 0; v[i + 2] = 0; }
+      }
+    }
   }
 
   // Cached authored arena GLB, or null if it has not loaded (yet / ever).

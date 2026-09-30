@@ -403,6 +403,16 @@
 
     m.enemyShot = function (dmg, botId = null) {
       if(this.hp<=0)return {dmg:0};
+      // Gameplay gates bot fire on line-of-sight computed BEFORE the bot moved
+      // this tick, and the 2D slab test can read a corner-grazing ray as clear.
+      // Re-verify against the shooter's CURRENT position before any damage is
+      // applied: enemyShot is also a public API entry (game.js test fixture),
+      // so it must not be trust-based. A shot with no clear path to the player
+      // is discarded — the bullet stopped at the wall.
+      if (botId !== null && this.bots[botId] && this.playerPos) {
+        const b = this.bots[botId];
+        if (!segmentClear(this.playerPos, b.pos, MAP.solids)) return { dmg: 0, blocked: true };
+      }
       this.lastAttacker=botId;
       let hpLost;
       if (this.armor > 0) {
@@ -435,6 +445,10 @@
         }
         const px = sense && sense.px !== undefined ? sense.px : null;
         const pz = sense && sense.pz !== undefined ? sense.pz : null;
+        // Remember the authoritative player position so enemyShot() can
+        // re-verify line-of-sight at damage time instead of trusting the
+        // firing gate that ran before the bots moved this tick.
+        if (px !== null && pz !== null) this.playerPos = { x: px, z: pz };
         const playerNode = Number.isFinite(px) && Number.isFinite(pz) ? nearestNav({ x: px, z: pz }) : -1;
         // Distance field is match-local; static graph is shared per arena.
         if (playerNode >= 0 && playerNode !== cachedPlayerNode) {

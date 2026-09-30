@@ -6,10 +6,11 @@ let C=window.POLY_CORE, mapId='desert', preset='medium';
 // the core arenas and nothing else.
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
-// Bots are human-scale: assets.js normalises the Soldier rig to the operator's
-// own 1.7m (TARGET_H). The hitboxes are the rig's own meshes, so they scale
-// with the model; the head is the top ~18% of the figure.
-const BOT_H = 1.7;
+// Bots stand eye-level with the operator: assets.js normalises the Soldier rig
+// to TARGET_H 1.9m, which puts the bot's head/eye at the operator's 1.7m eye.
+// The hitboxes are the rig's own meshes, so they scale with the model; the head
+// is the top ~18% of the figure.
+const BOT_H = 1.7;  // bot eye height, kept level with the operator's eye
 const primaries=['akm','l96','hecate'];
 let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
@@ -206,6 +207,10 @@ const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=n
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
 let gameMode='skirmish',oldPlayerDead=false;
 let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
+// Weapon inspection (F): insp is the eased 0..1 blend the viewmodel reads.
+// inspectHold is true while F is held; the blend eases toward it so the
+// transition in and out is smooth and the return lands on the ready pose.
+let inspectHold=false,insp=0,inspWeapon='akm';
 let weapon='akm',previous='deagle',ammo={},reload=0,reloadKey=null,cool=0,equip=.3,scoped=false,trigger=false,burst=0,recoil=0,hit=0,hurt=0,flashTime=0;
 let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=performance.now(),fps=60,hudClock=0,stepClock=0;
 const spray=C.buildSprayPattern(4815,30),effects=[];let feed=[];
@@ -508,9 +513,9 @@ $('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').on
 document.addEventListener('pointerlockchange',()=>{locked=!!document.pointerLockElement;if(!locked&&running&&!fallback)pause();});document.addEventListener('pointerlockerror',()=>{fallback=true;});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});window.addEventListener('blur',pause);
 document.addEventListener('mousemove',e=>{if(!running||(!locked&&!drag))return;const s=.002*Number($('sensitivity').value)*((scoped||ads)?Number($('adsSensitivity').value):1);yaw-=e.movementX*s;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*s));});
-$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2'].indexOf(e.code);if(i>=0)select([primary,'deagle'][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
-document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
+$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;inspectHold=false;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2'].indexOf(e.code);if(i>=0)select([primary,'deagle'][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){inspectHold=true;ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
+document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;if(e.code==='KeyF')inspectHold=false;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
 function move(dt){
  const crouch=held.has('ControlLeft')||held.has('ControlRight')||held.has('KeyC');
  const sprint=held.has('ShiftLeft')&&!ads&&!scoped;
@@ -551,6 +556,12 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);rc.fillStyle='#b5baa650';for(const s of C.MAP.solids)rc.fillRect(85+(s.x-s.w/2)*2,85+(s.z-s.d/2)*2,s.w*2,s.d*2);rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85+x*2,85+z*2,3,0,Math.PI*2);rc.fill();rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85+x*2,85+z*2);rc.lineTo(85+x*2-Math.sin(yaw)*10,85+z*2-Math.cos(yaw)*10);rc.stroke();rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive){rc.beginPath();rc.arc(85+b.pos.x*2,85+b.pos.z*2,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
+ // Inspection blend: ease toward whether F is held. Slow enough to read as a
+ // deliberate turn, fast enough not to drag; on release it decays to 0 and the
+ // weapon returns to its exact ready pose below.
+ insp+=((inspectHold?1:0)-insp)*Math.min(1,dt*6);
+ if(weapon!==inspWeapon){inspWeapon=weapon;inspectHold=false;insp=0;}
+ if(match.playerDead)inspectHold=false;
  for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
  const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
  // The fit maps the measured bore onto -Z with sights on +Y, so the weapon
@@ -656,12 +667,22 @@ function animateWeapon(dt){
  // group toward the camera centre so the scope glass meets the eye.
  flash.visible=flashTime>0&&!scoped&&budget.effects;
  if(flash.visible&&u.muzzle){m.updateMatrixWorld(true);u.muzzle.getWorldPosition(flash.position);flash.scale.setScalar(.8+rng()*.5);}
+ // Weapon inspection (F): a smooth blend on top of the pose above. The weapon
+ // slides toward the centre and rotates so the off side faces the camera,
+ // without leaving the fitted frame or changing scale. insp eases in and out
+ // so the return lands on the exact ready position above.
+ if(insp>0.001){
+  const e=insp; // 0..1 eased
+  const cx=hx+(tx-hx)*adsBlend, cy=hy+(ty-hy)*adsBlend, cz=hz+(tz-hz)*adsBlend;
+  m.position.set(cx*(1-e)+0*e, cy*(1-e)+(-halfH*.18)*e, cz*(1-e)+(-.42)*e);
+  m.rotation.set(pose[0]*(1-e)+(-.28)*e, pose[1]*(1-e)+(.62)*e, pose[2]*(1-e)+(.14)*e);
+ }
 }
 function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
  if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();
       if(match.playerDead&&oldHp>0&&!oldPlayerDead){A.sound('death');}
-      if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b)damageFrom(b.pos.x,b.pos.z);if(b)tracer(new T.Vector3(b.pos.x,BOT_H*0.7,b.pos.z),new T.Vector3(x,y,z),0xff735e);}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
+      if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b){damageFrom(b.pos.x,b.pos.z);tracer(new T.Vector3(b.pos.x,BOT_H*0.7,b.pos.z),new T.Vector3(x,y,z),0xff735e);}}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
  killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(swing>0)swing=Math.max(0,swing-dt);if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
  {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
  // The reload timer is decremented and resolved inside the running branch
