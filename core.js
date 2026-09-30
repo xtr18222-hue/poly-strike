@@ -498,10 +498,15 @@
             b.pos.x += (tdx / tdist) * stepLen;
             b.pos.z += (tdz / tdist) * stepLen;
           }
-          // --- firing: only when the game layer reports LOS and range.
+          // --- firing: only when the game layer reports LOS and range, and
+          // only for a bot that is actually alive. The alive check is the load-
+          // bearing part for the "shots from a dead/hidden attacker" class of
+          // bug: without it a downed bot kept firing from its death position
+          // until resetRound() recycled the whole squad, so the player took
+          // damage from an entity that was no longer in the fight.
           // Test maps are peaceful demonstrators: bots there never shoot
           // back, so the player can study animations and target practice.
-          if (perBot && perBot.los && perBot.dist < 34 && !MAP.peaceful) {
+          if (b.alive && perBot && perBot.los && perBot.dist < 34 && !MAP.peaceful) {
             b.cool -= dt;
             if (b.cool <= 0) {
               b.shots++;
