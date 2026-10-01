@@ -532,6 +532,12 @@ try{const saved=localStorage.getItem('poly-fov');if(Number.isFinite(+saved))fov=
 function clampFov(v){return Math.max(70,Math.min(110,v));}
 function applyFov(){const inp=$('fov');if(inp){inp.value=fov;$('fovValue').textContent=fov+'°';}fov=clampFov(fov);try{localStorage.setItem('poly-fov',String(fov));}catch(_){}}
 applyFov();
+// Announcer voice pack: persisted, applied live, and restored on boot.
+// The `let` declaration must precede applyAnnouncerVoice()'s boot call below:
+// game.js runs in 'use strict', so an assignment to an undeclared name throws
+// a ReferenceError and the whole controller fails to execute — no input, no
+// camera, no viewmodel, no pause.
+let announcerVoice='male';
 try{announcerVoice=localStorage.getItem('poly-announcer')||'male';}catch(_){}
 applyAnnouncerVoice();
 function applyAnnouncerVoice(){const sel=$('announcerVoice');if(sel)sel.value=announcerVoice;A.setVoicePack?.(announcerVoice);}

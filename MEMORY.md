@@ -633,3 +633,35 @@ Asset facts re-verified: Mossberg 590A1.glb = 1 mesh, 1 skin, 0 animation clips
 and no FPS hands — no rig to drive a first-person presentation; Combat Knife.glb
 = 1 mesh, 0 anims ( the in-game FA-03 Bayonet already swings with a real arc );
 Grenade.glb = Grenade+Pin with 0 anims and no throw system exists to bind it to.
+
+## 2026-10-01 — v36 BOOT RECOVERY (the v35 outage)
+
+ROOT CAUSE, proved: the v35 FOV patch (8242ffb) deleted the single line
+`let announcerVoice='male';` from game.js while leaving the boot assignment
+`try{announcerVoice=localStorage.getItem('poly-announcer')||'male';}catch(_){}`
+in place. game.js is a strict-mode IIFE, so the assignment threw
+ReferenceError at eval time and the ENTIRE controller never ran — no camera,
+no input, no viewmodel, no pause panel, no HUD. Every Phase 0 symptom traced
+to that one line. `node --check` passed (the syntax is legal) and 97 unit
+tests passed (none of them ever eval'd game.js), so a green suite genuinely
+did not mean a playable game. Worse, the throw was INSIDE a try/catch that
+swallowed it, so nothing surfaced at all.
+FIX: restored the declaration before the boot call with a comment explaining
+the strict-mode ordering requirement.
+NEW REGRESSION GUARD: tests/boot.mjs (5 tests, run by npm test) evals game.js
+the way a <script> tag does — real vendored THREE r149 + the real POLY_CORE —
+and drives the actual lifecycle: #start click -> deploy() -> menu hides / HUD
+shows / running=true, then the real document keydown handler for Escape ->
+pause() -> running=false, then #resume click -> running=true again. Verified
+by temporarily deleting the declaration again: the START test FAILS, which is
+exactly the outage. This is the test that would have caught v35.
+TEST COUNT: 81 + 9 + 7 + 5 = 102 green (npm test), 0 failures.
+sw.js v35 -> v36 (poly-strike-v36-boot-recovery).
+Reverted the harness-only `window.__psAssetBase` hook in assets.js — it was
+only needed by the throwaway jsdom probe and does not belong in the shipped
+game; loadAll still derives the base from location.pathname as before.
+NOT done this pass (deferred by instruction): Phases 1-5 presentation work,
+Glock / shotgun / grenade (roster-locked), UI/radar redesign.
+Browser automation remains unavailable (Chromium will not launch in this
+environment), so the lifecycle is verified by the boot harness + unit tests,
+not by a real browser session.
