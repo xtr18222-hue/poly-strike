@@ -6,6 +6,12 @@ let C=window.POLY_CORE, mapId='desert', preset='medium';
 // the core arenas and nothing else.
 try{preset=PolySettings.normalize(localStorage.getItem('poly-graphics'));}catch(_){}
 let budget=PolySettings.PRESETS[preset];
+// FOV is a real setting: it feeds the world camera's projection each frame.
+// The viewmodel is rendered by a SEPARATE camera (viewCam), so changing the
+// world FOV rescales the scene without stretching the weapon — no broken
+// weapon scale at any value. `fov` is declared with the settings block below
+// and clamped to a sane tactical range there.
+function fovTarget(){return scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?Math.min(100,fov+6):fov;}
 // Bots stand eye-level with the operator: assets.js normalises the Soldier rig
 // to TARGET_H 1.9m, which puts the bot's head/eye at the operator's 1.7m eye.
 // The hitboxes are the rig's own meshes, so they scale with the model; the head
@@ -257,7 +263,12 @@ const INSPECT={
  knife:{fx:.56,fy:-.18,d:.50,rx:-.42,ry:.75,rz:.22},
 };
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
-const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();const held=new Set();
+const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();
+// Per-frame scratch: the viewmodel box and its centre/size are recomputed every
+// tick by animateWeapon(), so they are module-scope and reused — never
+// re-allocated in the hot loop. Same for the shoot() right vector.
+const vmBox=new T.Box3(), wmBox=new T.Box3(), vmCenter=new T.Vector3(), vmSize=new T.Vector3(), shotRight=new T.Vector3(), shotAxis=new T.Vector3(0,1,0);
+const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
 let gameMode='skirmish',oldPlayerDead=false;
 let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
@@ -436,7 +447,7 @@ function shoot(){const w=C.WEAPONS[weapon];
  // every swing instead of attacking. Only firearms can be out of ammo.
  if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
  cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;if(!isFirearm(weapon))swing=w.fireInterval;A.sound(weapon);flashTime=.045;recoil=1;
- cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=new T.Vector3().crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(new T.Vector3(0,1,0),sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
+ cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=shotRight.crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(shotAxis,sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
 
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
  const rayMeshes=[...arena.hitMeshes,...bots.filter((b,i)=>b.visible&&match.bots[i].alive)];
@@ -513,12 +524,20 @@ function openSettings(){settingsReturn=document.activeElement;if(running)pause()
 $('settingsButton').onclick=openSettings;$('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
 $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==='performance';};
-// Announcer voice pack: persisted, applied live, and restored on boot.
-let announcerVoice='male';
+// FOV: applies to the world camera only. The viewmodel rides a separate
+// camera (viewCam) at a fixed FOV, so the weapon keeps its scale and screen
+// position at every value — changing FOV never rescales the gun.
+let fov=90;
+try{const saved=localStorage.getItem('poly-fov');if(Number.isFinite(+saved))fov=Math.max(70,Math.min(110,+saved));}catch(_){}
+function clampFov(v){return Math.max(70,Math.min(110,v));}
+function applyFov(){const inp=$('fov');if(inp){inp.value=fov;$('fovValue').textContent=fov+'°';}fov=clampFov(fov);try{localStorage.setItem('poly-fov',String(fov));}catch(_){}}
+applyFov();
 try{announcerVoice=localStorage.getItem('poly-announcer')||'male';}catch(_){}
 applyAnnouncerVoice();
 function applyAnnouncerVoice(){const sel=$('announcerVoice');if(sel)sel.value=announcerVoice;A.setVoicePack?.(announcerVoice);}
 $('announcerVoice').onchange=e=>{announcerVoice=e.target.value;try{localStorage.setItem('poly-announcer',announcerVoice);}catch(_){}applyAnnouncerVoice();A.sound('switch');};
+$('fov').oninput=e=>{const v=clampFov(+e.target.value);fov=v;applyFov();};
+$('fov').onchange=()=>{A.sound('switch');};
 $('applySettings').onclick=()=>{preset=PolySettings.normalize($('graphics').value);budget=PolySettings.PRESETS[preset];try{localStorage.setItem('poly-graphics',preset);}catch(_){}document.body.classList.toggle('performance',preset==='performance');loadMap(mapId);resize();document.activeElement.blur();$('settingsPanel').hidden=true;if(settingsReturn)settingsReturn.focus();};
 function fitLoadoutModel(key,wm){
  // Weapons are modelled in view-model space (long axis along -Z, stock at +Z).
@@ -583,8 +602,8 @@ function renderLoadoutCards(){
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
  // Secondaries: the Desert Eagle and the FA-03 bayonet (melee, no ammo).
  $('secondaryCards').replaceChildren(...['deagle','knife'].map(k=>mk(k,C.WEAPONS[k].slot==='close'?'Blade · melee':'Semi-auto pistol')));}
-$('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);};
-$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutButton').focus();};
+$('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
+$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutInspect').hidden=true;stopLoadoutInspect();$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
 // A drag overrides the idle drift until the player releases the mouse.
 let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false,loadoutInspectTime=0;
@@ -600,7 +619,24 @@ function tickLoadoutPreview(dt){if($('loadoutPanel').hidden)return;const m=loado
  // drag first, then the scripted inspect, then the idle drift as the default.
  loadoutInspectTime+=dt;
  if(loadoutDragging){m.rotation.set(loadoutPitch,loadoutYaw,0);m.position.set(0,0,0);}
+ // Scripted cinematic: a slow tilt-then-pan of the fitted weapon, matching the
+ // in-match inspection's timing (in .45–.65s, hold .7–1.2s, out .45–.65s) so
+ // the armoury preview and the live inspect feel like one animation.
+ else if(loadoutInspecting){
+  const t=loadoutInspectTime, IN=.55, HOLD=1.05;
+  if(t>=IN+HOLD+IN){loadoutInspecting=false;m.position.set(0,0,0);m.rotation.set(0,Math.PI*.02,0);}
+  else{const e=t<IN?t/IN:t<IN+HOLD?1:Math.max(0,1-(t-IN-HOLD)/IN);
+   const tilt=Math.sin(e*Math.PI)*.35, pan=Math.sin(e*Math.PI)*.6;
+   m.position.set(pan*.18,Math.sin(e*Math.PI)*.05,0);
+   m.rotation.set(tilt*.4,-pan,tilt*.2);}}
  else{m.position.set(0,Math.sin(elapsed*.8)*.008,0);m.rotation.set(0,Math.sin(elapsed*.3)*.12+Math.PI*.02,0);}}
+// The armoury INSPECT button runs the same scripted cinematic the in-match F
+// key does: a tilt-and-pan of the fitted weapon in the preview scene. It is
+// unhidden once a model is bound and re-shown every time the panel opens.
+let loadoutInspecting=false;
+function startLoadoutInspect(){const m=loadoutModels[loadoutSelected];if(!m||!m.visible)return;loadoutInspecting=true;loadoutInspectTime=0;A.sound('switch');}
+function stopLoadoutInspect(){loadoutInspecting=false;}
+$('loadoutInspect').onclick=startLoadoutInspect;
 /* ------------------------------------------------------------- Career stats */
 const career={matches:0,wins:0,kills:0,deaths:0,headshots:0,shotsFired:0,shotsHit:0,roundsWon:0};
 try{const saved=JSON.parse(localStorage.getItem('poly-career'));if(saved&&typeof saved==='object')Object.assign(career,{matches:Math.max(0,+(saved.matches||0)),wins:Math.max(0,+(saved.wins||0)),kills:Math.max(0,+(saved.kills||0)),deaths:Math.max(0,+(saved.deaths||0)),headshots:Math.max(0,+(saved.headshots||0)),shotsFired:Math.max(0,+(saved.shotsFired||0)),shotsHit:Math.max(0,+(saved.shotsHit||0)),roundsWon:Math.max(0,+(saved.roundsWon||0))});}catch(_){}
@@ -677,7 +713,22 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  $('connectionStatus').textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING —'):'OFFLINE';
  document.body.classList.toggle('low-health',running&&match.hp>0&&match.hp<20);
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
- const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);rc.fillStyle='#b5baa650';for(const s of C.MAP.solids)rc.fillRect(85+(s.x-s.w/2)*2,85+(s.z-s.d/2)*2,s.w*2,s.d*2);rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85+x*2,85+z*2,3,0,Math.PI*2);rc.fill();rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85+x*2,85+z*2);rc.lineTo(85+x*2-Math.sin(yaw)*10,85+z*2-Math.cos(yaw)*10);rc.stroke();rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive){rc.beginPath();rc.arc(85+b.pos.x*2,85+b.pos.z*2,2.5,0,7);rc.fill();}}
+ const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);
+ // Radar rotates with the player: up on the disc is the direction the operator
+ // faces (yaw), so geometry and contacts turn with the view the way a tactical
+ // radar does. World (x,z) -> radar (rx,ry) is rotate by -yaw about the player,
+ // then centre + 2px per metre.
+ const cy=Math.cos(-yaw), sy=Math.sin(-yaw);
+ function rp(wx,wz){const dx=wx-x,dz=wz-z;return [85+(dx*cy-dz*sy)*2,85+(dx*sy+dz*cy)*2];}
+ rc.fillStyle='#b5baa650';for(const s of C.MAP.solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
+ rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85,85,3,0,Math.PI*2);rc.fill();
+ // Facing needle points straight up (the disc is already rotated to yaw).
+ rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85,85);rc.lineTo(85,75);rc.stroke();
+ // Radar contacts follow the same line-of-sight rule as the bots' own firing
+ // gate: a hostile behind cover is NOT drawn, so the radar cannot be used as a
+ // wallhack. segmentClear is the same test match.step() uses each tick, so the
+ // radar and the AI can never disagree about who is visible.
+ rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,C.MAP.solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
  if(match.playerDead)inspectHold=false;
  stepInspect(dt);
@@ -709,14 +760,14 @@ function animateWeapon(dt){
  // box below is then already in metres.
  m.position.set(0,0,0);m.rotation.set(0,0,0);
  m.updateMatrixWorld(true);
- const box=new T.Box3().setFromObject(m);
+ const box=vmBox.setFromObject(m);
  if(box.isEmpty())return;
  let bMinY=box.min.y,bMaxY=box.max.y,bMaxZ=box.max.z;
  // A rig viewmodel is arms + gun, so the whole-model box includes the elbows and
  // cannot be used to place the GUN: frame on the weapon mesh alone (same as the
  // weapon-only path), and the arms follow because they are parented to it.
  if(m.userData.isRig){const wmesh=m.userData.weaponMesh;
-  if(wmesh){const wb=new T.Box3().setFromObject(wmesh);
+  if(wmesh){const wb=wmBox.setFromObject(wmesh);
    if(!wb.isEmpty()){bMinY=wb.min.y;bMaxY=wb.max.y;bMaxZ=wb.max.z;}}}
  // Depth: the tightest part of the frustum is at the gun's NEAR face, so the
  // whole vertical span only fits if that face is deep enough. Solve for the
@@ -835,7 +886,7 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
       if(match.playerDead&&oldHp>0&&!oldPlayerDead){A.sound('death');}
       if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b){damageFrom(b.pos.x,b.pos.z);tracer(new T.Vector3(b.pos.x,BOT_H*0.7,b.pos.z),new T.Vector3(x,y,z),0xff735e);}}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
  killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(swing>0)swing=Math.max(0,swing-dt);if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
- {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=( (scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?84:78)-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
+ {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=((fovTarget())-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
  // The reload timer is decremented and resolved inside the running branch
  // above (line ~579); a second decrement here would count the same reload
  // down twice and complete it early, so there is deliberately none.

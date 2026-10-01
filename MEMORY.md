@@ -596,3 +596,40 @@ the contract, the fallback, clone independence, hand grip, bore orientation,
 clip names, mixer creation, arms-don't-swallow-gun and no-drift.
 sw.js v33 -> v34 (poly-strike-v34-fps-rig-viewmodel).
 
+
+## 2026-10-01 — Master pass: FOV setting, radar LOS+orientation — DONE, SW v35
+Continuation of the master pass on top of ddc2deb ( rigs already shipped ).
+Genuine gaps found by inspection and fixed; nothing already built was rebuilt.
+
+FOV (was hardcoded): cam.fov lerped to a new fovTarget() that reads a persisted
+`fov` setting (70-110, localStorage 'poly-fov'), with the scope/ADS/slide values
+kept as before. The viewmodel rides viewCam (its own fov-65 camera) so the world
+FOV changes and the weapon scale/placement never moves. New slider in the
+settings panel under a VIDEO eyebrow; clamped, live, persisted.
+Radar: two fixes. (1) Contacts now gated on C.segmentClear — the SAME LOS test
+the bots' firing gate uses — so a hostile behind cover is not drawn: the radar
+cannot be used as a wallhack. (2) The disc rotates to yaw via one rp(wx,wz)
+helper ( geometry, contacts and the facing needle all through it ), the player
+dot sits at the centre and the needle points straight up.
+Performance: the per-frame viewmodel Box3 and the shoot() right/up vectors are
+now module-scope scratch ( vmBox/wmBox/shotRight/shotAxis ) instead of
+allocations in the hot loop; no behaviour change.
+Loadout INSPECT button: it existed but was hidden with no handler. Now shown
+when the armoury panel opens and drives a scripted tilt-and-pan cinematic in
+the preview scene, timed like the in-match F inspection.
+Verified with real THREE r149: L96 fitted 1.180m, Hecate 1.302m, both fully
+inside the frame at READY (worst corner 0.98 / 0.94 of the half-frame), ADS
+anchor on the camera axis to 0.0000m, recoil pushes -Z.
+tests/masterpass.mjs (7 tests, run by npm test) covers rifle placement, ADS
+anchor, the FOV contract and the radar LOS/orientation contract.
+sw.js v34 -> v35 (poly-strike-v35-master-pass-fov-radar).
+Documented NOT fixed (deliberate): solids' `h` field is unused by segmentClear,
+so low cover does not block a shot — wiring it in means changing the bot LOS
+system, which is FIXED and must not be reopened; cost is a design choice, not a
+bug. Roster stays exactly akm/deagle/hecate/knife/l96: tests/core.test.cjs:14
+locks it and comments that shotgun/SMG/LMG additions were reverted, so glock /
+shotgun / grenade were NOT added ( see the asset facts below ).
+Asset facts re-verified: Mossberg 590A1.glb = 1 mesh, 1 skin, 0 animation clips
+and no FPS hands — no rig to drive a first-person presentation; Combat Knife.glb
+= 1 mesh, 0 anims ( the in-game FA-03 Bayonet already swings with a real arc );
+Grenade.glb = Grenade+Pin with 0 anims and no throw system exists to bind it to.
