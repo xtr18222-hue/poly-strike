@@ -543,3 +543,21 @@ All temp probes deleted before commit.
 Field manual in index.html now reads "1 primary / 2 secondary (Deagle or
 bayonet) / R reload". sw.js v31 -> v32 (poly-strike-v32-knife-viewmodel).
 All temp probes deleted before commit.
+
+## 2026-10-01 — Dead bots stop firing — DONE, SW v33
+The bot firing gate in core.js step() checked line-of-sight and range but never
+b.alive, so a downed bot kept shooting from its death position until
+resetRound() recycled the whole squad - the player took damage from an entity
+that was no longer in the fight ("shots from an impossible direction").
+enemyShot()'s own wall re-verification already held; this was the missing gate
+upstream of it. The gate now reads `b.alive && perBot && perBot.los &&
+perBot.dist < 34 && !MAP.peaceful`.
+Regression tests added to tests/core.test.cjs: one downs every bot but one
+(the survivor keeps the round in 'live' but is parked out of range, so any
+damage has to come from a dead bot's gate failing) and asserts the dead bots
+fire zero shots and deal zero damage; a control test confirms a living bot
+under identical LOS/range/cooldown conditions does fire and hurt the player.
+Verified the guard is load-bearing: reverting just the `b.alive` conjunct makes
+the new test fail ("a dead bot fires nothing"), with it restored 81/81 pass.
+sw.js v32 -> v33 (poly-strike-v33-dead-bot-gate).
+

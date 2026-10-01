@@ -248,6 +248,52 @@ test('enemyShot: armor soaks damage and depletes; dead stop at 0 hp', () => {
   assert.ok(m.hp < 5);
 });
 
+/* ---------- 9b. Dead bots stay silent ---------- */
+// The firing gate in step() used to check LOS and range but never b.alive, so a
+// downed bot kept shooting from its death position until resetRound() recycled
+// the squad - the player took damage from an entity no longer in the fight.
+test('step(): a dead bot never fires, even with LOS and the cooldown ready', () => {
+  const rng = C.mulberry32(11);
+  const m = C.createMatch();
+  stepToLive(m, rng);
+
+  // Down every bot but one and hand the dead ones a ready cooldown plus clear
+  // LOS and range. The survivor keeps the round in 'live' (a full squad wipe
+  // would end it and stop all firing), but is parked out of range so it cannot
+  // touch the player: any damage must come from a dead bot's gate failing.
+  for (let i = 0; i < m.bots.length - 1; i++) {
+    const b = m.bots[i];
+    while (b.alive) m.playerShot('l96', b.id, 'body', 10);
+    assert.equal(b.alive, false, 'precondition: the bot is actually dead');
+    b.cool = 0;
+  }
+  const hpBefore = m.hp;
+  for (let i = 0; i < 30; i++) {
+    m.step(0.1, rng, { px: m.bots[0].pos.x + 2, pz: m.bots[0].pos.z,
+                       bots: m.bots.map((b, i) => ({ los: b.alive ? false : true,
+                                                      dist: b.alive ? 80 : 2 })) });
+  }
+  for (let i = 0; i < m.bots.length - 1; i++) {
+    assert.equal(m.bots[i].shots, 0, 'a dead bot fires nothing');
+  }
+  assert.equal(m.hp, hpBefore, 'the dead bots deal no damage');
+});
+
+test('step(): a living bot on the same spot does fire (control for the gate above)', () => {
+  const rng = C.mulberry32(11);
+  const m = C.createMatch();
+  stepToLive(m, rng);
+  const live = m.bots[0];
+  live.alive = true; live.hp = 100; live.cool = 0;
+  const hpBefore = m.hp;
+  for (let i = 0; i < 30; i++) {
+    m.step(0.1, rng, { px: live.pos.x + 2, pz: live.pos.z,
+                       bots: m.bots.map(() => ({ los: true, dist: 2 })) });
+  }
+  assert.ok(live.shots > 0, 'the living bot fires under identical conditions');
+  assert.ok(m.hp < hpBefore, 'the living bot actually hurts the player');
+});
+
 test('30 seeded traces keep bots finite and outside obstacles', () => {
   for(let seed=0;seed<30;seed++){
     const m=C.createMatch(),r=C.mulberry32(seed); stepToLive(m,r);
