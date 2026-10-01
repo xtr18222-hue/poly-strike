@@ -135,6 +135,7 @@
   // resolved assets, keyed by weapon key
   const weapons = new Map();
   const rigs = new Map();
+  const fittedRigs = new Map();   // first-person arm rigs fitted to weapon space
   const clips = new Map();   // Mixamo FBX clips for the test map's animated bots
   const mapModels = new Map();   // authored arena GLBs, keyed by filename
   let soldierGLB = null;
@@ -746,6 +747,128 @@
     return root;
   }
 
+  /* ------------------------------------------------------ first-person rigs */
+  // The FPS packs are whole first-person poses: arms + the weapon they hold,
+  // authored together so the hands sit on the gun. The weapon is a SIBLING
+  // node of the armature (positioned by the rigger, not skinned to the hands),
+  // so the arms and the weapon must be fitted as one unit but orients on the
+  // weapon's own bore — measuring the whole rig would let the arms (the
+  // biggest box) decide the long axis and the fit would aim the ARMS, not the
+  // rifle. Fitting the weapon and applying the SAME rotation+scale to the arm
+  // root keeps the authored grip exactly on the fitted receiver.
+  // NOTE: `fps-Rigged Glock.glb` has NO arm bones and NO animation clips (only
+  // the gun's own Slide/Trigger/Magazine/Barrel/SlideCatch nodes), so it cannot
+  // supply first-person hands. The Desert Eagle keeps its weapon-only viewmodel;
+  // the Glock rig with arms is `fps-Fps Rig.glb`.
+  const RIG_MESH = { 'fps-Fps Rig AKM.glb': 'AKM_model', 'fps-Fps Rig.glb': 'Glock19' };
+  const RIG_LEN = { 'fps-Fps Rig AKM.glb': 0.90, 'fps-Fps Rig.glb': 0.20 };
+
+  function fitRig(g, file) {
+    const T = needThree();
+    const scene = sceneOf(g);
+    const meshName = RIG_MESH[file];
+    const target = RIG_LEN[file];
+    if (!scene || !meshName) return null;
+    const wep = scene.getObjectByName(meshName);
+    if (!wep) return null;
+
+    // The hand-midpoint is the rigger's grip, and the armature holds the bone
+    // pose the hands were authored in. Both are read in the rig's own frame
+    // BEFORE any fitting transform is applied.
+    const hl = scene.getObjectByName('HandL');
+    const hr = scene.getObjectByName('HandR001');
+    const grip = new T.Vector3();
+    if (hl && hr) {
+      const a = new T.Vector3(), b = new T.Vector3();
+      scene.updateMatrixWorld(true);
+      hl.getWorldPosition(a); hr.getWorldPosition(b);
+      grip.copy(a).add(b).multiplyScalar(0.5);
+    }
+    const armature = scene.getObjectByName('Armature') || null;
+
+    // Measure the WEAPON alone for orientation and length, exactly as
+    // fitWeapon does for a standalone gun.
+    const pre = new T.Box3().setFromObject(wep);
+    if (pre.isEmpty()) return null;
+    const preSize = new T.Vector3(); pre.getSize(preSize);
+    const long = Math.max(preSize.x, preSize.y, preSize.z);
+    const axis = preSize.x >= preSize.y && preSize.x >= preSize.z ? 'x'
+      : (preSize.y >= preSize.z ? 'y' : 'z');
+    const assetFwd = { x: new T.Vector3(1, 0, 0), y: new T.Vector3(0, 1, 0), z: new T.Vector3(0, 0, 1) }[axis];
+    const assetUp = new T.Vector3(0, 1, 0);
+    const assetRgt = new T.Vector3().crossVectors(assetUp, assetFwd).normalize();
+    if (!isFinite(assetRgt.x) || assetRgt.lengthSq() < 1e-6) assetRgt.set(1, 0, 0);
+    const assetUp2 = new T.Vector3().crossVectors(assetFwd, assetRgt).normalize();
+    const q = new T.Quaternion();
+    q.setFromUnitVectors(assetUp2.clone().normalize(), new T.Vector3(0, 1, 0));
+    const fwdAfter = assetFwd.clone().applyQuaternion(q);
+    q.premultiply(new T.Quaternion().setFromUnitVectors(fwdAfter.clone().normalize(), new T.Vector3(0, 0, -1)));
+
+    const scale = long > 0 ? target / long : 1;
+
+    // Root -> inner -> scene. The rotation goes on `inner` and the whole rig
+    // (arms + weapon) rotates with it, so the authored hand positions stay on
+    // the fitted receiver. Placing the scene under `inner` also means clone()
+    // reproduces the pivot chain the same way it does for weapons.
+    const root = new T.Group();
+    const inner = new T.Group();
+    root.add(inner);
+    inner.add(scene);
+    inner.quaternion.copy(q);
+    inner.rotation.setFromQuaternion(q);
+    inner.updateMatrix();
+    root.scale.setScalar(scale);
+
+    // Centre on the fitted weapon and butt the receiver's rear at z=0, as the
+    // weapon fit does, so a rigged and a standalone AKM land in the same place.
+    root.updateMatrixWorld(true);
+    const fitted = new T.Box3().setFromObject(wep);
+    if (fitted.isEmpty()) return null;
+    const c = new T.Vector3(); fitted.getCenter(c);
+    root.position.x -= c.x; root.position.y -= c.y; root.position.z -= fitted.max.z;
+    root.updateMatrixWorld(true);
+    // Bake the placement into the children (root.position is re-set every
+    // frame by the viewmodel animation), in root's pre-scale frame.
+    const inv = scale > 0 ? 1 / scale : 1;
+    for (const child of root.children) {
+      child.position.x += root.position.x * inv;
+      child.position.y += root.position.y * inv;
+      child.position.z += root.position.z * inv;
+    }
+    root.position.set(0, 0, 0);
+    root.updateMatrixWorld(true);
+
+    // Record the grip in the FITTED frame. The weapon's fitted box is the
+    // truth the viewmodel places, and the grip fraction says where along it
+    // the hands hold, so the caller can put the hands on the gun whatever the
+    // weapon's length. Computed in the same frame as the fit so it survives
+    // the bake above.
+    root.updateMatrixWorld(true);
+    const fb = new T.Box3().setFromObject(wep);
+    const rel = grip.clone().sub(pre.min).divide(pre.getSize(new T.Vector3()));
+    const gripFit = fb.min.clone().add(rel.clone().multiply(fb.getSize(new T.Vector3())));
+    root.userData.grip = gripFit;
+    root.userData.gripRel = rel.clone();
+    root.userData.rigFile = file;
+    root.userData.isRig = true;
+    // The weapon mesh: game.js frames on the GUN's box, not the arms', so the
+    // caller needs to reach it without re-searching the rig by name.
+    root.userData.weaponMesh = wep;
+    root.name = 'rig:' + file;
+    // The weapon mesh stays where the rigger put it; the caller that wants the
+    // arms hidden (the loadout preview does not want a first-person pose) can
+    // reach them by name.
+    root.userData.arms = armature;
+    // Keep the glTF clips on the fitted root itself: the viewmodel clone derives
+    // its mixer from `animations`, and the GLTF loader leaves them on the load
+    // result rather than on the scene node.
+    if (g.animations) {
+      root.animations = g.animations.slice();
+      root.userData.clips = g.animations.map(a => a.name);
+    }
+    return root;
+  }
+
   async function loadAll(base) {
     if (started) return;
     started = true;
@@ -806,8 +929,20 @@
     for (const [key, file] of Object.entries(FPS_RIGS)) {
       try {
         const g = await loadGLB(base + 'assets/models/' + file);
+        // The raw GLB goes into `rigs` unchanged so callers that want the
+        // unposed armature (bone-level access, clip extraction) still get it.
         rigs.set(key, g);
         report.push('rig:' + key + ' ok clips=' + (g.animations ? g.animations.length : 0));
+        // The FITTED rig is the viewmodel: weapon on -Z, real-world metres and
+        // the authored grip preserved. Weapons that have no matching rig keep
+        // the weapon-only viewmodel they already had.
+        const fitted = fitRig(g, file);
+        if (fitted) {
+          fittedRigs.set(key, fitted);
+          report.push('fitrig:' + key + ' ok grip=' + JSON.stringify(fitted.userData.grip.toArray().map(v => +v.toFixed(3))));
+        } else {
+          report.push('fitrig:' + key + ' SKIP (no weapon mesh/hands)');
+        }
       } catch (e) { console.error('[assets] rig failed', key, e.message); report.push('rig:' + key + ' FAIL ' + e.message); }
     }
 
@@ -833,6 +968,78 @@
   function rig(key) {
     const r = rigs.get(key);
     return r ? cloneGLB(r, true) : null;
+  }
+
+  // The first-person VIEWMODEL: the fitted arm rig when this weapon has one
+  // (arms holding the gun at the rigger's grip), otherwise the weapon alone.
+  // Cloned so callers can animate without disturbing the cached original.
+  // Skin is cloned through SkeletonUtils so the arms stay bound to their bones.
+  function viewmodel(key) {
+    const r = fittedRigs.get(key);
+    if (r) {
+      const c = cloneGLB(r, true);
+      if (c) {
+        c.userData.isRig = true;
+        if (r.userData.grip) c.userData.grip = r.userData.grip.clone();
+        if (r.userData.gripRel) c.userData.gripRel = r.userData.gripRel.clone();
+        c.userData.rigFile = r.userData.rigFile || null;
+        c.userData.clips = r.userData.clips || null;
+        // The fitted frame lives on the root group itself (fitRig's
+        // root/inner pivot chain), so a SkeletonUtils clone loses the reference
+        // to the weapon mesh. Re-resolve it by name: the box game.js frames on
+        // is the gun, not the arms.
+        const wname = r.userData.weaponMesh && r.userData.weaponMesh.name;
+        if (wname) {
+          const w = c.getObjectByName(wname);
+          if (w) c.userData.weaponMesh = w;
+        }
+        // The glTF clips live on the loaded GLTF result, NOT on the scene node
+        // (SkeletonUtils.clone copies only the object graph), so the clone
+        // arrives with an empty animation list. Copy the rig's own clips so the
+        // mixer below can drive the arm bones.
+        if (r.animations && r.animations.length && !c.animations.length) {
+          c.animations = r.animations.map(a => a.clone());
+        }
+        // An AnimationMixer per viewmodel: the rig's own Idle/Reload/Shoot clips
+        // drive the arm bones. Built here (not in bindModels) so one mixer
+        // exists per equipped clone and the animations never leak between
+        // weapons. Clip names are the rig's own (`Armature|Idle`...).
+        const TT = needThree();
+        if (TT.AnimationMixer && c.animations && c.animations.length) {
+          c.userData.mixer = new TT.AnimationMixer(c);
+          c.userData.acts = {};
+          const ACT = { idle: /idle/i, reload: /reload/i, shoot: /shoot|fire/i };
+          for (const a of c.animations) {
+            for (const k of Object.keys(ACT)) {
+              if (ACT[k].test(a.name)) { c.userData.acts[k] = c.userData.mixer.clipAction(a); break; }
+            }
+          }
+          // The viewmodel's position is owned by animateWeapon, so no clip may
+          // move the rig's root. Verified against the loaded clips: they animate
+          // only the arm bones, so the weapon box is identical before and after
+          // a full reload cycle and no root-motion cancellation is needed.
+          for (const k of Object.keys(c.userData.acts)) {
+            const a = c.userData.acts[k];
+            if (a) a.setEffectiveWeight(1);
+          }
+        }
+        return c;
+      }
+    }
+    return weapon(key);
+  }
+  function isRigged(key) { return fittedRigs.has(key); }
+  // A named clip off this weapon's rig, or null. The FPS pack names its clips
+  // `Armature|Idle` / `Armature|Reload` / `Armature|Shoot`, so `name` matches
+  // case-insensitively on the part after the armature prefix.
+  function rigClip(key, name) {
+    const r = rigs.get(key);
+    if (!r || !r.animations) return null;
+    const want = String(name).toLowerCase();
+    return r.animations.find(a => {
+      const n = String(a.name).toLowerCase();
+      return n === want || n.endsWith('|' + want);
+    }) || null;
   }
 
   function soldier() { return cloneSoldier(); }
@@ -1023,7 +1230,7 @@
   }
 
   global.PolyAsset = {
-    bind, loadAll, ready, weapon, rig, soldier, soldierRig, clip, clipRig, gltfFor, weaponDef, hasWeapon, progress,
+    bind, loadAll, ready, weapon, rig, viewmodel, isRigged, rigClip, soldier, soldierRig, clip, clipRig, gltfFor, weaponDef, hasWeapon, progress,
     WEAPON_KEYS, ROSTER,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

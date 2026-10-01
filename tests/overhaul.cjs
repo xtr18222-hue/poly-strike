@@ -245,15 +245,19 @@ test('the top-down camera toggle is fully removed', () => {
   assert.ok(!/cam\.position\.set\(x,34,z\)/.test(game), 'overhead camera override gone');
 });
 
-// ---------- viewmodel: no hands, weapon-only ----------
+// ---------- viewmodel: weapon-only unless the game ships an arm rig ----------
 test('the first-person viewmodel carries no hands', () => {
   const game = fs.readFileSync(path.join(ROOT, 'game.js'), 'utf8');
   assert.ok(!/handRoots/.test(game), 'hand root groups removed');
-  assert.ok(!/PolyAsset\.rig\(/.test(game), 'FPS arm rigs are no longer attached');
+  // Rigs are attached through PolyAsset.viewmodel(), not a raw rig() call: the
+  // fitted rig is the viewmodel, so a bare PolyAsset.rig() would add a second,
+  // unfitted set of arms on top of the weapon.
+  assert.ok(!/PolyAsset\.rig\(/.test(game), 'no raw FPS rig attached');
+  assert.ok(/PolyAsset\.viewmodel\(/.test(game), 'viewmodel resolves the fitted arm rig or the weapon alone');
   // The pose table must still exist, but the fit now maps the measured bore
   // onto -Z with sights on +Y, so the weapon arrives level and forward. Every
   // pose is a small sight-line correction, never the full -90deg pitch that
-  // rolled weapons onto their side.
+  // rolled weapons onto its side.
   assert.ok(/const VIEWMODEL_POSE=\{/.test(game), 'per-weapon viewmodel pose table exists');
   for (const k of Object.keys(CORE.WEAPONS)) {
     assert.ok(new RegExp(`${k}:`).test(game), `${k} has a pose entry`);

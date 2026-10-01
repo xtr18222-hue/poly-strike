@@ -561,3 +561,38 @@ Verified the guard is load-bearing: reverting just the `b.alive` conjunct makes
 the new test fail ("a dead bot fires nothing"), with it restored 81/81 pass.
 sw.js v32 -> v33 (poly-strike-v33-dead-bot-gate).
 
+## 2026-10-01 — First-person arm rigs are the viewmodel — DONE, SW v34
+The viewmodel had been weapon-only: a prior session removed the FPS arms and
+locked that with tests/overhaul.cjs asserting game.js never calls
+PolyAsset.rig(). The master pass restores hands, so the assertion was updated
+to the new contract (raw PolyAsset.rig() forbidden; PolyAsset.viewmodel()
+required) rather than reverted.
+Asset facts, measured from FPS pack.undefined-glb (copies at assets/models/):
+`fps-Fps Rig AKM.glb` = skinned arms (ArmModel) holding AKM_model with clips
+Armature|Idle/Reload/Shoot, hand bones HandL/HandR001. `fps-Fps Rig.glb` = the
+same with Glock19. `fps-Rigged Glock.glb` has NO arm bones and NO clips (only
+Slide/Trigger/Magazine/Barrel/SlideCatch), so it cannot supply hands — the
+Desert Eagle keeps its weapon-only viewmodel and the deagle rig mapping was
+removed rather than faked.
+assets.js: fitRig() fits the rig's WEAPON mesh to its real-world length (AKM
+0.90m, Glock 0.20m) and rotates the whole rig so the bore lands on -Z with
+sights on +Y, same convention as fitWeapon(); a fitted-rigs map plus
+viewmodel()/isRigged()/rigClip(). viewmodel() re-resolves weaponMesh by name
+after the SkeletonUtils clone (the JSON userData copy loses object references),
+copies the glTF clips onto the clone (they live on the GLTF result, not the
+scene node) and builds one AnimationMixer + idle/reload/shoot actions per
+equipped viewmodel.
+game.js: bindModels() resolves PolyAsset.viewmodel(key) so callers do not care
+whether they got a rig or a bare weapon; VIEWMODEL_POSE is zeroed for rigs (the
+rigger's pose wins). animateWeapon() frames on the weapon mesh's box for rigs
+(the whole-rig box would let the elbows place the gun) and drives the mixer
+from the same reload/bolt/flash timers the weapon-only path uses.
+Verified: AKM fitted box [-0.027,-0.125,-0.900]-[0.027,0.125,0], HandL gap
+0.025m, HandR gap 0.000m, muzzle forward of the arms, arms intersect the gun.
+The clips animate only arm bones: the weapon box is identical before and after
+a full reload cycle (zero root-motion drift, no cancellation needed).
+tests/viewmodel.mjs (9 tests, run by npm test via the three importmap) covers
+the contract, the fallback, clone independence, hand grip, bore orientation,
+clip names, mixer creation, arms-don't-swallow-gun and no-drift.
+sw.js v33 -> v34 (poly-strike-v34-fps-rig-viewmodel).
+

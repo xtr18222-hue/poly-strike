@@ -181,13 +181,21 @@ readyAll().then(()=>{bindModels();
 // asynchronously and weapon() returns null before it resolves, which left
 // every viewScene weapon group empty and the in-game weapon invisible.
 let modelsBound=false;
+// A weapon whose rig is bound carries its own arms, so the viewmodel is the
+// rig (arms + gun at the authored grip); the rest stay weapon-only. Tracked so
+// animateWeapon can skip the parts the rig already owns (muzzle, ads anchor).
+const rigged={};
 const bindModels=()=>{
  if(modelsBound)return;modelsBound=true;
  const tryBind=()=>{
   let bound=0;
-  for(const key of keys){const src=PolyAsset.weapon(key);if(!src)continue;
+  for(const key of keys){
+  // viewmodel() is the fitted arm rig when this weapon has one, else the
+  // weapon alone, so the caller does not care which it got.
+  const src=PolyAsset.viewmodel(key);if(!src)continue;
    bound++;
    viewScene.add(src);models[key]=src;src.visible=false;
+   rigged[key]=!!src.userData.isRig;
 
   src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});
   // Per-weapon viewmodel pose: an optional small sight-line pitch on top of the
@@ -195,15 +203,20 @@ const bindModels=()=>{
   // +Y, so the weapon arrives level and forward; no -90deg pitch is wanted
   // here (that was the barrel-pointing-down bug).
   const p=VIEWMODEL_POSE[key];if(p){src.rotation.set(p[0],p[1],p[2]);}
+  // A rig's arms are already posed by the rigger; the per-weapon cant that
+  // reads well on a bare gun would twist the arms off the grip, so the rig's
+  // own pose is kept and only the weapon-only models take VIEWMODEL_POSE.
+  if(src.userData.isRig)src.rotation.set(0,0,0);
   }
   // The suite resolves asynchronously; if it was not ready on the first pass the
-  // weapon groups stay empty and the in-game weapon is invisible. Retry until at
-  // least one weapon binds, then stop.
+  // weapon groups stay empty and the in-game weapon is invisible. Retry until
+  // at least one weapon binds, then stop.
   if(!bound){ modelsBound=false; setTimeout(tryBind, 120); }
  };
  tryBind();
- // Hands are gone: the player viewmodel is the weapon only. Bot rigs keep their
- // own arms (they are whole-character models, not first-person arms).
+ // The viewmodel is the weapon alone when no arm rig exists for it. Bot rigs
+ // keep their own arms (they are whole-character models, not first-person
+ // arms), and the first-person rigs carry their own hands on the gun.
 };
 // Viewmodel pose per weapon (radians): [pitch, yaw, roll] applied on top of the
 // fit. fitWeapon maps the measured bore onto -Z with sights on +Y, so the
@@ -698,7 +711,13 @@ function animateWeapon(dt){
  m.updateMatrixWorld(true);
  const box=new T.Box3().setFromObject(m);
  if(box.isEmpty())return;
- const bMinY=box.min.y,bMaxY=box.max.y,bMaxZ=box.max.z;
+ let bMinY=box.min.y,bMaxY=box.max.y,bMaxZ=box.max.z;
+ // A rig viewmodel is arms + gun, so the whole-model box includes the elbows and
+ // cannot be used to place the GUN: frame on the weapon mesh alone (same as the
+ // weapon-only path), and the arms follow because they are parented to it.
+ if(m.userData.isRig){const wmesh=m.userData.weaponMesh;
+  if(wmesh){const wb=new T.Box3().setFromObject(wmesh);
+   if(!wb.isEmpty()){bMinY=wb.min.y;bMaxY=wb.max.y;bMaxZ=wb.max.z;}}}
  // Depth: the tightest part of the frustum is at the gun's NEAR face, so the
  // whole vertical span only fits if that face is deep enough. Solve for the
  // depth that keeps the span inside 85% of the half-height there, with a
@@ -793,6 +812,22 @@ function animateWeapon(dt){
  // group toward the camera centre so the scope glass meets the eye.
  flash.visible=flashTime>0&&!scoped&&budget.effects;
  if(flash.visible&&u.muzzle){m.updateMatrixWorld(true);u.muzzle.getWorldPosition(flash.position);flash.scale.setScalar(.8+rng()*.5);}
+ // First-person arm rigs carry their own Idle/Reload/Shoot clips on the arms.
+ // The mixer owns the arm bones, so it runs AFTER the transform math above and
+ // never fights the group placement. State is derived from the same timers the
+ // weapon-only path uses, so both viewmodels stay in step.
+ if(u.isRig&&u.mixer){
+  let key='idle';
+  if(reload>0)key='reload';else if(bolt>0||flashTime>0)key='shoot';
+  const acts=u.acts||{};
+  if(key!==u.rigKey){
+   const na=acts[key],oa=acts[u.rigKey];
+   if(na){na.reset();na.setLoop(T.LoopRepeat,Infinity);na.clampWhenFinished=true;na.play();
+    na.startAt(0).fadeIn(.12);if(oa)oa.fadeOut(.12);}
+   u.rigKey=key;
+  }
+  u.mixer.update(dt);
+ }
 }
 function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
