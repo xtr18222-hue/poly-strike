@@ -11,7 +11,11 @@ let budget=PolySettings.PRESETS[preset];
 // world FOV rescales the scene without stretching the weapon — no broken
 // weapon scale at any value. `fov` is declared with the settings block below
 // and clamped to a sane tactical range there.
-function fovTarget(){return scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?Math.min(100,fov+6):fov;}
+// NOTE: fovTarget() is declared INSIDE the init try{} below, next to `fov`,
+// because every identifier it closes over (scoped/ads/slide/weapon/fov/C) is
+// block-scoped to that try. Declaring it here — outside the try — made it a
+// function of names it cannot see, throwing "scoped is not defined" on the
+// first tick and killing the render loop (the frozen-frame/white-region bug).
 // Bots stand eye-level with the operator: assets.js normalises the Soldier rig
 // to TARGET_H 1.9m, which puts the bot's head/eye at the operator's 1.7m eye.
 // The hitboxes are the rig's own meshes, so they scale with the model; the head
@@ -529,6 +533,8 @@ $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==
 // position at every value — changing FOV never rescales the gun.
 let fov=90;
 try{const saved=localStorage.getItem('poly-fov');if(Number.isFinite(+saved))fov=Math.max(70,Math.min(110,+saved));}catch(_){}
+// Must live inside this try{}: scoped/ads/slide/weapon are block-scoped here.
+function fovTarget(){return scoped?(C.WEAPONS[weapon].zoomFov||20):ads?52:slide>0?Math.min(100,fov+6):fov;}
 function clampFov(v){return Math.max(70,Math.min(110,v));}
 function applyFov(){const inp=$('fov');if(inp){inp.value=fov;$('fovValue').textContent=fov+'°';}fov=clampFov(fov);try{localStorage.setItem('poly-fov',String(fov));}catch(_){}}
 applyFov();

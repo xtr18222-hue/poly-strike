@@ -461,3 +461,119 @@ test('the v35 failure mode specifically: announcerVoice is declared before use',
     'the declaration must precede the first boot-time assignment, ' +
     'otherwise strict mode throws ReferenceError before the game starts');
 });
+
+/* The v37 white-region / frozen-frame regression.
+ *
+ * game.js wraps nearly all of its init in one big `try { ... } catch(e){...}`
+ * (it closes at the very bottom, just before the IIFE ends). `let`/`const`
+ * inside that block are block-scoped to it. A function declared OUTSIDE the
+ * try — in the head of the IIFE, above `try {` — can still be hoisted and
+ * called from inside, but it cannot close over any name declared inside.
+ *
+ * That is exactly what `fovTarget()` used to do: it was declared above the
+ * try and read `scoped`, `ads`, `slide`, `weapon` and `fov`, all of which are
+ * declared inside it. The first `tick()` after PLAY threw
+ * `ReferenceError: scoped is not defined` from inside fovTarget, which killed
+ * the rAF chain after the world pass and froze the framebuffer — the world
+ * appeared to stop rendering and the pause screen was the only thing that
+ * looked alive.
+ *
+ * `node --check` passes (the syntax is legal) and the declaration exists in
+ * the file, so the existing top-level-assignment guard cannot see it. This
+ * test checks the actual block nesting.
+ */
+function scopeOfFovTarget(src) {
+  // The init try{} is the one that closes at the very bottom of the IIFE,
+  // immediately before `})();`. Earlier `try{...}catch(_){}` one-liners
+  // (preset/fov/localStorage reads) must be skipped, so anchor on the close:
+  // find the LAST `} catch` before the final `})();`, then locate the `try`
+  // whose open brace matches it by scanning every `try` forward.
+  const tail = src.lastIndexOf('})();');
+  const close = src.lastIndexOf('} catch', tail);
+  if (close < 0) return null;
+  let pos = 0;
+  while (true) {
+    const idx = src.indexOf('try', pos);
+    if (idx < 0) return null;
+    pos = idx + 1;
+    if (idx > 0 && /[A-Za-z0-9_$]/.test(src[idx - 1])) continue;
+    let j = idx + 3;
+    while (j < src.length && src[j] !== '{') {
+      if (src[j] !== ' ' && src[j] !== '\n' && src[j] !== '\t' && src[j] !== '\r') break;
+      j++;
+    }
+    if (src[j] !== '{') continue;
+    let depth = 0, i = j, inStr = null, inLC = false, inBC = false;
+    const n = src.length;
+    let endAt = -1;
+    while (i < n) {
+      const c = src[i], c2 = src[i + 1];
+      if (inLC) { if (c === '\n') inLC = false; i++; continue; }
+      if (inBC) { if (c === '*' && c2 === '/') { inBC = false; i += 2; continue; } i++; continue; }
+      if (inStr) { if (c === String.fromCharCode(92)) { i += 2; continue; } if (c === inStr) inStr = null; i++; continue; }
+      if (c === '/' && c2 === '/') { inLC = true; i += 2; continue; }
+      if (c === '/' && c2 === '*') { inBC = true; i += 2; continue; }
+      if (c === '"' || c === "'" || c === '`') { inStr = c; i++; continue; }
+      if (c === '{') { depth++; i++; continue; }
+      if (c === '}') { depth--; if (depth === 0) { endAt = i; break; } i++; continue; }
+      i++;
+    }
+    if (endAt === close) return [j, close];
+  }
+}
+
+test('fovTarget is declared inside the init try{} so it can see scoped/ads/slide/weapon', () => {
+  const m = SRC.match(/function[ \t]+fovTarget[ \t]*\(/);
+  assert.ok(m, 'fovTarget() must exist');
+  const range = scopeOfFovTarget(SRC);
+  assert.ok(range, 'the init try{} block must be findable');
+  const at = m.index;
+  assert.ok(at > range[0] && at < range[1],
+    'fovTarget() is declared at char ' + at + ', outside the init try{} (' +
+    range[0] + '..' + range[1] + '). It closes over scoped/ads/slide/weapon, ' +
+    'which are block-scoped to that try — a function declared above it throws ' +
+    'ReferenceError: scoped is not defined on the first tick and freezes the render loop.');
+});
+
+test('no function above the init try{} closes over a name declared inside it', () => {
+  const range = scopeOfFovTarget(SRC);
+  assert.ok(range, 'the init try{} block must be findable');
+  const head = SRC.slice(0, range[0]);
+  const body = SRC.slice(range[0], range[1]);
+  const inTry = new Set();
+  for (const m of body.matchAll(/(?:let|const|var)[ \t]+([A-Za-z_$][\w$]*)/g)) inTry.add(m[1]);
+  // Functions declared in the head are the ones that can see only head-level names.
+  for (const m of head.matchAll(/function[ \t]+([A-Za-z_$][\w$]*)[ \t]*\(([^)]*)\)/g)) {
+    const fnName = m[1];
+    const open = SRC.indexOf('{', m.index);
+    // Grab the function body up to its matching close (shallow: nesting inside
+    // is fine, we only want the identifiers it references).
+    let depth = 0, i = open, inStr = null, inLC = false, inBC = false;
+    const n = SRC.length, start = i;
+    while (i < n) {
+      const c = SRC[i], c2 = SRC[i + 1];
+      if (inLC) { if (c === '\n') inLC = false; i++; continue; }
+      if (inBC) { if (c === '*' && c2 === '/') { inBC = false; i += 2; continue; } i++; continue; }
+      if (inStr) { if (c === String.fromCharCode(92)) { i += 2; continue; } if (c === inStr) inStr = null; i++; continue; }
+      if (c === '/' && c2 === '/') { inLC = true; i += 2; continue; }
+      if (c === '/' && c2 === '*') { inBC = true; i += 2; continue; }
+      if (c === '"' || c === "'" || c === '`') { inStr = c; i++; continue; }
+      if (c === '{') { depth++; i++; continue; }
+      if (c === '}') { depth--; if (depth === 0) break; i++; continue; }
+      i++;
+    }
+    const fnBody = SRC.slice(start, i);
+    // Only the render-loop state fovTarget reads is checked: other names
+    // (crosshair, PolySettings...) are legitimately global in the head.
+    const stateNames = ['scoped', 'ads', 'slide', 'weapon', 'fov'];
+    for (const name of stateNames) {
+      if (!inTry.has(name)) continue;
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp("(?<![\\w$.])" + esc + "(?![\\w$])");
+      assert.ok(!re.test(fnBody),
+        fnName + '() is declared above the init try{} but reads `' + name + '`, which is ' +
+        'block-scoped inside that try. Strict mode throws ReferenceError and ' +
+        'freezes the render loop (the v37 white-region bug).');
+    }
+  }
+});

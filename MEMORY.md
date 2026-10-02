@@ -4,6 +4,54 @@ Location: C:/Users/xtr18/Projects/poly-strike. Read before resuming; never store
 Repo: https://github.com/xtr18222-hue/poly-strike
 Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 
+## 2026-10-02 — v38 RENDER FIX (white region / frozen frames) — DONE, SW v38
+
+ROOT CAUSE (proved in real headless Chrome over CDP, NOT guessed): the render
+loop was DYING every frame. Runtime exception on every tick:
+  ReferenceError: scoped is not defined
+      at fovTarget (game.js:14)
+      at tick (game.js:896)
+game.js wraps ~all init in ONE big try { ... } catch(e){...} that opens at
+line 70 and closes at line ~956, just before the IIFE ends. let/const inside
+that block are BLOCK-SCOPED to it. Commit 8242ffb added
+  function fovTarget(){return scoped?...:ads?...:slide>...:fov;}
+at line 14 — ABOVE the try — but scoped/ads/slide/weapon/fov are all declared
+inside it. A hoisted function above the try cannot close over names inside it,
+so fovTarget() threw. tick() calls fovTarget() in the camera block, so every
+frame died AFTER renderer.render(scene,cam) but BEFORE the viewmodel pass;
+rAF still re-armed (it is the first statement of tick), but the world froze at
+whatever frame the exception hit and the user saw a static/broken view. The
+'world becomes visible behind Pause' evidence fits: pause stops calling tick(),
+so the last partial framebuffer (world pass done, viewmodel pass skipped) was
+what stayed on screen.
+FIX (minimal, 1 function move): fovTarget() moved INSIDE the init try{}, next
+to let fov=90. Nothing else about the render pipeline changed — the pipeline
+itself (autoClear=false + renderer.clear() + world render + clearDepth() +
+viewmodel render) was never broken.
+PROOF in real Chrome via CDP after the fix: frames advance 165->202 in 1s
+(was frozen), zero Runtime.exceptions, phase 'live', W moves z 34->23.8,
+yaw 0.73 after aim, ESC pauses with audioPaused:true, resume restores
+running + movement, world framebuffer reads sand/arena colours top-to-bottom
+(white% 45->28, and the residual white is LIT ARENA GEOMETRY, verified by
+hiding arena+bots: it disappears; hiding the viewmodel does not remove it).
+WARNINGS for future probes: (1) headless Chrome THROTTLES rAF for the page
+unless it is 'visible' — early isolation tests that hid meshes then re-read
+the framebuffer were reading a FROZEN frame, which produced contradictory
+results; confirm __renderer.info.render.frame advances before trusting any
+readback. (2) readPixels y=0 is the BOTTOM — invert before comparing to a
+screenshot. (3) the SW caches game.js aggressively; unregister the SW and
+clear caches before re-probing, or a stale game.js runs and reproduces the
+OLD bug. (4) Page.captureScreenshot in headless does NOT composite the WebGL
+canvas — read the framebuffer with readPixels/toDataURL instead.
+REGRESSION GUARD: tests/boot.mjs gained two tests — 'fovTarget is declared
+inside the init try{}' and 'no function above the init try{} closes over the
+scoped/ads/slide/weapon/fov state'. Both use a brace-aware scanner that finds
+the init try by anchoring on the LAST '} catch' before the final '})();'.
+Verified: reintroducing fovTarget above the try makes both tests FAIL (2
+failures), the fixed file passes all 7 boot tests. Full suite 81+9+7+7=104
+green. SW bumped to poly-strike-v38-render-fix.
+
+
 ## Architecture and decisions
 - Original procedural tactical FPS, not affiliated with Valve. Vanilla JS, vendored Three.js r149 and PeerJS 1.5.5 (MIT). No runtime CDN; offline file:// and SW caching.
 - Exactly AK-47, AWP, Deagle, Butterfly Knife; all unlocked. Natural wood/steel, olive, silver, chrome colors replace red skins.
