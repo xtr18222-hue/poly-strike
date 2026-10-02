@@ -121,18 +121,18 @@ test('nav graph is connected from the player spawn (BFS)', () => {
 
 /* ---------- 7. Match / round flow ---------- */
 function stepToLive(m, rng) { for (let i = 0; i < 400 && m.phase === 'buy'; i++) m.step(0.1, rng); assert.equal(m.phase, 'live'); }
-test('round flow: buy freeze -> live; killing all bots wins the round', () => {
+test('round flow: starts live; killing all bots wins the round', () => {
   const rng = C.mulberry32(1);
   const m = C.createMatch();
-  assert.equal(m.phase, 'buy');
+  // No buy phase: the build has no buy menu, so the round starts live.
+  assert.equal(m.phase, 'live');
   assert.equal(m.score.player, 0); assert.equal(m.score.enemy, 0);
-  stepToLive(m, rng);
   const before = m.round;
   for (const b of m.bots) m.playerShot('akm', b.id, 'head', 10);
   m.step(0.1, rng); // flush
   assert.equal(m.phase, 'end', 'round ends when all bots die');
   assert.equal(m.lastWinner, 'player');
-  for (let i = 0; i < 60 && m.phase !== 'buy'; i++) m.step(0.1, rng);
+  for (let i = 0; i < 60 && m.phase !== 'live'; i++) m.step(0.1, rng);
   assert.equal(m.round, before + 1, 'next round starts');
 });
 test('player death loses the round; timer expiry loses the round', () => {
@@ -197,7 +197,10 @@ test('economy: kill awards per weapon, win/loss bonuses, loss-streak cap', () =>
   assert.ok(m.money >= C.ECON.winRound);
 });
 test('buy: prices, funds check, once per weapon type', () => {
+  // The economy entry point still exists for online/tests, but the buy phase
+  // is gone, so purchases resolve from the live phase.
   const m = C.createMatch();
+  assert.equal(m.phase, 'live');
   m.money = 5000;
   assert.equal(m.buy('akm'), true);
   assert.equal(m.money, 5000 - C.WEAPONS.akm.price);

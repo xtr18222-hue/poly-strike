@@ -246,6 +246,10 @@ function makeDeps(w) {
     enabled: true, muted: false, ready: true,
     sfx: noop, sound: noop, announce: noop, music: noop, start: noop, toggle: noop,
     setVoicePack: noop,
+    // The real module ducks the master gain on pause; track it here so the
+    // lifecycle test can assert gunfire does not keep playing while paused.
+    setPaused(p) { this.__paused = p; },
+    isPaused() { return !!this.__paused; },
   };
   const PolyAsset = {
     ready: () => Promise.resolve(),
@@ -370,6 +374,10 @@ test('clicking START reaches the playable state (start/resume/pause lifecycle)',
   assert.ok(game, 'window.Game must be published');
   assert.equal(game.state().running, true, 'the match must be running');
 
+  // The buy phase was removed: the match must start live, otherwise the player
+  // spawns unable to move or shoot for the buy window.
+  assert.equal(game.state().phase, 'live', 'the match must start in the live phase');
+
   // deploy() hides the menu and shows the HUD + pause panel, in the browser
   // and here. If the controller died at eval time these never change.
   assert.equal($('menu').hidden, true, 'the menu must hide on start');
@@ -377,18 +385,24 @@ test('clicking START reaches the playable state (start/resume/pause lifecycle)',
   assert.notDeepStrictEqual({ hud: $('hud').hidden, menu: $('menu').hidden, pause: $('pause').hidden }, before,
     'start must actually transition the UI, not leave the menu showing');
 
-  // Pause must freeze the match and reveal the panel; resume must restore both.
-  // The same pause() the browser's Escape key handler calls.
-  // The real keyboard path: the document keydown handler calls pause().
-  doc.__fire('keydown', { code: 'Escape', target: doc.body, preventDefault() {} });
+  // Pause must duck the audio bus as well as freeze the match; otherwise
+  // gunfire and the announcer keep playing behind the pause screen.
+  const audio = deps.A || w.PolyAudio;
+  assert.doesNotThrow(() => doc.__fire('keydown', { code: 'Escape', target: doc.body, preventDefault() {} }));
   assert.equal(game.state().running, false, 'pause must stop the match');
   assert.equal($('pause').hidden, false, 'pause must reveal the pause panel');
+  if (audio && typeof audio.isPaused === 'function') {
+    assert.equal(audio.isPaused(), true, 'pause must duck the audio bus');
+  }
 
   assert.equal(typeof $('resume').onclick, 'function', '#resume must have a click handler');
   assert.doesNotThrow(() => $('resume').onclick(), 'resume must not throw');
   await new Promise(r => setTimeout(r, 30));
   assert.equal(game.state().running, true, 'resume must restart the match');
   assert.equal($('pause').hidden, true, 'resume must hide the pause panel again');
+  if (audio && typeof audio.isPaused === 'function') {
+    assert.equal(audio.isPaused(), false, 'resume must restore the audio bus');
+  }
 });
 
 test('game.js declares every name it assigns at top level', () => {

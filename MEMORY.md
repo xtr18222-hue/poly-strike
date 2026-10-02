@@ -634,34 +634,40 @@ and no FPS hands — no rig to drive a first-person presentation; Combat Knife.g
 = 1 mesh, 0 anims ( the in-game FA-03 Bayonet already swings with a real arc );
 Grenade.glb = Grenade+Pin with 0 anims and no throw system exists to bind it to.
 
-## 2026-10-01 — v36 BOOT RECOVERY (the v35 outage)
+## 2026-10-02 — v37 LIVE START + pause audio fix — DONE, SW v37
 
-ROOT CAUSE, proved: the v35 FOV patch (8242ffb) deleted the single line
-`let announcerVoice='male';` from game.js while leaving the boot assignment
-`try{announcerVoice=localStorage.getItem('poly-announcer')||'male';}catch(_){}`
-in place. game.js is a strict-mode IIFE, so the assignment threw
-ReferenceError at eval time and the ENTIRE controller never ran — no camera,
-no input, no viewmodel, no pause panel, no HUD. Every Phase 0 symptom traced
-to that one line. `node --check` passed (the syntax is legal) and 97 unit
-tests passed (none of them ever eval'd game.js), so a green suite genuinely
-did not mean a playable game. Worse, the throw was INSIDE a try/catch that
-swallowed it, so nothing surfaced at all.
-FIX: restored the declaration before the boot call with a comment explaining
-the strict-mode ordering requirement.
-NEW REGRESSION GUARD: tests/boot.mjs (5 tests, run by npm test) evals game.js
-the way a <script> tag does — real vendored THREE r149 + the real POLY_CORE —
-and drives the actual lifecycle: #start click -> deploy() -> menu hides / HUD
-shows / running=true, then the real document keydown handler for Escape ->
-pause() -> running=false, then #resume click -> running=true again. Verified
-by temporarily deleting the declaration again: the START test FAILS, which is
-exactly the outage. This is the test that would have caught v35.
-TEST COUNT: 81 + 9 + 7 + 5 = 102 green (npm test), 0 failures.
-sw.js v35 -> v36 (poly-strike-v36-boot-recovery).
-Reverted the harness-only `window.__psAssetBase` hook in assets.js — it was
-only needed by the throwaway jsdom probe and does not belong in the shipped
-game; loadAll still derives the base from location.pathname as before.
-NOT done this pass (deferred by instruction): Phases 1-5 presentation work,
-Glock / shotgun / grenade (roster-locked), UI/radar redesign.
-Browser automation remains unavailable (Chromium will not launch in this
-environment), so the lifecycle is verified by the boot harness + unit tests,
-not by a real browser session.
+ROOT CAUSE #1 (proved in a real headless Chrome over CDP, against the DEPLOYED
+v36 Pages build): pressing PLAY left phase='buy' for ~5s. move() and shoot()
+are gated on phase==='live', so the player spawned unable to move, look or
+shoot — every 'cannot control the game after PLAY' symptom. The build has NO
+buy menu, NO money UI and NO buy key; game.js never calls m.buy() (grep: 0
+references to match.money), so the buy phase existed only to lock the controls.
+FIX: core.js createMatch() and resetRound() now always start 'live',
+buyClock is always 0, and m.buy()'s phase guard accepts 'live' (it is a dead
+API surface only tests/online reach). The 'buy' branch in step() is kept as a
+defensive no-op for any future mode.
+ROOT CAUSE #2 (the 'FPS hands not visible' report): NOT A BUG. The same CDP
+probe painted the real AKM_model_* / ArmModel_* meshes of viewScene magenta
+and read back the WebGL framebuffer: 883116/883116 pixels magenta — the second
+render pass (renderer.clearDepth(); renderer.render(viewScene,viewCam))
+executes and paints. Earlier '0 draw calls / 0 magenta' readings were stale
+__models handles and headless-screenshot compositing artifacts (headless
+Chrome does NOT composite the WebGL canvas into Page.captureScreenshot — the
+PNG is only the CSS body colour #102128). Verified: 70 viewScene meshes,
+'rig:fps-Fps Rig AKM.glb' visible, 100 drawCalls / 123059 tris during play.
+ROOT CAUSE #3 (audio while paused): pause() froze the match but never touched
+the audio bus. FIX: audio.js gained setPaused(p)/isPaused() which duck the
+master gain to 0 on pause and restore it on resume WITHOUT disturbing the
+user's KeyM mute preference; pause() calls setPaused(true), deploy() /
+finishMatch() / leave() call setPaused(false).
+TESTS: 81 + 9 + 7 + 5 = 102 green. Updated tests asserting the old contract
+(core.test.cjs round-flow + buy tests, fieldops.test.cjs mode test) and
+extended the boot.mjs lifecycle test to assert phase==='live' at start and the
+audio duck on pause/resume.
+sw.js v36 -> v37 (poly-strike-v37-live-start).
+VERIFIED IN A REAL BROWSER (system Chrome, CDP port 9222, local server): after
+PLAY phase='live' immediately; W moves z 34 -> 30.4 in 0.5s; ESC pauses (W then
+does not move); resume restores running and W moves again; single click burns
+3 rounds and full-auto drains the mag; ESC ducks the audio bus.
+NOT done this pass: mouse-look only fails in headless Chrome because it refuses
+pointer lock — the real-user fallback drag path is unchanged and untested here.

@@ -166,11 +166,20 @@ window.PolyAudio = (() => {
   function setVoicePack(p) { if (PACKS[p]) voicePack = p; }
   function getVoicePack() { return voicePack; }
   function toggle() {muted=!muted;if(muted&&window.speechSynthesis)window.speechSynthesis.cancel();if(master)master.gain.setTargetAtTime(muted?0:.28,ctx.currentTime,.02);return muted;}
+  // Pause/resume without disturbing the user's mute preference: the gain is
+  // ducked while paused and restored to whatever mute state applies on resume.
+  let pausedBefore = false;
+  function setPaused(p) {
+    if (!ctx || !master) return;
+    if (p && !muted) { pausedBefore = true; if (window.speechSynthesis) window.speechSynthesis.cancel(); master.gain.setTargetAtTime(0, ctx.currentTime, .02); }
+    else if (!p && pausedBefore) { pausedBefore = false; master.gain.setTargetAtTime(.28, ctx.currentTime, .02); }
+  }
+  function isPaused() { return pausedBefore; }
   function packFilenames(){
     // Verification accessor: the exact audio file each kill streak resolves to.
     // Male runs all 14 tiers, female caps at 9.
     return { male: PACKS.male.slice(0,14), female: PACKS.female.slice(0,9) };
   }
 
-  return {start,sound,announce,setVoicePack,getVoicePack,toggle,get muted(){return muted;},get ready(){return !!ctx;},packFilenames};
+  return {start,sound,announce,setVoicePack,getVoicePack,toggle,setPaused,isPaused,get muted(){return muted;},get ready(){return !!ctx;},packFilenames};
 })();

@@ -53,12 +53,13 @@ test('the lobby ships Skirmish only; FFA and Search & Destroy are gone', () => {
 test('createMatch honours the selected mode', () => {
   const C = require(path.join(ROOT, 'core.js'));
   const mk = m => C.createMatch(C.MAPS.desert, m);
-  // Skirmish: buy phase, 90s rounds, first to five.
+  // Skirmish starts live: the build has no buy menu, no money UI and no buy key,
+  // so a 5-second buy phase only locked the controls after PLAY.
   const sk = mk('skirmish');
   assert.equal(sk.mode, 'skirmish');
-  assert.ok(sk.buyClock > 0, 'skirmish has a buy window');
+  assert.equal(sk.buyClock, 0, 'skirmish has no buy window');
   assert.equal(sk.roundClock, 90, 'skirmish round is 90s');
-  assert.ok(sk.phase === 'buy', 'skirmish starts in buy');
+  assert.ok(sk.phase === 'live', 'skirmish starts live');
   // Unknown modes fall back to skirmish rather than throwing.
   const bad = mk('nope');
   assert.equal(bad.mode, 'skirmish', 'unknown mode falls back to skirmish');

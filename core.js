@@ -274,11 +274,14 @@
     let cachedPlayerNode = -1, navSearches = 0;
     const distances = new Array(MAP.nav.length).fill(Infinity);
     const m = {
-      phase: MODE.buy ? 'buy' : 'live',  // buy | live | end | matchover
+      // Skirmish has no buy menu, no money and no buy key — the phase existed
+      // only to gate firing for 5 seconds, which read as "the game does not
+      // respond after PLAY". Start live.
+      phase: 'live',  // buy | live | end | matchover
       playerDead: false,       // the operator is down, waiting on the round to end
       mode: MODE.key,
       modeData: MODE,
-      buyClock: MODE.buy ? BUY_TIME : 0,
+      buyClock: 0,
       roundClock: MODE.clock,
       endClock: 0,
       round: 1,
@@ -349,8 +352,9 @@
 
     m.resetRound = function () {
       this.playerDead = false;
-      this.phase = MODE.buy ? 'buy' : 'live';
-      this.buyClock = MODE.buy ? BUY_TIME : 0;
+      // No buy phase: Skirmish has no buy menu or economy UI, so rounds start live.
+      this.phase = 'live';
+      this.buyClock = 0;
       this.roundClock = MODE.clock;
       this.hp = 100;                 // armor persists, damaged
       this.lastWinner = null;
@@ -363,7 +367,10 @@
     };
 
     m.buy = function (item) {
-      if (this.phase !== 'buy' && this.phase !== 'end') return false;
+      // The build has no buy menu, so this economy entry point is only reached
+      // through tests/online state. Accept it in 'live' too rather than gating
+      // it on a phase that no longer exists.
+      if (this.phase === 'end' || this.phase === 'matchover') return false;
       if (item === 'armor') {
         if (this.armor >= 100 || this.money < 650) return false;
         this.money -= 650; this.armor = 100; return true;
@@ -440,6 +447,8 @@
 
     m.step = function (dt, rng, sense) {
       if (this.phase === 'buy') {
+        // Defensive: no mode uses a buy phase any more, but if one is ever
+        // re-added without a buy menu it should not stall the round.
         if (this.modeData && !this.modeData.buy) { this.phase = 'live'; return; }
         this.buyClock -= dt;
         if (this.buyClock <= 0) this.phase = 'live';
