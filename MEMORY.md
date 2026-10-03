@@ -765,3 +765,9 @@ Escape pauses, resume restores.
 BROWSER PROBE NOTE: Game.test only exists with ?test=1 in the URL. Firing must
 dispatch mousedown on #game (not window) with the #fallback checkbox set, or
 pointer lock blocks it. The AKM is full-auto so a tap consumes several rounds.
+
+DEPLOY: pushed 8ce6f0d + sw.js v39 bump (070b4d8) to origin/main. GitHub Pages
+build_type=legacy, source=main/root, status=built. Verified live at
+https://xtr18222-hue.github.io/poly-strike/ — index/core/game all 200 with the
+radar solids fix + throwable gate present, sw cache v39, and all 5 needed GLBs
+(Combat Knife, Grenade, Mossberg 590A1, fps-Fps Rig, fps-Fps Rig AKM) 200.
