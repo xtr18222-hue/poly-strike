@@ -8,14 +8,18 @@ const C = require(path.join(__dirname, '..', 'core.js'));
 
 /* ---------- 1. Weapon arsenal ---------- */
 test('arsenal contains every weapon with consistent stats', () => {
-  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle and the FA-03 bayonet.
-  // The Shotgun/SMG/LMG additions were reverted; Mosin and the MX knife stay
-  // removed. The bayonet is the player's melee secondary.
-  assert.deepEqual(Object.keys(C.WEAPONS).sort(), ['akm','deagle','hecate','knife','l96']);
+  // The roster: AKM, L96 A1, PGM Hecate II, Desert Eagle, the FA-03 bayonet,
+  // the Glock-19, the Mossberg 590A1 and the M67 grenade. The Mosin and the MX
+  // knife stay removed. The bayonet is the player's melee secondary, the
+  // grenade is a throwable, the Glock and Mossberg are the new firearms.
+  assert.deepEqual(Object.keys(C.WEAPONS).sort(),
+    ['akm','deagle','glock','grenade','hecate','knife','l96','mossberg']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
-    if (w.melee) continue;                 // the bayonet has no magazine/reload
+    // The bayonet has no magazine/reload and the grenade has no reserve/reload,
+    // so only the real firearms are required to carry a full load.
+    if (w.melee || w.throwable) continue;
     assert.ok(w.mag > 0 && w.reserve > 0, `${k} has ammo`);
     assert.ok(w.damage > 0 && w.reloadTime > 0);
     assert.equal(typeof w.auto, 'boolean');
@@ -26,9 +30,9 @@ test('arsenal contains every weapon with consistent stats', () => {
   assert.equal(C.WEAPONS.l96.zoomFov < 40, true, 'L96 has scope zoom');
   assert.equal(C.WEAPONS.hecate.zoomFov < 40, true, 'Hecate has scope zoom');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
-    ['akm','hecate','l96'], 'the three core rifles are the primaries');
+    ['akm','hecate','l96','mossberg'], 'the four primaries: three rifles and the shotgun');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
-    ['deagle','knife'], 'the Deagle and the bayonet are the secondaries');
+    ['deagle','glock','grenade','knife'], 'the Deagle, the Glock, the grenade and the bayonet are the secondaries');
 });
 
 /* ---------- 2. Spray pattern ---------- */
@@ -321,4 +325,37 @@ test('bot brain stepping is deterministic for a fixed seed', () => {
   };
   assert.equal(run(31337), run(31337), 'same seed -> same bot trace');
   assert.notEqual(run(31337), run(4242), 'different seed -> different trace');
+});
+
+/* ---------- 11. New weapon suite: Glock / Mossberg / grenade ---------- */
+test('the grenade is a throwable, not a firearm', () => {
+  const g = C.WEAPONS.grenade;
+  assert.ok(g && g.throwable === true, 'grenade is flagged throwable');
+  assert.ok(g.melee !== true, 'grenade is not melee');
+  // A firearm path must reject it: isFirearm is game.js's gate, but the same
+  // rule has to hold for the core's own spread/damage helpers.
+  assert.deepEqual(C.pickSpread('grenade', 0, false, false, false, C.mulberry32(1)), { yaw: 0, pitch: 0 },
+    'grenade has no spread cone');
+  // A grenade deals damage through the same shotDamage path as a bullet, so
+  // splash damage uses the existing damage architecture.
+  assert.ok(C.shotDamage('grenade', 'body', 1) > 0, 'grenade deals splash damage');
+});
+
+test('the Mossberg is a pellet shotgun', () => {
+  const m = C.WEAPONS.mossberg;
+  assert.ok(m && m.slot === 'primary', 'Mossberg is a primary');
+  assert.equal(C.pelletCount('mossberg'), 8, 'Mossberg fires 8 pellets');
+  assert.ok(!m.auto, 'Mossberg is not automatic (pump action)');
+  assert.ok(m.reloadTime > 0, 'Mossberg reloads');
+  // Every pellet rolls its own damage, so a single report is not 8x the damage.
+  assert.ok(m.damage * 8 < C.WEAPONS.akm.damage * 30, 'a full magazine is not stronger than an AKM mag');
+});
+
+test('the Glock is a distinct secondary sidearm', () => {
+  const g = C.WEAPONS.glock, d = C.WEAPONS.deagle;
+  assert.ok(g && g.slot === 'secondary');
+  assert.ok(g.key !== d.key && g.name !== d.name, 'Glock and Deagle are separate weapons');
+  assert.ok(g.mag > d.mag, 'the Glock carries more rounds than the Deagle');
+  assert.ok(g.damage < d.damage, 'the Glock hits softer than the Deagle');
+  assert.ok(C.pelletCount('glock') === 1, 'the Glock fires one projectile per report');
 });

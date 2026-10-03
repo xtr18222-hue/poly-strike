@@ -52,8 +52,29 @@
     // Length is a real blade length: the model is 2.226 units raw, so this
     // scales it down to a knife that reads at FPS viewmodel distance.
     knife: {
-      file: 'low-poly_fa-03_bayonet.glb',
-      length: 0.30, rot: [0, 0, 0], flip: 1,
+      file: 'Combat Knife.glb',
+      length: 0.28, rot: [0, 0, 0], flip: 1,
+    },
+    // The Glock 19's weapon-only model (the rig WITH arms is `fps-Fps Rig.glb`,
+    // registered in FPS_RIGS below). `fps-Rigged Glock.glb` has no arm bones
+    // and no clips, so it is the bot-side / fallback gun.
+    glock: {
+      file: 'fps-Rigged Glock.glb',
+      length: 0.20, rot: [0, 0, 0], flip: 1,
+    },
+    // The supplied Mossberg 590A1. Static-ish (3 bones on the forend/trigger,
+    // no clips), long axis +X at 0.0824m raw, so the fit maps it to -Z like
+    // every other rifle. Real-world length 1.02m for a 12-gauge pump.
+    mossberg: {
+      file: 'Mossberg 590A1.glb',
+      length: 1.02, rot: [0, 0, 0], flip: 1,
+    },
+    // The supplied grenade. A static mesh with a removable Pin node and no
+    // clips. Tiny (0.033m on its long axis Z), so the fit is a real-world
+    // grenade size, not a weapon length: the hand closes around it.
+    grenade: {
+      file: 'Grenade.glb',
+      length: 0.11, rot: [0, 0, 0], flip: 1,
     },
   };
 
@@ -61,16 +82,17 @@
   // viewmodel when available; falls back to weapon + separate hands.
   const FPS_RIGS = {
     akm: 'fps-Fps Rig AKM.glb',
-    deagle: 'fps-Rigged Glock.glb',
+    glock: 'fps-Fps Rig.glb',
   };
 
   // Game balance for the new suite. Firearm identity maps to the old slots so
   // the inventory code keeps working: primary / secondary / melee.
 
-  // Strict roster: AKM, L96 A1, PGM Hecate II, the Desert Eagle and the FA-03
-  // bayonet. The Mosin and the older knives are gone from the loadout, so the
-  // loader never builds them.
-  const ROSTER = ['akm', 'l96', 'hecate', 'deagle', 'knife'];
+  // Strict roster: AKM, L96 A1, PGM Hecate II, the Desert Eagle, the FA-03
+  // bayonet, plus the Glock-19, the Mossberg 590A1 and the M67 grenade the
+  // master pass supplied FPS-pack models for. The Mosin and the older knives
+  // stay gone; the loader builds one fitted weapon per roster key.
+  const ROSTER = ['akm', 'l96', 'hecate', 'deagle', 'knife', 'glock', 'mossberg', 'grenade'];
   // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
   const WEAPON_KEYS = ROSTER.slice();
 

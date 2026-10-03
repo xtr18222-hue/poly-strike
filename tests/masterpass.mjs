@@ -121,6 +121,18 @@ test('radar contacts are gated on line of sight', () => {
   // gate (core.js) uses — so a hostile behind cover is never drawn.
   assert.ok(/for\(const b of match\.bots\)if\(b\.alive&&C\.segmentClear\(/.test(GAME),
     'radar draws only bots with a clear line of sight');
+  // The solids passed to that gate must resolve without dereferencing C.MAP
+  // blindly: C starts as the bare POLY_CORE facade and loadMap() may hand back
+  // a per-map context, so hud() must tolerate either state. A bare C.MAP.* read
+  // inside hud() throws a TypeError when the facade is current and the whole
+  // HUD dies. Scoped to hud()'s own body: the tick's bot-LOS sense object
+  // legitimately reads C.MAP.solids (it runs after loadMap, inside `running`).
+  const hudBody = /function hud\(\)\{([\s\S]*?)\n\{?\s*function /.exec(GAME);
+  assert.ok(hudBody, 'hud() exists in game.js');
+  assert.ok(/const solids=\(C\.MAP\|\|match\.map\|\|POLY_CORE\.MAP\)\.solids;/.test(hudBody[1]),
+    'hud resolves the collision solids without assuming C.MAP exists');
+  assert.ok(!/C\.MAP\.solids/.test(hudBody[1]),
+    'hud never dereferences C.MAP.solids directly');
 });
 
 test('radar is oriented to the player heading', () => {
@@ -136,4 +148,52 @@ test('radar is oriented to the player heading', () => {
     'the facing needle points straight up');
   assert.ok(!/arc\(85\+x\*2,85\+z\*2/.test(GAME),
     'no unrotated world-space plotting remains');
+});
+
+test('the knife is a true melee weapon with no firearm logic', () => {
+  // The knife must never take a firearm path: no muzzle flash, no ammo
+  // consumption, no reload. game.js gates all of that on isFirearm, which must
+  // read the melee flag; and the swing must drive the blade arc, not a shot.
+  assert.ok(/w\.melee\)swing=w\.fireInterval/.test(GAME), 'the swing is armed by the melee flag');
+  assert.ok(/if\(isFirearm\(weapon\)\)\{flashTime=\.045;recoil=1;\}/.test(GAME),
+    'muzzle flash and recoil are armed only for firearms');
+  assert.ok(/if\(isFirearm\(weapon\)\)ammo\[weapon\]\.mag--;/.test(GAME),
+    'a round is consumed only for firearms');
+  // The knife ray is a short-range melee test, not a bullet ray.
+  assert.ok(/ray\.far=!isFirearm\(weapon\)\?2\.65:150/.test(GAME),
+    'the melee ray is 2.65m and the bullet ray is 150m');
+});
+
+test('the grenade throws instead of firing', () => {
+  // The throwable branch must run before any bullet logic and never reach the
+  // raycast: no bullet, no flash, no magazine consumed by a shot.
+  assert.ok(/wt&&wt\.throwable\)/.test(GAME), 'a throwable branch exists in shoot()');
+  assert.ok(/throwGrenade\(\);swing=wt\.fireInterval;return;/.test(GAME),
+    'the throwable branch throws and returns before any bullet logic');
+  // The fuse/arc stepping must run on the tick so grenades in flight update.
+  assert.ok(/stepThrows\(dt\)/.test(GAME), 'the grenade fuse/arc steps on the tick');
+  assert.ok(/A\.sound\('explosion'\)/.test(GAME), 'the detonation has its own cue');
+  // Splash damage goes through the same path a bullet uses.
+  assert.ok(/match\.playerShot\(weapon,i,part,/.test(GAME), 'splash damage uses the existing damage path');
+});
+
+test('the shotgun fans pellets through the existing hit path', () => {
+  // pelletCount is the core's contract for a multi-pellet report.
+  assert.ok(/const pellets=C\.pelletCount\(weapon\)/.test(GAME), 'the pellet count is resolved from the core');
+  assert.ok(/applyHit\(weapon,th\.object\.userData\.botId,part2,th\.distance,th\.point\)/.test(GAME),
+    'every pellet resolves through the shared hit path');
+  assert.ok(/function applyHit\(weapon,id,part,dist,point\)/.test(GAME),
+    'the hit path is one shared helper');
+});
+
+test('the roster wires all eight weapons into the loadout and the HUD', () => {
+  // The loadout panel must list every weapon and the secondary slot must name
+  // the equipped one, whatever it is.
+  assert.ok(/\['deagle','glock','knife','grenade'\]/.test(GAME), 'the four secondaries are listed');
+  assert.ok(/\$\(\'secondarySlot\'\)/.test(GAME), 'the secondary slot is updated by the HUD');
+  // The ready/inspect framing tables must cover the new weapons or the
+  // viewmodel falls back to the AKM pose silently.
+  for (const k of ['glock', 'mossberg', 'grenade']) {
+    assert.ok(new RegExp(`${k}:\{fx:`).test(GAME), `${k} has a READY framing entry`);
+  }
 });

@@ -19,11 +19,13 @@ test('asset suite ships every weapon the game selects', () => {
   // game would spawn a weapon with no mesh.
   const fs = require('fs');
   const roster = Object.keys(C.WEAPONS);
-  assert.equal(roster.length, 5, 'the roster: three rifles, the sidearm and the knife');
+  // The roster: the four primaries (AKM / L96 / Hecate / Mossberg), the Deagle,
+  // the Glock, the bayonet and the M67 grenade.
+  assert.equal(roster.length, 8, 'the roster: four primaries, two pistols, the knife and the grenade');
   for (const k of roster) {
     const w = C.WEAPONS[k];
     assert.ok(typeof w.name === 'string' && w.name.length, k + ' has a name');
-    if (w.melee) continue;                 // the bayonet has no magazine
+    if (w.melee || w.throwable) continue;   // the bayonet has no magazine, the grenade no reserve
     assert.ok(w.mag > 0 && w.reserve > 0, k + ' has ammo');
     assert.ok(w.damage > 0, k + ' deals damage');
   }

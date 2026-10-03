@@ -178,3 +178,42 @@ test('the rig clips never drift the weapon off the camera frame', () => {
   assert.ok(driftMax.length() < 1e-3, `weapon box max did not drift (drift ${driftMax.length().toFixed(4)})`);
   assert.ok(vm.position.distanceTo(posBefore) < 1e-6, 'the rig root did not move');
 });
+
+test('the new weapon suite resolves a viewmodel for every roster key', () => {
+  // Every key in the 8-weapon roster must produce a viewmodel: a fitted arm rig
+  // (AKM / Glock) or the weapon alone (L96 / Hecate / Deagle / knife /
+  // Mossberg / grenade). A null here means the game would hold nothing.
+  for (const key of ['akm', 'l96', 'hecate', 'deagle', 'knife', 'glock', 'mossberg', 'grenade']) {
+    const vm = A.viewmodel(key);
+    assert.ok(vm, `${key} resolved a viewmodel`);
+    const box = new THREE.Box3().setFromObject(vm);
+    assert.ok(!box.isEmpty(), `${key} viewmodel has geometry`);
+    assert.ok(box.getSize(new THREE.Vector3()).length() > 0.01, `${key} viewmodel is not degenerate`);
+  }
+});
+
+test('the Glock uses the supplied arms rig, not the weapon-only model', () => {
+  // Fps Rig.glb is the Glock WITH arms; the Deagle keeps its weapon-only
+  // viewmodel. The two secondaries must not share a rig.
+  const g = A.viewmodel('glock');
+  assert.ok(g, 'the Glock viewmodel resolved');
+  assert.ok(A.isRigged('glock'), 'the Glock is a rigged weapon (arms included)');
+  assert.ok(g.userData.mixer, 'the Glock viewmodel has an animation mixer');
+  assert.ok(g.userData.acts && Object.keys(g.userData.acts).length > 0,
+    'the Glock viewmodel resolved at least one rig clip');
+});
+
+test('the Mossberg and the grenade fall back to the weapon alone (no fake clips)', () => {
+  // The supplied Mossberg and grenade GLBs carry no animation clips, so they
+  // must NOT be rigged and must NOT synthesise clips that do not exist.
+  assert.ok(!A.isRigged('mossberg'), 'the Mossberg has no arm rig');
+  assert.ok(!A.isRigged('grenade'), 'the grenade has no arm rig');
+  assert.equal(A.rigClip('mossberg', 'shoot'), null, 'no fabricated Mossberg shoot clip');
+  assert.equal(A.rigClip('grenade', 'shoot'), null, 'no fabricated grenade shoot clip');
+  assert.equal(A.rigClip('mossberg', 'idle'), null, 'no fabricated Mossberg idle clip');
+  // ...but both still resolve a real mesh.
+  for (const key of ['mossberg', 'grenade']) {
+    const vm = A.viewmodel(key);
+    assert.ok(vm && !vm.userData.isRig, `${key} is the weapon alone`);
+  }
+});

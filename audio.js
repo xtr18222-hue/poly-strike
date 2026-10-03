@@ -17,11 +17,14 @@ window.PolyAudio = (() => {
     if(type==='headshot'){
       const now=ctx.currentTime;[2190,3470,5210].forEach((hz,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.2/(i+1),now);g.gain.exponentialRampToValueAtTime(.0001,now+.24-i*.035);o.connect(g);g.connect(master);o.start(now);o.stop(now+.25);o.onended=()=>{o.disconnect();g.disconnect();};});return;
     }
-    const cues={magout:[340,.10,.13],magin:[640,.085,.16],bolt:[1350,.075,.12],dry:[2400,.05,.09],switch:[900,.05,.07],heartbeat:[58,.18,.18],enemyStep:[115,.10,.11],tick:[1500,.02,.05],clang:[660,.12,.16],crate:[520,.14,.18],caseopen:[880,.10,.20],death:[180,.45,.20]};
+    const cues={magout:[340,.10,.13],magin:[640,.085,.16],bolt:[1350,.075,.12],dry:[2400,.05,.09],switch:[900,.05,.07],heartbeat:[58,.18,.18],enemyStep:[115,.10,.11],tick:[1500,.02,.05],clang:[660,.12,.16],crate:[520,.14,.18],caseopen:[880,.10,.20],death:[180,.45,.20],explosion:[90,.55,.30],pin:[2100,.04,.08]};
     if(cues[type]){const [hz,dur,level]=cues[type];tone(hz,dur,level,type==='heartbeat'?'sine':'triangle');
       // Dry fire: a distinct empty-chamber metallic click — sharp double tick.
       if(type==='dry'){tone(1850,.03,.06,'square',.035);tone(1450,.025,.045,'triangle',.055);}
-      if(type==='heartbeat')tone(65,.12,.10,'sine',.21);if(type==='death')tone(90,.4,.10,'sine',.18);return;}
+      if(type==='heartbeat')tone(65,.12,.10,'sine',.21);if(type==='death')tone(90,.4,.10,'sine',.18);
+      // Grenade detonation: a low double-thump with a noise tail.
+      if(type==='explosion'){tone(70,.45,.30,'sine');tone(120,.22,.22,'triangle',.03);tone(55,.6,.18,'sine',.06);return;}
+      return;}
     // Per-weapon firing voice. The synth used to know only a handful of legacy
     // names (ak47/awp/kar98/deagle) and silently dropped everything else, so
     // the L96, Mosin, Hecate, MX and bayonet fired with no sound at all.
@@ -33,6 +36,9 @@ window.PolyAudio = (() => {
       mosin:   { barrel:'sniper', dur:.45, hz:1000, punch:85,  crack:2400 },
       hecate:  { barrel:'sniper', dur:.60, hz:750,  punch:60,  crack:2300 },
       deagle:  { barrel:'pistol', dur:.14, hz:1900, punch:160, crack:2500 },
+      glock:   { barrel:'pistol', dur:.10, hz:2100, punch:90,  crack:2600 },
+      mossberg:{ barrel:'shotgun',dur:.30, hz:800,  punch:150, crack:1900 },
+      grenade: { barrel:'throw',  dur:.25, hz:700,  punch:0,   crack:1600 },
       mx:      { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       bayonet: { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       knife:   { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
@@ -45,7 +51,7 @@ window.PolyAudio = (() => {
     if (prof) {
       const now = ctx.currentTime;
       // Noise body: the ballistic crack, band-passed around the weapon's pitch.
-      if (prof.barrel !== 'melee') {
+      if (prof.barrel !== 'melee' && prof.barrel !== 'throw') {
         const src = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
         src.buffer = noise;
         filter.type = 'bandpass'; filter.frequency.value = prof.crack; filter.Q.value = .8;
@@ -66,9 +72,13 @@ window.PolyAudio = (() => {
           osc.onended = () => { osc.disconnect(); g.disconnect(); };
         }
       } else {
+        // Throw: an arm-swish and the pin ring, no ballistic report at all.
+        if (prof.barrel === 'throw') { tone(prof.hz, prof.dur, .08, 'triangle'); tone(2100, .035, .07, 'square', .02); }
+        else {
         // Melee: a short metallic swish, no report.
         tone(prof.hz, prof.dur, .12, 'triangle');
         tone(prof.crack, prof.dur * .6, .06, 'sine', .02);
+        }
       }
       return;
     }

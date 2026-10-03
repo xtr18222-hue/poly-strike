@@ -719,3 +719,49 @@ does not move); resume restores running and W moves again; single click burns
 3 rounds and full-auto drains the mag; ESC ducks the audio bus.
 NOT done this pass: mouse-look only fails in headless Chrome because it refuses
 pointer lock — the real-user fallback drag path is unchanged and untested here.
+## 2026-10-02 — RADAR FIX + 8-WEAPON ROSTER (Glock / Mossberg / Grenade) — DONE
+
+RADAR ROOT CAUSE (two bugs, both fixed in game.js hud()):
+1. ROTATION SIGN: world->radar was rotated by -yaw (the transpose), which sends
+   a contact straight AHEAD to BELOW the disc centre for every yaw that is not a
+   multiple of pi/2 — contacts lagged/flipped behind the real facing. Now uses
+   cos(yaw)/sin(yaw) to match three.js YXZ (forward=(-sin yaw,0,-cos yaw)).
+2. NO CONTACTS AT ALL: hud() read C.MAP.solids directly, but C is the bare
+   POLY_CORE facade until loadMap() reassigns it, so the radar geometry draw
+   threw and NO enemy contact was ever painted. Now:
+   const solids=(C.MAP||match.map||POLY_CORE.MAP).solids;
+   Verified in real Chrome: contacts lock to heading through yaw 0/90/180,
+   front/back/left/right correct, distance scales, dead bots vanish, 0 errors.
+
+ROSTER: now 8 weapons. core.js WEAPONS gained glock (secondary, 17+68, 28dmg),
+mossberg (PRIMARY, 6+24, 22dmg, pellets:8) and grenade (secondary, throwable,
+mag:2, no reserve/reload). knife kept. assets.js ROSTER + WEAPON_FILES updated;
+glock registered in FPS_RIGS -> 'fps-Fps Rig.glb' (arms + Glock19 + 3 clips);
+deagle's rig entry was REMOVED (it had been wrongly mapped to the Glock rig).
+The 3 new GLBs (Combat Knife, Mossberg 590A1, Grenade) shipped in assets/models.
+
+KEY GATES (do not regress):
+- isFirearm(k) now excludes throwable AND melee: !w.melee && !w.throwable.
+  The grenade MUST read false or it takes bullet/reload/ADS paths.
+- keys is derived from Object.keys(POLY_CORE.WEAPONS), not hardcoded.
+- refill() has a dedicated throwable branch (mag only, no reserve).
+- shoot() arms flashTime/recoil ONLY for firearms; swing only for w.melee.
+- pickSpread returns {yaw:0,pitch:0} for melee + throwable (no random cone).
+- pellet loop uses C.pelletCount + the shared applyHit() helper.
+
+TESTS: 122 green (84 core + 12 viewmodel + 11 masterpass + 8 radar + 7 boot).
+New: core.test.cjs §11 (throwable/shotgun/glock contracts), viewmodel.mjs
+(every roster key resolves a viewmodel; Glock is rigged; Mossberg/grenade have
+NO fabricated clips), masterpass.mjs (knife true-melee, grenade throws, shotgun
+pellets, 8-weapon loadout wiring).
+
+VERIFIED IN REAL CHROME (CDP 9222, local server, SW unregistered + cache
+disabled first — the SW serves a stale build otherwise): 40/40 checks pass,
+0 runtime errors. Boot to PLAY, all 8 weapons select, all 8 viewmodels bound,
+AKM fires + reload refills from reserve, grenade throw consumes a round,
+knife swing executes, Mossberg fires one round per pull, radar renders,
+Escape pauses, resume restores.
+
+BROWSER PROBE NOTE: Game.test only exists with ?test=1 in the URL. Firing must
+dispatch mousedown on #game (not window) with the #fallback checkbox set, or
+pointer lock blocks it. The AKM is full-auto so a tap consumes several rounds.

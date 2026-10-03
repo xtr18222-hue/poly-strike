@@ -162,14 +162,15 @@ test('the secondary slot holds the Deagle and the FA-03 bayonet', () => {
   for (const key of ['mosin', 'mx', 'shotgun', 'smg', 'lmg', 'bayonet']) {
     assert.ok(!CORE.WEAPONS[key], `${key} is not a weapon`);
   }
-  // The Deagle and the knife share the secondary slot; there is no separate
-  // 'close' slot anymore and no third sidearm.
+  // The Deagle, the Glock, the grenade and the knife share the secondary slot;
+  // there is no separate 'close' slot anymore and no third sidearm.
   assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'close'), [], 'no close-quarters slot remains');
-  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary').sort(), ['deagle', 'knife']);
+  assert.deepEqual(Object.keys(CORE.WEAPONS).filter(k => CORE.WEAPONS[k].slot === 'secondary').sort(), ['deagle', 'glock', 'grenade', 'knife']);
   // Every firearm has a magazine; the knife is the only melee and has none.
   for (const w of Object.values(CORE.WEAPONS)) {
     assert.ok(w.slot === 'primary' || w.slot === 'secondary', `${w.key} has a gun slot`);
     if (w.melee) assert.ok(w.mag === 0, `${w.key} melee has no magazine`);
+    else if (w.throwable) assert.ok(w.mag > 0 && w.reserve === 0, `${w.key} throwable has rounds and no reserve`);
     else assert.ok(w.mag > 0, `${w.key} has a magazine`);
   }
 });

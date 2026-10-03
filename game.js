@@ -21,10 +21,10 @@ let budget=PolySettings.PRESETS[preset];
 // The hitboxes are the rig's own meshes, so they scale with the model; the head
 // is the top ~18% of the figure.
 const BOT_H = 1.7;  // bot eye height, kept level with the operator's eye
-const primaries=['akm','l96','hecate'];
+const primaries=['akm','l96','hecate','mossberg'];
 let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
-try{const savedSecondary=localStorage.getItem('poly-secondary');if(savedSecondary==='deagle'||savedSecondary==='knife')secondary=savedSecondary;}catch(_){}
+try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle','knife','glock','grenade'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
 const secondaryOf=()=>secondary;
 // Crosshair customization, persisted locally.
 const crosshair={color:'#d9f577',gap:6,length:7,thickness:2,dot:true};
@@ -51,11 +51,15 @@ const inventory=()=>dropped?[secondary]:[primary,secondary];
 // slot with the Deagle: isFirearm gates the ammo/reload/ADS paths, and the
 // knife has no magazine, so it must read false here. The melee flag is the
 // authoritative signal (slot:'close' no longer exists in the roster).
-const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close'&&!w.melee;};
+// A throwable is not a firearm either: the grenade has a magazine-like count
+// but no bullets, no reload and no ADS, so the reload/ADS/tracer paths must
+// leave it alone.
+const isFirearm=k=>{const w=C.WEAPONS[k];return !!w&&w.slot!=='close'&&!w.melee&&!w.throwable;};
 // Weapon skins: one chosen skin index per weapon, persisted locally.
-// Declared with the full key list (keys is only assigned further down).
-// Weapon keys span the strict roster: the three primary rifles and the pistol.
-const keys=['akm','l96','hecate','deagle','knife'];
+// Weapon keys span the strict roster: the four primaries, the three secondaries
+// (Deagle / Glock / knife) and the throwable. Derived from the roster so the
+// loadout, the ammo map and the viewmodel binding can never list different sets.
+const keys=window.POLY_CORE&&Object.keys(window.POLY_CORE.WEAPONS)?Object.keys(window.POLY_CORE.WEAPONS):['akm','l96','hecate','deagle','knife'];
 // Skin system removed in this overhaul: models ship with their own materials.
 // the gun with no scope overlay and no zoom. Only the AWP is a scoped sniper.
 // The Mosin is an iron-sight bolt rifle: right-click aims, it does not mount a scope.
@@ -241,6 +245,9 @@ const VIEWMODEL_POSE={
  hecate:[0.012,-0.030,0.075],
  deagle:[0.02,-0.06,0.14],
  knife:[0.05,-0.30,0.30],
+ glock:[0.02,-0.06,0.14],
+ mossberg:[0.015,-0.04,0.11],
+ grenade:[0.05,-0.10,0.20],
 };
 // Per-weapon READY placement, as fractions of the view frustum so every weapon
 // reads consistently whatever its real-world length. x>0 is toward the player's
@@ -253,6 +260,9 @@ const READY={
  hecate:{fx:.28,fy:-.50,d:.86},
  deagle:{fx:.34,fy:-.48,d:.50},
  knife:{fx:.30,fy:-.44,d:.48},
+ glock:{fx:.34,fy:-.48,d:.50},
+ mossberg:{fx:.30,fy:-.52,d:.80},
+ grenade:{fx:.32,fy:-.46,d:.44},
 };
 // Per-weapon INSPECTION target, in the same frustum-fraction units. The weapon
 // tilts (the existing good motion) and then moves toward the RIGHT side of the
@@ -265,6 +275,9 @@ const INSPECT={
  hecate:{fx:.50,fy:-.26,d:.70,rx:-.30,ry:.55,rz:.16},
  deagle:{fx:.58,fy:-.26,d:.52,rx:-.32,ry:.60,rz:.18},
  knife:{fx:.56,fy:-.18,d:.50,rx:-.42,ry:.75,rz:.22},
+ glock:{fx:.58,fy:-.26,d:.52,rx:-.32,ry:.60,rz:.18},
+ mossberg:{fx:.52,fy:-.28,d:.64,rx:-.30,ry:.55,rz:.16},
+ grenade:{fx:.56,fy:-.20,d:.48,rx:-.34,ry:.65,rz:.20},
 };
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();
@@ -338,7 +351,14 @@ function accuracy(){const p=onlineMode?online.state?.players[online.localId]:mat
 function mvp(){const rows=onlineMode&&online.state?online.state.players.map((p,i)=>({name:p.name||'Opponent',score:p.kills*100+online.state.score[i]*250})):[{name:username,score:match.kills*100+match.score.player*250},...match.bots.map(b=>({name:b.name,score:(b.kills||0)*100}))];return rows.sort((a,b)=>b.score-a.score)[0].name;}
 function nextMapId(){const maps=['desert','industrial','urban','harbor','training','shipment','dust2'];return $('rotateMaps').checked?maps[(maps.indexOf(mapId)+1)%maps.length]:mapId;}
 $('rematch').onclick=()=>{if(onlineMode){if(online.requestRematch($('nextMap').value)&&match.phase==='matchover'){$('rematchStatus').textContent='Consent sent — waiting for opponent';$('rematch').disabled=true;}}else{$('mapSelect').value=$('nextMap').value;deploy();}};
-function refill(){for(const k of keys)if(isFirearm(k))ammo[k]={mag:C.WEAPONS[k].mag,reserve:C.WEAPONS[k].reserve};else ammo[k]={mag:0,reserve:0};reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
+// Firearms get a full mag + reserve. Throwables track a count in the same
+// ammo map (the grenade has no reserve and no reload: every round is thrown
+// from the mag field, so it refills to its mag size and nothing else).
+// Pure melee weapons have no ammo at all.
+function refill(){for(const k of keys){const w=C.WEAPONS[k];
+ if(w.throwable)ammo[k]={mag:w.mag,reserve:0};
+ else if(isFirearm(k))ammo[k]={mag:w.mag,reserve:w.reserve};
+ else ammo[k]={mag:0,reserve:0};}reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
 function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='deagle';ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
@@ -384,6 +404,72 @@ function inspectSlideW() {
  return s * s * (3 - 2 * s);
 }
 function inspecting() { return inspPhase !== INSP.READY; }
+// Throwable weapons (the grenade) are NOT firearms: they throw a projectile
+// that follows a gravity arc and detonates on a fuse, damaging everything near
+// the burst through the same playerShot path a bullet uses. No bullet raycast,
+// no muzzle flash, no magazine consumed on the throw, no reload.
+const throws=[];   // live grenades in flight: {o, v, fuse, spin}
+function throwGrenade(){
+ const w=C.WEAPONS[weapon];
+ if(!w||!w.throwable)return;
+ // Throw from the camera, along the look direction, with a real arm speed.
+ const fwd=new T.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+ const start=new T.Vector3(x,y-.15,z).addScaledVector(fwd,.5);
+ const pitchV=pitch;                       // the arc follows where the player looks
+ const speed=16;
+ const v=new T.Vector3(fwd.x*Math.cos(pitchV),Math.sin(pitchV)+.22,fwd.z*Math.cos(pitchV)).normalize().multiplyScalar(speed);
+ // One throwable per slot round; the viewmodel stays but the count drops, so
+ // the player can see the last one leave the hand.
+ const o=PolyAsset.weapon(weapon);
+ if(!o)return;
+ o.position.copy(start);o.rotation.set(0,yaw,Math.PI/4);o.visible=true;scene.add(o);
+ throws.push({o,v,fuse:1.5,spin:new T.Vector3(rng()*4-2,rng()*4-2,rng()*4-2)});
+ // The pin comes out of the supplied model: hide it on the thrown copy so the
+ // grenade reads as live.
+ o.traverse(n=>{if(n.name==='Pin')n.visible=false;});
+ A.sound('pin');
+}
+function detonate(g){
+ const w=C.WEAPONS[weapon];
+ // The burst: an expanding flash sphere + smoke, removed with the effect pool
+ // so no per-frame allocation leaks.
+ const p=g.o.position;
+ if(budget.effects){
+  const o=new T.Mesh(new T.IcosahedronGeometry(.35,1),new T.MeshBasicMaterial({color:0xffb050,transparent:true,opacity:.85,depthWrite:false}));
+  o.position.copy(p);scene.add(o);effects.push({o,life:.32,flash:true,v:new T.Vector3(0,0,0)});
+  const s=new T.Mesh(new T.IcosahedronGeometry(.55,1),new T.MeshBasicMaterial({color:0x4a4a44,transparent:true,opacity:.5,depthWrite:false}));
+  s.position.copy(p);scene.add(s);effects.push({o:s,life:.7,smoke:true,v:new T.Vector3(0,.3,0)});
+  for(let i=0;i<6;i++){const d=new T.Mesh(new T.IcosahedronGeometry(.06,0),new T.MeshBasicMaterial({color:0x2c2c28,transparent:true,opacity:.7}));
+   d.position.copy(p);const dir=new T.Vector3(rng()*2-1,rng()*1.2+.2,rng()*2-1).normalize();scene.add(d);
+   effects.push({o:d,life:.5,debris:true,v:dir.multiplyScalar(4+rng()*4)});}
+ }
+ A.sound('explosion');
+ const R=4.2;   // lethal radius in metres
+ for(let i=0;i<match.bots.length;i++){const b=match.bots[i];
+  if(!b.alive)continue;
+  const d=Math.hypot(b.pos.x-p.x,b.pos.z-p.z);
+  if(d>R)continue;
+  // Falloff is linear out to the radius; a point-blank burst is a full hit.
+  const part=d<1.4?'head':'body';
+  const result=match.playerShot(weapon,i,part,Math.max(d,.01));
+  if(result.dmg>0){hit=.3;
+   const stationary=match.training&&match.mode!=='active';
+   A.sound(result.killed?(stationary?'clang':'kill'):stationary?'clang':'hit');
+   if(result.killed)addKill(`${w.name}  →  ${b.name}`,false);
+  }
+ }
+}
+function stepThrows(dt){
+ for(let i=throws.length-1;i>=0;i--){const g=throws[i];
+  g.fuse-=dt;
+  // Gravity arc, no collision complexity: the ground plane stops the bounce.
+  g.v.y-=17*dt;
+  g.o.position.addScaledVector(g.v,dt);
+  if(g.o.position.y<=.08){g.o.position.y=.08;g.v.y=Math.abs(g.v.y)*.32;g.v.x*=.6;g.v.z*=.6;}
+  g.o.rotation.x+=g.spin.x*dt;g.o.rotation.y+=g.spin.y*dt;g.o.rotation.z+=g.spin.z*dt;
+  if(g.fuse<=0){scene.remove(g.o);g.o.traverse(n=>{if(n.geometry)n.geometry.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});throws.splice(i,1);detonate(g);}
+ }
+}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;cancelInspect();previous=weapon;weapon=k;bolt=0;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;equip=.35;cool=.15;A.sound('switch');}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
 function nearestDrop(){return currentDrops().find(d=>(!onlineMode||d.weapon===primary)&&Math.hypot(x-d.x,z-d.z)<2.5&&C.segmentClear({x,z},d,C.MAP.solids));}
@@ -439,6 +525,19 @@ function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
  const spd=(b.speed||0)*(b.alive?1:0);const stride=Math.min(1,spd/4);
  const cadence=4+spd*3;const phase=elapsed*cadence+i*1.7;
  pivots.forEach((p,j)=>{const swing=Math.sin(phase+j*Math.PI)*.3*stride;const lift=Math.max(0,Math.cos(phase+j*Math.PI))*.05*stride;p.rotation.x=swing;p.position.y=(p.userData.baseY||0)-lift;});});}
+// Shared bullet-hit resolution for the centre pellet and every shotgun pellet:
+// applies the damage through match.playerShot, scores the hit, plays the
+// feedback cue and raises the kill banner. Kept in one place so a pellet and a
+// rifle round can never drift apart in behaviour.
+function applyHit(weapon,id,part,dist,point){
+ const result=match.playerShot(weapon,id,part,dist);
+ if(result.dmg<=0)return;
+ match.shotsHit++;hit=.18;
+ const stationary=match.training&&match.mode!=='active';
+ A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
+ const wn=C.WEAPONS[weapon]?C.WEAPONS[weapon].name:weapon;
+ if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${wn}  →  ${match.bots[id].name}`,part==='head');
+}
 function shoot(){const w=C.WEAPONS[weapon];
  // Inspection takes priority over firing: while the weapon is being examined
  // there is no shot, no ammo use, no flash and no sound. FIRE while inspecting
@@ -446,11 +545,16 @@ function shoot(){const w=C.WEAPONS[weapon];
  // dropped, so the player must press fire again after the weapon is back.
  if(inspecting())return;
  if(!running||match.phase!=='live'||cool>0||reload>0||equip>0)return;
+ // THROWABLES are not firearms: they never fire a bullet. The left click
+ // throws one projectile on the existing fuse/arc path and consumes a round
+ // from the throwable's own count. No dry-fire, no muzzle logic, no reload.
+ const wt=C.WEAPONS[weapon];
+ if(wt&&wt.throwable){if(ammo[weapon].mag<=0){A.sound('dry');cool=.4;return;}cool=wt.fireInterval;match.shotsFired++;ammo[weapon].mag--;throwGrenade();swing=wt.fireInterval;return;}
  // Melee weapons have no magazine, so the empty-magazine bail-out does not
  // apply to them: it would read the knife's mag:0 as "empty" and dry-fire
  // every swing instead of attacking. Only firearms can be out of ammo.
  if(isFirearm(weapon)&&ammo[weapon].mag<=0){A.sound('dry');cool=.25;return;}
- cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;if(!isFirearm(weapon))swing=w.fireInterval;A.sound(weapon);flashTime=.045;recoil=1;
+ cool=w.fireInterval;if(scopedOnly(weapon)){bolt=w.boltTime||w.fireInterval;boltSound=false;}match.shotsFired++;if(isFirearm(weapon))ammo[weapon].mag--;if(w.melee)swing=w.fireInterval;A.sound(weapon);if(isFirearm(weapon)){flashTime=.045;recoil=1;}
  cam.position.set(x,y,z);cam.rotation.set(pitch,yaw,0);cam.updateMatrixWorld(true);syncBots();for(const b of bots)b.updateMatrixWorld(true);origin.copy(cam.position);cam.getWorldDirection(dir);const sp=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);const right=shotRight.crossVectors(dir,cam.up).normalize();dir.applyAxisAngle(shotAxis,sp.yaw).applyAxisAngle(right,sp.pitch).normalize();ray.set(origin,dir);ray.far=!isFirearm(weapon)?2.65:150;
 
  if(onlineMode)online.shoot(weapon,origin,dir,pose());
@@ -466,15 +570,29 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
   if(h.object.userData.switchMesh&&match.training){ // range-mode switch box
    const mode=match.toggleMode();A.sound('kill');addKill(mode==='active'?'LIVE BOTS DEPLOYED · GOOD LUCK':'STATIC TARGETS RESTORED · RANGE RESET');hit=.25;
   }
-  else{const id=h.object.userData.botId;if(id!==undefined&&!onlineMode){
-   const result=match.playerShot(weapon,id,part,h.distance);
-   if(result.dmg>0){match.shotsHit++;hit=.18;
-   const stationary=match.training&&match.mode!=='active';
-   A.sound(part==='head'?'headshot':result.killed?(stationary?'clang':'kill'):(stationary?'clang':'hit'));
-   // part is the height-classified hit zone (the Soldier is a single mesh).
-if(result.killed)addKill(`${part==='head'?'HEADSHOT · ':''}${w.name}  →  ${match.bots[id].name}`,part==='head');
-   }}
-  else if(isFirearm(weapon)&&budget.effects)spawnDecal(h);}}
+  else{const id=h.object.userData.botId;
+   if(id!==undefined&&!onlineMode){
+    applyHit(weapon,id,part,h.distance,h.point);
+   }
+   else if(isFirearm(weapon)&&budget.effects)spawnDecal(h);
+  }}
+// SHOTGUNS fire several pellets per report: each pellet rolls its own spread
+// and its own damage against the part it actually hit. The centre pellet was
+// already resolved by the raycast above, so the rest fan out from the same
+// origin with their own cone and never re-process the range switch box.
+ const pellets=C.pelletCount(weapon);
+ if(pellets>1&&!onlineMode){const cd=new T.Vector3();
+  for(let pi=1;pi<pellets;pi++){const s2=C.pickSpread(weapon,moving,held.has('ControlLeft')||held.has('KeyC'),vy!==0,scoped||ads,rng);
+   cd.copy(dir).applyAxisAngle(shotAxis,s2.yaw).applyAxisAngle(right,s2.pitch).normalize();
+   ray.set(origin,cd);const ph=ray.intersectObjects(rayMeshes,true);
+   const th=ph.find(x2=>x2.object.userData.botId!==undefined);
+   if(th){const part2=th.object.userData.part||'body';
+    if(part2==='body'){const g2=bots[th.object.userData.botId];if(g2&&th.point.y-g2.position.y>BOT_H*0.82)part2='head';}
+    applyHit(weapon,th.object.userData.botId,part2,th.distance,th.point);
+    if(budget.effects)tracer(origin.clone().addScaledVector(right,.18).add(new T.Vector3(0,-.14,0)),th.point,0xffdf91);
+   }else if(budget.effects&&ph[0]&&ph[0].object.userData.botId===undefined)spawnDecal(ph[0]);
+  }
+ }
  shotEffects();if(isFirearm(weapon))tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(isFirearm(weapon))pitch=Math.min(1.45,pitch+w.recoil*.013);
  // Firing kicks the player out of the scope, but iron-sight ADS is a held
@@ -605,15 +723,17 @@ loadoutRenderer.setPixelRatio(Math.min(2,devicePixelRatio||1));loadoutRenderer.a
 function resizeLoadout(){const cv=$('loadoutCanvas');const w=cv.clientWidth||360;const h=cv.clientHeight||240;if(w>4&&h>4){loadoutRenderer.setSize(w,h,false);loadoutCam.aspect=w/h;loadoutCam.updateProjectionMatrix();}}
 window.__loadoutModels=loadoutModels;window.__loadoutCam=loadoutCam;window.__loadoutSelected=()=>loadoutSelected;window.__loadoutScene=loadoutScene;window.__resizeLoadout=resizeLoadout;window.__loadoutRenderer=loadoutRenderer;
 function setLoadoutPreview(key){loadoutSelected=key;loadoutYaw=0;loadoutPitch=0;bindLoadoutModels();for(const k of Object.keys(loadoutModels))setLoadoutVisible(loadoutModels[k],k===key);// The card can fire for a weapon whose GLB is still loading or failed to load.
-const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='deagle'?'Desert Eagle / Semi-auto pistol · 7 rounds':w.name+' / Melee · unlimited';
+const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0,0);loadoutInspectTime=0;applyLoadoutCamera();const w=C.WEAPONS[key];$('loadoutName').textContent=w.name;$('loadoutDesc').textContent=w.slot==='primary'?`${w.name.split(' ')[0]} / ${w.pellets?'Pump shotgun':w.zoomFov?'Scoped marksman':w.auto?'Automatic':'Semi or bolt'} · ${w.mag} rounds`:key==='knife'?w.name+' / Melee · unlimited':key==='grenade'?w.name+' / Throwable · '+w.mag+' grenades':key==='glock'?'Glock-19 / Semi-auto pistol · '+w.mag+' rounds':'Desert Eagle / Semi-auto pistol · '+w.mag+' rounds';
  for(const el of document.querySelectorAll('.wcard'))el.classList.toggle('active',el.dataset.weapon===key);
  // Rebuild the skin selector for the newly selected weapon.
  }
 function renderLoadoutCards(){
  const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
- $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
- // Secondaries: the Desert Eagle and the FA-03 bayonet (melee, no ammo).
- $('secondaryCards').replaceChildren(...['deagle','knife'].map(k=>mk(k,C.WEAPONS[k].slot==='close'?'Blade · melee':'Semi-auto pistol')));}
+ $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].pellets?'Pump shotgun':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
+ // Secondaries: the Desert Eagle, the Glock-19, the FA-03 bayonet (melee, no
+ // ammo) and the grenade (a throwable, not a firearm).
+ const secTag=k=>k==='knife'?'Blade · melee':k==='grenade'?'Throwable · explosive':'Semi-auto pistol';
+ $('secondaryCards').replaceChildren(...['deagle','glock','knife','grenade'].map(k=>mk(k,secTag(k))));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutInspect').hidden=true;stopLoadoutInspect();$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
@@ -713,6 +833,11 @@ function renderScoreboard(){
  const body=table.createTBody();rows.forEach((row,i)=>{const tr=body.insertRow();if(row[0]===username)tr.className='self';for(const value of row)tr.insertCell().textContent=String(value);});$('scoreboard').replaceChildren(table);
 }
 function hud(){const w=C.WEAPONS[weapon];
+ // C is the bare POLY_CORE facade until loadMap() reassigns it to a per-map
+ // context; both carry segmentClear, and POLY_CORE.MAP is the default map, so
+ // one lookup resolves the live solids in either state. Never a different array
+ // from what the bot firing gate uses — only the one it was always meant to have.
+ const solids=(C.MAP||match.map||POLY_CORE.MAP).solids;
 $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=(isFirearm(weapon)&&ammo[weapon])?ammo[weapon].mag:0;$('ammo').textContent=isFirearm(weapon)?rounds:'∞';
  // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
  const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=(!isFirearm(weapon))?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
@@ -721,6 +846,9 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
  $('primarySlot').dataset.slot=primary;$('primarySlot').querySelector('b').textContent=dropped?'DROPPED':C.WEAPONS[primary].name;$('primarySlot').classList.toggle('empty',dropped);
+ // Secondary slot tracks the equipped sidearm, blade or throwable so the HUD
+ // always names the thing actually in the player's hands.
+ $('secondarySlot').dataset.slot=secondary;$('secondarySlot').querySelector('b').textContent=C.WEAPONS[secondary]?C.WEAPONS[secondary].name:'';
  $('killBanner').textContent=killTime>0?killText:'';$('pickupPrompt').textContent=dropped&&nearestDrop()?'E · PICK UP '+C.WEAPONS[nearestDrop().weapon].name:'';
  $('connectionStatus').textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING —'):'OFFLINE';
  document.body.classList.toggle('low-health',running&&match.hp>0&&match.hp<20);
@@ -728,11 +856,19 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);
  // Radar rotates with the player: up on the disc is the direction the operator
  // faces (yaw), so geometry and contacts turn with the view the way a tactical
- // radar does. World (x,z) -> radar (rx,ry) is rotate by -yaw about the player,
+ // radar does. World (x,z) -> radar (rx,ry) is rotate by +yaw about the player,
  // then centre + 2px per metre.
- const cy=Math.cos(-yaw), sy=Math.sin(-yaw);
+ // The rotation direction is NOT arbitrary. This project's camera uses
+ // rotation.order='YXZ' with cam.rotation.set(pitch,yaw,0), which makes the
+ // world forward at yaw=0 be (0,0,-1) and the player's right be
+ // (+cos yaw,-sin yaw). Inverting to cos(-yaw)/sin(-yaw) (the transpose)
+ // sends a contact that is STRAIGHT AHEAD of the player to BELOW the radar
+ // centre for every yaw that is not a multiple of pi/2 — the contacts appeared
+ // to lag/flip behind the player's real facing. Verified numerically against
+ // three.js r149 before and after: see tests/radar.test.cjs.
+ const cy=Math.cos(yaw), sy=Math.sin(yaw);
  function rp(wx,wz){const dx=wx-x,dz=wz-z;return [85+(dx*cy-dz*sy)*2,85+(dx*sy+dz*cy)*2];}
- rc.fillStyle='#b5baa650';for(const s of C.MAP.solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
+ rc.fillStyle='#b5baa650';for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
  rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85,85,3,0,Math.PI*2);rc.fill();
  // Facing needle points straight up (the disc is already rotated to yaw).
  rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85,85);rc.lineTo(85,75);rc.stroke();
@@ -740,7 +876,7 @@ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&r
  // gate: a hostile behind cover is NOT drawn, so the radar cannot be used as a
  // wallhack. segmentClear is the same test match.step() uses each tick, so the
  // radar and the AI can never disagree about who is visible.
- rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,C.MAP.solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}}
+ rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}}
 function animateWeapon(dt){
  if(match.playerDead)inspectHold=false;
  stepInspect(dt);
@@ -937,7 +1073,10 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main
  // scene's viewport is never touched and the panel cannot paint over it.
  if(!$('loadoutPanel').hidden){tickLoadoutPreview(dt);resizeLoadout();loadoutRenderer.render(loadoutScene,loadoutCam);window.__loadoutCalls=loadoutRenderer.info.render.calls;}
- hudClock-=dt;if(hudClock<=0&&started){hud();hudClock=1/budget.hudHz;}}
+ hudClock-=dt;if(hudClock<=0&&started){hud();hudClock=1/budget.hudHz;}
+ // Grenades in flight run on the same clock as everything else: gravity, fuse,
+ // spin and the detonation. They are removed with the effects they spawn.
+ stepThrows(dt);}
 function resize(){const res=PolySettings.resolution(innerWidth,innerHeight,devicePixelRatio,preset);renderer.setSize(res.width,res.height,false);cam.aspect=viewCam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();viewCam.updateProjectionMatrix();}window.addEventListener('resize',resize);document.body.classList.toggle('performance',preset==='performance');resize();
 // The roster resolves from PolyAsset, so the first refill has to wait until the
 // asset pipeline has the weapon definitions available.

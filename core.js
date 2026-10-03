@@ -50,6 +50,22 @@
     // swing in game.js owns its own attack. ads:false means right-click is a
     // no-op for it.
     knife: { key:'knife', name:'FA-03 Bayonet', slot:'secondary', auto:false, mag:0, reserve:0, damage:55, headMult:1.6, legMult:0.7, fireInterval:0.55, reloadTime:0, spreadBase:0.5, spreadScoped:0.5, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, melee:true },
+    // The Glock 19 is its own secondary pistol, separate from the Desert Eagle:
+    // higher capacity, lower per-hit damage, faster handling. Uses the supplied
+    // `fps-Fps Rig.glb` (Glock19 + arms) so it has real first-person hands and
+    // the rig's Idle/Reload/Shoot clips. slot:'secondary' keeps inventory() and
+    // the Deagle-vs-knife secondary cycling untouched.
+    glock: { key:'glock', name:'Glock-19', slot:'secondary', auto:false, mag:17, reserve:68, damage:28, headMult:3.2, legMult:0.75, fireInterval:0.16, reloadTime:1.5, spreadBase:0.006, spreadScoped:0.006, zoomFov:null, ads:false, price:300, killAward:300, falloff:0.004, recoil:0.5 },
+    // The Mossberg 590A1 is a primary shotgun: several pellets per report, each
+    // rolling its own damage against the part it hits (see pelletCount). The
+    // supplied model has no clips and no arms, so the viewmodel is the weapon
+    // plus the shared FPS arm rig posed procedurally. Not automatic.
+    mossberg: { key:'mossberg', name:'Mossberg 590A1', slot:'primary', auto:false, mag:6, reserve:24, damage:22, headMult:2.2, legMult:0.7, fireInterval:0.85, reloadTime:3.4, spreadBase:0.055, spreadScoped:0.055, zoomFov:null, ads:false, price:3200, killAward:300, falloff:0.0028, recoil:1.6, pellets:8 },
+    // The grenade is a THROWABLE, not a firearm. Throwable weapons are flagged
+    // so the shooting path knows to throw instead of fire a bullet: no bullet
+    // raycast, no muzzle flash, no magazine consumed on the throw, no reload.
+    // One "round" is one grenade; the throw uses the existing effects pool.
+    grenade: { key:'grenade', name:'M67 Grenade', slot:'secondary', auto:false, mag:2, reserve:0, damage:120, headMult:1.0, legMult:1.0, fireInterval:1.1, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, throwable:true },
   };
   const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'knife', 'armor'];
 
@@ -60,7 +76,9 @@
   // scoped collapses AWP spread. Returns {yaw, pitch} aim offsets in radians.
   function pickSpread(weaponKey, moveFactor, crouch, air, scoped, rng) {
     const w = WEAPONS[weaponKey];
-    if (!w || w.slot === 'melee') return { yaw: 0, pitch: 0 };
+    // Melee and throwables have no projectile spread at all: the knife ray and
+    // the grenade arc are deterministic, so a random cone would make both miss.
+    if (!w || w.slot === 'melee' || w.melee || w.throwable) return { yaw: 0, pitch: 0 };
     let s;
     if (air) s = w.spreadBase * 6;
     else {
