@@ -17,7 +17,7 @@ window.PolyAudio = (() => {
     if(type==='headshot'){
       const now=ctx.currentTime;[2190,3470,5210].forEach((hz,i)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=hz;g.gain.setValueAtTime(.2/(i+1),now);g.gain.exponentialRampToValueAtTime(.0001,now+.24-i*.035);o.connect(g);g.connect(master);o.start(now);o.stop(now+.25);o.onended=()=>{o.disconnect();g.disconnect();};});return;
     }
-    const cues={magout:[340,.10,.13],magin:[640,.085,.16],bolt:[1350,.075,.12],dry:[2400,.05,.09],switch:[900,.05,.07],heartbeat:[58,.18,.18],enemyStep:[115,.10,.11],tick:[1500,.02,.05],clang:[660,.12,.16],crate:[520,.14,.18],caseopen:[880,.10,.20],death:[180,.45,.20],explosion:[90,.55,.30],pin:[2100,.04,.08]};
+    const cues={magout:[340,.10,.13],magin:[640,.085,.16],bolt:[1350,.075,.12],dry:[2400,.05,.09],switch:[900,.05,.07],heartbeat:[58,.18,.18],enemyStep:[115,.10,.11],tick:[1500,.02,.05],clang:[660,.12,.16],crate:[520,.14,.18],caseopen:[880,.10,.20],death:[180,.45,.20],explosion:[90,.55,.30],pin:[2100,.04,.08],flashbang:[5200,.35,.22],ring:[2400,1.2,.10]};
     if(cues[type]){const [hz,dur,level]=cues[type];tone(hz,dur,level,type==='heartbeat'?'sine':'triangle');
       // Dry fire: a distinct empty-chamber metallic click — sharp double tick.
       if(type==='dry'){tone(1850,.03,.06,'square',.035);tone(1450,.025,.045,'triangle',.055);}
@@ -39,6 +39,7 @@ window.PolyAudio = (() => {
       glock:   { barrel:'pistol', dur:.10, hz:2100, punch:90,  crack:2600 },
       mossberg:{ barrel:'shotgun',dur:.30, hz:800,  punch:150, crack:1900 },
       grenade: { barrel:'throw',  dur:.25, hz:700,  punch:0,   crack:1600 },
+      flash:   { barrel:'throw',  dur:.25, hz:900,  punch:0,   crack:2100 },
       mx:      { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       bayonet: { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
       knife:   { barrel:'melee',  dur:.10, hz:2400, punch:0,   crack:1800 },
@@ -98,8 +99,119 @@ window.PolyAudio = (() => {
     }
   } catch (_) {} }
   function tone(hz,duration,level,type='sine',delay=0){const now=ctx.currentTime+delay,o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(hz,now);g.gain.setValueAtTime(level,now);g.gain.exponentialRampToValueAtTime(.0001,now+duration);o.connect(g);g.connect(master);o.start(now);o.stop(now+duration+.01);o.onended=()=>{o.disconnect();g.disconnect();};}
-  // Kill streak -> clip, indexed from 1. Tiers stop at the last line in the
-  // pack: beyond that the announcer goes silent (see TIER_CAPS in announce()).
+  // ---------------------------------------------------------------- music --
+  // A SEPARATE bus from the SFX master, so the player can mute the music
+  // without touching gunshots, reloads, footsteps, hit sounds, UI cues,
+  // grenade sounds or the announcer. Everything the game plays is synthesized
+  // at runtime (no audio files, no licensed music): the menu theme is a slow
+  // ambient pad + arpeggio loop built from oscillators, generated on demand.
+  let musicGain = null, musicTimer = null, musicOn = false, musicMuted = false;
+  let musicNodes = [];     // everything currently sounding, for a clean teardown
+  const MUSIC_TRACKS = ['menu', 'combat'];
+  let musicTrack = null;
+
+  function musicBus() {
+    if (!ctx) return null;
+    if (!musicGain) {
+      musicGain = ctx.createGain();
+      musicGain.gain.value = musicMuted ? 0 : 0.16;
+      // The music bus feeds the SAME limiter as SFX so the mix stays bounded,
+      // but it has its own gain the SFX paths never touch.
+      musicGain.connect(master);
+    }
+    return musicGain;
+  }
+
+  // One layer of the menu theme: a slow detuned pad chord on a root note.
+  // Everything is scheduled on the audio clock, not on timers, so the loop is
+  // sample-accurate and never drifts.
+  function padNote(bus, hz, startAt, dur, level) {
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine'; o2.type = 'triangle';
+    o.frequency.setValueAtTime(hz, startAt); o2.frequency.setValueAtTime(hz * 1.005, startAt);
+    g.gain.setValueAtTime(0.0001, startAt);
+    g.gain.linearRampToValueAtTime(level, startAt + dur * .35);
+    g.gain.linearRampToValueAtTime(0.0001, startAt + dur);
+    o.connect(g); o2.connect(g); g.connect(bus);
+    o.start(startAt); o2.start(startAt);
+    o.stop(startAt + dur + .05); o2.stop(startAt + dur + .05);
+    o.onended = () => { o.disconnect(); o2.disconnect(); g.disconnect(); };
+  }
+
+  // Menu theme: a slow minor progression with a sparse arpeggio on top.
+  // A-bar / B-bar sections so the loop breathes instead of looping one chord.
+  const MENU_ROOT = 110;   // A2
+  const MENU_CHORDS = [[0, 3, 7], [0, 3, 7], [5, 8, 12], [-2, 2, 5]];  // Am / Am / Dm / G
+  function scheduleMenu(bus, t0) {
+    const bar = 3.2, steps = 4;
+    for (let b = 0; b < MENU_CHORDS.length; b++) {
+      const t = t0 + b * bar;
+      const chord = MENU_CHORDS[b];
+      for (const semi of chord) padNote(bus, MENU_ROOT * Math.pow(2, semi / 12), t, bar * 1.05, .055);
+      // Sparse arpeggio: one note per beat on the top of the chord.
+      for (let s = 0; s < steps; s++) {
+        if ((b + s) % 2 === 1) continue;   // off-beats rest
+        const semi = chord[s % chord.length] + 12;
+        padNote(bus, MENU_ROOT * Math.pow(2, semi / 12), t + s * bar / steps, .9, .03);
+      }
+    }
+    return t0 + MENU_CHORDS.length * bar;
+  }
+  // Combat theme: tense, slower, lower, fewer notes — pressure without melody.
+  const COMBAT_CHORDS = [[0, 3, 7], [0, 3, 7], [0, 3, 7], [-4, 0, 3]];
+  function scheduleCombat(bus, t0) {
+    const bar = 3.6, steps = 4;
+    for (let b = 0; b < COMBAT_CHORDS.length; b++) {
+      const t = t0 + b * bar;
+      const chord = COMBAT_CHORDS[b];
+      for (const semi of chord) padNote(bus, MENU_ROOT * .75 * Math.pow(2, semi / 12), t, bar * 1.05, .05);
+      for (let s = 0; s < steps; s++) {
+        if (s % 2 === 0) continue;
+        const semi = chord[0] + 12;
+        padNote(bus, MENU_ROOT * .75 * Math.pow(2, semi / 12), t + s * bar / steps, .5, .02);
+      }
+    }
+    return t0 + COMBAT_CHORDS.length * bar;
+  }
+
+  // Keep the theme running: schedule the next loop a bar before the current one
+  // ends so the music is seamless. Cancelled by stopMusic().
+  function tickMusic() {
+    const bus = musicBus(); if (!bus || !musicOn) return;
+    const horizon = ctx.currentTime + 4;
+    while (musicNextAt < horizon) {
+      musicNextAt = musicTrack === 'combat' ? scheduleCombat(bus, musicNextAt)
+                                            : scheduleMenu(bus, musicNextAt);
+    }
+  }
+  let musicNextAt = 0;
+
+  function startMusic(track) {
+    if (!ctx) return;
+    if (!MUSIC_TRACKS.includes(track)) track = 'menu';
+    const bus = musicBus();
+    musicTrack = track; musicOn = true;
+    musicNextAt = ctx.currentTime + .15;
+    tickMusic();
+    if (musicTimer) clearInterval(musicTimer);
+    musicTimer = setInterval(tickMusic, 1000);
+  }
+  function stopMusic() {
+    musicOn = false; musicTrack = null;
+    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+  }
+  // Mute is independent of the SFX mute and applies instantly: the music bus
+  // gain ramps to zero, killing what is already sounding.
+  function setMusicMuted(m) {
+    musicMuted = !!m;
+    try { localStorage.setItem('poly-music-muted', musicMuted ? '1' : '0'); } catch (_) {}
+    if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicMuted ? 0 : .16, ctx.currentTime, .05);
+  }
+  function isMusicMuted() { return musicMuted; }
+  function musicState() { return { track: musicTrack, playing: musicOn, muted: musicMuted }; }
+  try { if (localStorage.getItem('poly-music-muted') === '1') musicMuted = true; } catch (_) {}
+
+
   const PACKS = {
     male: [
       '[audio]First......lood!',
@@ -191,5 +303,12 @@ window.PolyAudio = (() => {
     return { male: PACKS.male.slice(0,14), female: PACKS.female.slice(0,9) };
   }
 
-  return {start,sound,announce,setVoicePack,getVoicePack,toggle,setPaused,isPaused,get muted(){return muted;},get ready(){return !!ctx;},packFilenames};
+  // ---------------------------------------------------------------- music --
+  // A SEPARATE bus from the SFX master, so the player can mute the music
+  // without touching gunshots, reloads, footsteps or the announcer. The music
+  // is SYNTHESIZED at runtime (Web Audio oscillators + a noise-bed): no
+  // licensed recordings are shipped or streamed. Everything is scheduled
+  // ahead of time, so the loop runs even when the tab is throttled.
+  return {start,sound,announce,setVoicePack,getVoicePack,toggle,setPaused,isPaused,get muted(){return muted;},get ready(){return !!ctx;},packFilenames,
+    startMusic,stopMusic,setMusicMuted,isMusicMuted,musicState};
 })();

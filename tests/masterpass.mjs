@@ -135,19 +135,24 @@ test('radar contacts are gated on line of sight', () => {
     'hud never dereferences C.MAP.solids directly');
 });
 
-test('radar is oriented to the player heading', () => {
-  // All radar plotting must go through one rotation helper so geometry,
-  // contacts and the facing needle stay consistent at every yaw.
-  assert.ok(/function rp\(wx,wz\)/.test(GAME),
-    'a single rotation helper plots every radar element');
-  // The player marker sits at the disc centre and the needle points up,
-  // because the disc itself is rotated to yaw — not a needle drawn at an angle
-  // over an unrotated map.
-  assert.ok(/rc\.arc\(85,85,3,0,Math\.PI\*2\)/.test(GAME), 'player dot is at the disc centre');
-  assert.ok(/rc\.moveTo\(85,85\);rc\.lineTo\(85,75\)/.test(GAME),
-    'the facing needle points straight up');
-  assert.ok(!/arc\(85\+x\*2,85\+z\*2/.test(GAME),
-    'no unrotated world-space plotting remains');
+test('radar keeps the map fixed and rotates the player marker', () => {
+  // The map is axis-aligned and always drawn the same way up (world north at
+  // the top of the disc): the player reads it without re-orienting with the
+  // camera. Only the player marker rotates to show heading.
+  // All radar plotting must go through one helper so geometry, contacts and
+  // the marker stay consistent at every yaw.
+  assert.ok(/function rp\(wx,wz\)\{return \[85\+\(wx-x\)\*2,85\+\(wz-z\)\*2\];\}/.test(GAME),
+    'a single axis-aligned plot helper maps every radar element (no rotation of the map)');
+  assert.ok(!/const cy=Math\.cos\(yaw\), sy=Math\.sin\(yaw\)/.test(GAME),
+    'the map is not rotated by yaw anymore');
+  // The player marker is a triangle rotated to yaw, drawn over the fixed map.
+  assert.ok(/rc\.rotate\(-yaw\)/.test(GAME), 'the player marker rotates with yaw');
+  assert.ok(/rc\.moveTo\(0,-6\);rc\.lineTo\(4,4\);rc\.lineTo\(-4,4\)/.test(GAME),
+    'the marker is a heading triangle, not a centre dot');
+  // The map itself never turns: solids are plotted through the same unrotated
+  // helper as the contacts.
+  assert.ok(/rc\.fillStyle='#1d282c';[\s\S]*for\(const s of solids\)/.test(GAME),
+    'solids are drawn over the fixed disc');
 });
 
 test('the knife is a true melee weapon with no firearm logic', () => {
@@ -170,11 +175,15 @@ test('the grenade throws instead of firing', () => {
   assert.ok(/wt&&wt\.throwable\)/.test(GAME), 'a throwable branch exists in shoot()');
   assert.ok(/throwGrenade\(\);swing=wt\.fireInterval;return;/.test(GAME),
     'the throwable branch throws and returns before any bullet logic');
+  // The flashbang is equipment too: it throws through the same branch and its
+  // burst is a blind, not damage.
+  assert.ok(/const isFlash=!!\(w&&w\.flash\)/.test(GAME), 'detonate distinguishes the flashbang');
+  assert.ok(/A\.sound\(isFlash\?'flashbang':'explosion'\)/.test(GAME), 'the flashbang has its own cue');
   // The fuse/arc stepping must run on the tick so grenades in flight update.
   assert.ok(/stepThrows\(dt\)/.test(GAME), 'the grenade fuse/arc steps on the tick');
-  assert.ok(/A\.sound\('explosion'\)/.test(GAME), 'the detonation has its own cue');
+  assert.ok(/'explosion'/.test(GAME), 'the detonation has an explosion cue name');
   // Splash damage goes through the same path a bullet uses.
-  assert.ok(/match\.playerShot\(weapon,i,part,/.test(GAME), 'splash damage uses the existing damage path');
+  assert.ok(/match\.playerShot\((?:weapon|g\.kind),i,part,/.test(GAME), 'splash damage uses the existing damage path');
 });
 
 test('the shotgun fans pellets through the existing hit path', () => {

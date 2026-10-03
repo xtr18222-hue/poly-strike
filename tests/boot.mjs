@@ -250,6 +250,11 @@ function makeDeps(w) {
     // lifecycle test can assert gunfire does not keep playing while paused.
     setPaused(p) { this.__paused = p; },
     isPaused() { return !!this.__paused; },
+    // The music bus is separate from SFX: the menu theme and its mute are
+    // queried by the settings wiring at boot, so the stand-in must carry them.
+    startMusic: noop, stopMusic: noop,
+    setMusicMuted() {}, isMusicMuted() { return false; },
+    musicState() { return { track: null, playing: false, muted: false }; },
   };
   const PolyAsset = {
     ready: () => Promise.resolve(),

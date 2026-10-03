@@ -12,8 +12,10 @@ test('arsenal contains every weapon with consistent stats', () => {
   // the Glock-19, the Mossberg 590A1 and the M67 grenade. The Mosin and the MX
   // knife stay removed. The bayonet is the player's melee secondary, the
   // grenade is a throwable, the Glock and Mossberg are the new firearms.
+  // The roster: 8 weapons plus the flashbang, which is EQUIPMENT (slot 4) and
+  // never competes with the sidearm or the knife.
   assert.deepEqual(Object.keys(C.WEAPONS).sort(),
-    ['akm','deagle','glock','grenade','hecate','knife','l96','mossberg']);
+    ['akm','deagle','flash','glock','grenade','hecate','knife','l96','mossberg']);
   for (const [k, w] of Object.entries(C.WEAPONS)) {
     assert.equal(w.key, k, 'weapon key matches');
     assert.equal(typeof w.name, 'string');
@@ -31,8 +33,14 @@ test('arsenal contains every weapon with consistent stats', () => {
   assert.equal(C.WEAPONS.hecate.zoomFov < 40, true, 'Hecate has scope zoom');
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'primary').sort(),
     ['akm','hecate','l96','mossberg'], 'the four primaries: three rifles and the shotgun');
+  // CS:GO-style inventory: [1] primary [2] secondary [3] knife [4] equipment.
+  // The knife has its own melee slot, the throwables share the equipment slot.
   assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'secondary').sort(),
-    ['deagle','glock','grenade','knife'], 'the Deagle, the Glock, the grenade and the bayonet are the secondaries');
+    ['deagle','glock'], 'the sidearm slot holds the Deagle and the Glock only');
+  assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'melee').sort(),
+    ['knife'], 'the knife is the melee slot');
+  assert.deepEqual(Object.keys(C.WEAPONS).filter(k => C.WEAPONS[k].slot === 'equipment').sort(),
+    ['flash','grenade'], 'grenade and flashbang share the equipment slot');
 });
 
 /* ---------- 2. Spray pattern ---------- */

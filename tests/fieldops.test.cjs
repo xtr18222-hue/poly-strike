@@ -21,7 +21,7 @@ test('asset suite ships every weapon the game selects', () => {
   const roster = Object.keys(C.WEAPONS);
   // The roster: the four primaries (AKM / L96 / Hecate / Mossberg), the Deagle,
   // the Glock, the bayonet and the M67 grenade.
-  assert.equal(roster.length, 8, 'the roster: four primaries, two pistols, the knife and the grenade');
+  assert.equal(roster.length, 9, 'the roster: four primaries, two pistols, the knife, the grenade and the flashbang');
   for (const k of roster) {
     const w = C.WEAPONS[k];
     assert.ok(typeof w.name === 'string' && w.name.length, k + ' has a name');

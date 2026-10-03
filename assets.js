@@ -76,6 +76,15 @@
       file: 'Grenade.glb',
       length: 0.11, rot: [0, 0, 0], flip: 1,
     },
+    // The flashbang shares the Grenade body: the supplied pack has no separate
+    // flash model, and the M67's mesh with the Pin removed reads as a generic
+    // cylindrical grenade. Distinct by silhouette tint (game.js keys the
+    // viewmodel pose off the roster key) and by the CS:GO flashbang icon in the
+    // HUD. Length is the same real-world grenade size as the M67.
+    flash: {
+      file: 'Grenade.glb',
+      length: 0.11, rot: [0, 0, 0], flip: 1,
+    },
   };
 
   // First-person rigs: arms + weapon + clips already bound. Used for the
@@ -92,7 +101,7 @@
   // bayonet, plus the Glock-19, the Mossberg 590A1 and the M67 grenade the
   // master pass supplied FPS-pack models for. The Mosin and the older knives
   // stay gone; the loader builds one fitted weapon per roster key.
-  const ROSTER = ['akm', 'l96', 'hecate', 'deagle', 'knife', 'glock', 'mossberg', 'grenade'];
+  const ROSTER = ['akm', 'l96', 'hecate', 'deagle', 'knife', 'glock', 'mossberg', 'grenade', 'flash'];
   // Mirror of PolyCore's keys; loadAll prefers POLY_CORE directly when present.
   const WEAPON_KEYS = ROSTER.slice();
 

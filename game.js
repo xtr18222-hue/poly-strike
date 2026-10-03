@@ -22,9 +22,11 @@ let budget=PolySettings.PRESETS[preset];
 // is the top ~18% of the figure.
 const BOT_H = 1.7;  // bot eye height, kept level with the operator's eye
 const primaries=['akm','l96','hecate','mossberg'];
-let primary='akm',secondary='deagle',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
+let primary='akm',secondary='deagle',melee='knife',equipment='grenade',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
-try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle','knife','glock','grenade'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
+try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle','glock'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
+try{const savedMelee=localStorage.getItem('poly-melee');if(['knife'].includes(savedMelee))melee=savedMelee;}catch(_){}
+try{const savedEquip=localStorage.getItem('poly-equipment');if(['grenade','flash'].includes(savedEquip))equipment=savedEquip;}catch(_){}
 const secondaryOf=()=>secondary;
 // Crosshair customization, persisted locally.
 const crosshair={color:'#d9f577',gap:6,length:7,thickness:2,dot:true};
@@ -40,10 +42,14 @@ try{$('crosshairColor').value=crosshair.color;}catch(_){}
 $('crosshairColor').onchange=()=>{crosshair.color=$('crosshairColor').value;try{localStorage.setItem('poly-crosshair',JSON.stringify(crosshair));}catch(_){}applyCrosshair();};
 $('crosshairDot').checked=crosshair.dot;
 $('crosshairDot').onchange=()=>{crosshair.dot=$('crosshairDot').checked;try{localStorage.setItem('poly-crosshair',JSON.stringify(crosshair));}catch(_){}applyCrosshair();};
-// Inventory slots are derived from the equipped items: primary rifle,
-// secondary pistol. Dropping the
-// primary collapses the rifle slot, so the wheel never offers a gap.
-const inventory=()=>dropped?[secondary]:[primary,secondary];
+// Inventory slots are derived from the equipped items, in CS:GO order:
+// [1] primary rifle, [2] secondary pistol, [3] knife, [4] equipment
+// (grenade / flashbang). Dropping the primary collapses the rifle slot so the
+// wheel never offers a gap; the knife and equipment are always carried.
+const inventory=()=>dropped?[secondary,melee,equipment]:[primary,secondary,melee,equipment];
+// The equipment slot cycles between the grenade and the flashbang without
+// touching any other slot.
+const equipmentKeys=()=>['grenade','flash'].filter(k=>C.WEAPONS[k]);
 // Every weapon in the reduced roster is a firearm, so this is always true today,
 // this is always true today, but the ammo/tracer/reload paths stay guarded so
 // a future close-quarters pickup cannot break them.
@@ -199,6 +205,30 @@ let modelsBound=false;
 // rig (arms + gun at the authored grip); the rest stay weapon-only. Tracked so
 // animateWeapon can skip the parts the rig already owns (muzzle, ads anchor).
 const rigged={};
+// The flashbang body is the M67 mesh, so it gets its own livery here, on the
+// cloned viewmodel only. The CS:GO flashbang reads as a light can with a red
+// warning band; this tints the grenade body grey and adds a red ring mesh.
+function tintFlash(root){
+ const T3=window.THREE;if(!T3)return;
+ root.traverse(o=>{
+  if(!o.isMesh)return;
+  const mats=Array.isArray(o.material)?o.material:[o.material];
+  for(const m of mats){
+   if(!m||!m.isMaterial)continue;
+   m.color=new T3.Color(0x9aa3a8);   // light steel instead of the frag's olive
+   if(m.emissive!==undefined)m.emissive=new T3.Color(0x222222);
+  }
+ });
+ // The red warning band at the top of the can.
+ try{
+  const box=new T3.Box3().setFromObject(root);if(!box.isEmpty()){
+   const h=Math.max(.006,(box.max.y-box.min.y)*.18),cy=box.max.y-h*.5;
+   const band=new T3.Mesh(new T3.CylinderGeometry(.055,.055,h,12),new T3.MeshBasicMaterial({color:0xd43a2f}));
+   band.position.set((box.min.x+box.max.x)*.5,cy,(box.min.z+box.max.z)*.5);
+   root.add(band);
+  }
+ }catch(_){}
+}
 const bindModels=()=>{
  if(modelsBound)return;modelsBound=true;
  const tryBind=()=>{
@@ -221,6 +251,11 @@ const bindModels=()=>{
   // reads well on a bare gun would twist the arms off the grip, so the rig's
   // own pose is kept and only the weapon-only models take VIEWMODEL_POSE.
   if(src.userData.isRig)src.rotation.set(0,0,0);
+  // The flashbang reuses the M67 body, so it would be visually identical to the
+  // frag. Give it a distinct paint job at bind time: an olive-drab can with a
+  // red top band (the CS:GO flashbang reads as a light-grey body with a red
+  // warning stripe). Done on the clone, never on the shared cached original.
+  if(key==='flash'){tintFlash(src);}
   }
   // The suite resolves asynchronously; if it was not ready on the first pass the
   // weapon groups stay empty and the in-game weapon is invisible. Retry until
@@ -244,10 +279,15 @@ const VIEWMODEL_POSE={
  l96:[0.012,-0.030,0.075],
  hecate:[0.012,-0.030,0.075],
  deagle:[0.02,-0.06,0.14],
- knife:[0.05,-0.30,0.30],
+ // A tactical knife hold, NOT a pistol grip: the blade is held edge-up in a
+ // reverse grip, canted well off the gun axis so the point leads the hand.
+ // Pitch tips the blade forward, yaw rolls it outward, and the bank presents
+ // the flat of the blade to the camera so the silhouette reads as a knife.
+ knife:[0.42,-0.72,0.95],
  glock:[0.02,-0.06,0.14],
  mossberg:[0.015,-0.04,0.11],
  grenade:[0.05,-0.10,0.20],
+ flash:[0.05,-0.10,0.20],
 };
 // Per-weapon READY placement, as fractions of the view frustum so every weapon
 // reads consistently whatever its real-world length. x>0 is toward the player's
@@ -259,10 +299,13 @@ const READY={
  l96:{fx:.28,fy:-.50,d:.80},
  hecate:{fx:.28,fy:-.50,d:.86},
  deagle:{fx:.34,fy:-.48,d:.50},
- knife:{fx:.30,fy:-.44,d:.48},
+ // The knife is held closer and higher than a sidearm: a short blade needs
+ // less depth to frame, and it sits forward of the hip so the swing has room.
+ knife:{fx:.34,fy:-.40,d:.40},
  glock:{fx:.34,fy:-.48,d:.50},
  mossberg:{fx:.30,fy:-.52,d:.80},
  grenade:{fx:.32,fy:-.46,d:.44},
+ flash:{fx:.32,fy:-.46,d:.44},
 };
 // Per-weapon INSPECTION target, in the same frustum-fraction units. The weapon
 // tilts (the existing good motion) and then moves toward the RIGHT side of the
@@ -274,10 +317,13 @@ const INSPECT={
  l96:{fx:.50,fy:-.26,d:.66,rx:-.30,ry:.55,rz:.16},
  hecate:{fx:.50,fy:-.26,d:.70,rx:-.30,ry:.55,rz:.16},
  deagle:{fx:.58,fy:-.26,d:.52,rx:-.32,ry:.60,rz:.18},
- knife:{fx:.56,fy:-.18,d:.50,rx:-.42,ry:.75,rz:.22},
+ // Inspection turns the blade flat to the camera and brings it centre-screen,
+ // the way you would actually look a knife over.
+ knife:{fx:.46,fy:-.14,d:.44,rx:-.30,ry:.40,rz:.55},
  glock:{fx:.58,fy:-.26,d:.52,rx:-.32,ry:.60,rz:.18},
  mossberg:{fx:.52,fy:-.28,d:.64,rx:-.30,ry:.55,rz:.16},
  grenade:{fx:.56,fy:-.20,d:.48,rx:-.34,ry:.65,rz:.20},
+ flash:{fx:.56,fy:-.20,d:.48,rx:-.34,ry:.65,rz:.20},
 };
 const flash=new T.Mesh(new T.ConeGeometry(.045,.22,5),new T.MeshBasicMaterial({color:0xffdc85}));flash.rotation.x=-Math.PI/2;viewScene.add(flash);flash.visible=false;
 const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=new T.Vector3();
@@ -285,6 +331,30 @@ const ray=new T.Raycaster(), dir=new T.Vector3(), origin=new T.Vector3(), tmpV=n
 // tick by animateWeapon(), so they are module-scope and reused — never
 // re-allocated in the hot loop. Same for the shoot() right vector.
 const vmBox=new T.Box3(), wmBox=new T.Box3(), vmCenter=new T.Vector3(), vmSize=new T.Vector3(), shotRight=new T.Vector3(), shotAxis=new T.Vector3(0,1,0);
+const muzzleV=new T.Vector3();
+// The visible barrel tip of the current weapon, in WORLD space. The viewmodel
+// is a child of viewScene, which follows the camera, so the muzzle empty the
+// asset suite parents to the barrel tip is world-accurate once the matrices are
+// current. Falls back to the camera when there is no viewmodel yet (the assets
+// are async) or no muzzle empty on the model, so the tracer still comes from
+// the player and never from the target.
+function muzzleOrigin(out){
+ const m=models[weapon]&&models[weapon].userData?models[weapon]:null;
+ if(!m)return null;
+ m.updateMatrixWorld(true);
+ const mu=m.userData.muzzle;
+ if(!mu)return null;
+ mu.getWorldPosition(muzzleV);
+ return muzzleV;
+}
+// The ejection port: a little BEHIND the muzzle along the barrel, to the
+// player's right, which is where the port sits on every weapon in the roster.
+function ejectionOrigin(out){
+ const m=muzzleOrigin(out);if(!m)return null;
+ const r=shotRight.set(Math.cos(yaw),0,-Math.sin(yaw));   // player's right
+ const b=new T.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));  // barrel forward
+ return muzzleV.clone().addScaledVector(r,.12).addScaledVector(b,-.14).setY(muzzleV.y+.05);
+}
 const held=new Set();
 let match=C.createMatch(),rng=C.mulberry32(4451),running=false,started=false,locked=false,drag=false,fallback=false;
 let gameMode='skirmish',oldPlayerDead=false;
@@ -309,7 +379,20 @@ let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=pe
 const spray=C.buildSprayPattern(4815,30),effects=[];let feed=[];
 let damageSource=null,bolt=0,boltSound=false,reloadStage=-1,heartbeat=0,enemyFoot=0,enemyPose=null,killCount=0,killClock=0,killText='',killTime=0,roundNotice=0,finished=false,firstBlood=false;
 function damageFrom(sx,sz){damageSource={x:sx,z:sz};hurt=.65;A.sound('enemy');}
-function addKill(text,headshot=false){feed.unshift({text,headshot});feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
+function addKill(text,headshot=false){
+ // Feed text is one of two shapes: a kill line "WEAPON → VICTIM" (optionally
+ // prefixed "HEADSHOT · "), which is rendered as killer/icon/victim columns, or
+ // a plain system line ("LIVE BOTS DEPLOYED · GOOD LUCK"), which is rendered
+ // verbatim. Parse once here so hud() only ever paints.
+ const parts=text.split('→').map(s=>s.trim());
+ const isKill=parts.length>1;
+ const wn=isKill?parts[0].replace(/^HEADSHOT · /,'').trim():'';
+ // Match the parsed display name to the roster key. Feed text is "WEAPON →
+ // VICTIM" where WEAPON is WEAPONS[key].name, so an exact lookup usually hits;
+ // the lowercased fallback covers the network feed, which emits the raw key.
+ const wk=isKill?(Object.keys(C.WEAPONS).find(k=>C.WEAPONS[k].name===wn)||Object.keys(C.WEAPONS).find(k=>k.toLowerCase()===wn.toLowerCase())||''):'';
+ feed.unshift({text,headshot,killer:isKill?username:'',weapon:wk,weaponName:wn,victim:isKill?parts[1]:'',isKill});
+ feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
 // 2=Double, 3=Triple, 4=Multi, then Mega/Ultra/Unstoppable/... up the pack.
 // Kill-count voice lines are capped per pack: the female announcer stops at 9
 // and the male announcer runs to 14. audio.js applies that cap (announce()
@@ -359,7 +442,7 @@ function refill(){for(const k of keys){const w=C.WEAPONS[k];
  if(w.throwable)ammo[k]={mag:w.mag,reserve:0};
  else if(isFirearm(k))ammo[k]={mag:w.mag,reserve:w.reserve};
  else ammo[k]={mag:0,reserve:0};}reload=0;reloadKey=null;cool=0;scoped=false;ads=false;match.armor=100;}
-function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous='deagle';ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
+function spawn(){killCount=0;roundNotice=0;firstBlood=false;bolt=0;reloadStage=-1;dropped=false;localDrops=[];weapon=primary;previous=secondary;ads=false;slide=0;slideCool=0;equip=.2;burst=0;x=C.MAP.spawnPlayer.x;z=C.MAP.spawnPlayer.z;y=1.7;vy=0;yaw=0;pitch=0;refill();}
 function clearInput(){held.clear();trigger=false;drag=false;$('scoreboard').hidden=true;}
 function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$('game').requestPointerLock();if(p&&p.catch)p.catch(()=>{fallback=true;});}catch(_){fallback=true;}}
 function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}
@@ -408,7 +491,7 @@ function inspecting() { return inspPhase !== INSP.READY; }
 // that follows a gravity arc and detonates on a fuse, damaging everything near
 // the burst through the same playerShot path a bullet uses. No bullet raycast,
 // no muzzle flash, no magazine consumed on the throw, no reload.
-const throws=[];   // live grenades in flight: {o, v, fuse, spin}
+const throws=[];   // live projectiles in flight: {o, v, fuse, spin, kind}
 function throwGrenade(){
  const w=C.WEAPONS[weapon];
  if(!w||!w.throwable)return;
@@ -423,27 +506,34 @@ function throwGrenade(){
  const o=PolyAsset.weapon(weapon);
  if(!o)return;
  o.position.copy(start);o.rotation.set(0,yaw,Math.PI/4);o.visible=true;scene.add(o);
- throws.push({o,v,fuse:1.5,spin:new T.Vector3(rng()*4-2,rng()*4-2,rng()*4-2)});
+ throws.push({o,v,fuse:1.5,kind:weapon,spin:new T.Vector3(rng()*4-2,rng()*4-2,rng()*4-2)});
  // The pin comes out of the supplied model: hide it on the thrown copy so the
  // grenade reads as live.
  o.traverse(n=>{if(n.name==='Pin')n.visible=false;});
  A.sound('pin');
 }
 function detonate(g){
- const w=C.WEAPONS[weapon];
- // The burst: an expanding flash sphere + smoke, removed with the effect pool
- // so no per-frame allocation leaks.
+ const w=C.WEAPONS[g.kind]||C.WEAPONS[weapon];
+ const isFlash=!!(w&&w.flash);
  const p=g.o.position;
  if(budget.effects){
-  const o=new T.Mesh(new T.IcosahedronGeometry(.35,1),new T.MeshBasicMaterial({color:0xffb050,transparent:true,opacity:.85,depthWrite:false}));
-  o.position.copy(p);scene.add(o);effects.push({o,life:.32,flash:true,v:new T.Vector3(0,0,0)});
-  const s=new T.Mesh(new T.IcosahedronGeometry(.55,1),new T.MeshBasicMaterial({color:0x4a4a44,transparent:true,opacity:.5,depthWrite:false}));
-  s.position.copy(p);scene.add(s);effects.push({o:s,life:.7,smoke:true,v:new T.Vector3(0,.3,0)});
-  for(let i=0;i<6;i++){const d=new T.Mesh(new T.IcosahedronGeometry(.06,0),new T.MeshBasicMaterial({color:0x2c2c28,transparent:true,opacity:.7}));
-   d.position.copy(p);const dir=new T.Vector3(rng()*2-1,rng()*1.2+.2,rng()*2-1).normalize();scene.add(d);
-   effects.push({o:d,life:.5,debris:true,v:dir.multiplyScalar(4+rng()*4)});}
+  // The flashbang's burst is a blinding white double-bang with no smoke;
+  // the frag's is an expanding fireball with smoke and debris.
+  const burstColor=isFlash?0xffffff:0xffb050, burstSize=isFlash?.5:.35;
+  const o=new T.Mesh(new T.IcosahedronGeometry(burstSize,1),new T.MeshBasicMaterial({color:burstColor,transparent:true,opacity:isFlash?.95:.85,depthWrite:false}));
+  o.position.copy(p);scene.add(o);effects.push({o,life:isFlash?.18:.32,flash:true,v:new T.Vector3(0,0,0)});
+  if(!isFlash){
+   const s=new T.Mesh(new T.IcosahedronGeometry(.55,1),new T.MeshBasicMaterial({color:0x4a4a44,transparent:true,opacity:.5,depthWrite:false}));
+   s.position.copy(p);scene.add(s);effects.push({o:s,life:.7,smoke:true,v:new T.Vector3(0,.3,0)});
+   for(let i=0;i<6;i++){const d=new T.Mesh(new T.IcosahedronGeometry(.06,0),new T.MeshBasicMaterial({color:0x2c2c28,transparent:true,opacity:.7}));
+    d.position.copy(p);const dir=new T.Vector3(rng()*2-1,rng()*1.2+.2,rng()*2-1).normalize();scene.add(d);
+    effects.push({o:d,life:.5,debris:true,v:dir.multiplyScalar(4+rng()*4)});}
+  }
  }
- A.sound('explosion');
+ A.sound(isFlash?'flashbang':'explosion');
+ // The flashbang blinds: a full-screen white fade on the HUD plus an ear-ringing
+ // tail. It deals no damage, so it never goes through playerShot.
+ if(isFlash){flashBlind();return;}
  const R=4.2;   // lethal radius in metres
  for(let i=0;i<match.bots.length;i++){const b=match.bots[i];
   if(!b.alive)continue;
@@ -451,7 +541,7 @@ function detonate(g){
   if(d>R)continue;
   // Falloff is linear out to the radius; a point-blank burst is a full hit.
   const part=d<1.4?'head':'body';
-  const result=match.playerShot(weapon,i,part,Math.max(d,.01));
+  const result=match.playerShot(g.kind,i,part,Math.max(d,.01));
   if(result.dmg>0){hit=.3;
    const stationary=match.training&&match.mode!=='active';
    A.sound(result.killed?(stationary?'clang':'kill'):stationary?'clang':'hit');
@@ -470,7 +560,27 @@ function stepThrows(dt){
   if(g.fuse<=0){scene.remove(g.o);g.o.traverse(n=>{if(n.geometry)n.geometry.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});throws.splice(i,1);detonate(g);}
  }
 }
+// The flashbang's screen effect: an opaque white fade that decays over ~2.5s.
+// Driven from the same effects clock as everything else (the decay runs in the
+// tick loop via flashAlpha) so it never allocates and always pauses with the
+// match.
+let flashAlpha=0;
+function flashBlind(){
+ flashAlpha=1;
+ // The ringing tail under the bang.
+ A.sound('ring');
+}
 function select(k){if(!inventory().includes(k)||k===weapon||(onlineMode&&reload>0))return;cancelInspect();previous=weapon;weapon=k;bolt=0;reload=0;reloadKey=null;scoped=false;ads=false;burst=0;equip=.35;cool=.15;A.sound('switch');}
+// The equipment slot holds the grenade OR the flashbang. Switching within the
+// slot never touches the primary/secondary/melee selection, so the player can
+// swap to the flash without losing their rifle's ammo state.
+function cycleEquipment(){
+ const list=equipmentKeys();if(list.length<2)return;
+ const next=list[(list.indexOf(equipment)+1)%list.length];
+ equipment=next;try{localStorage.setItem('poly-equipment',next);}catch(_){}
+ A.sound('switch');
+ if(weapon==='grenade'||weapon==='flash')select(next);
+}
 function currentDrops(){return onlineMode?(online.state?.drops||[]).map(d=>({...d,weapon:d.key||d.weapon})):localDrops;}
 function nearestDrop(){return currentDrops().find(d=>(!onlineMode||d.weapon===primary)&&Math.hypot(x-d.x,z-d.z)<2.5&&C.segmentClear({x,z},d,C.MAP.solids));}
 function dropPrimary(){if(dropped||weapon!==primary||reload>0||!['buy','live'].includes(match.phase))return;if(onlineMode){online.drop();return;}localDrops=[{id:'local',weapon:primary,x:x-Math.sin(yaw),z:z-Math.cos(yaw),ammo:{...ammo[primary]}}];dropped=true;select(secondary);}
@@ -495,9 +605,25 @@ function dropMag(){
  const fwd=new T.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
  effects.push({o,life:1.15,v:fwd.multiplyScalar(1.5).setY(1.0),spin:true});
 }
-function shotEffects(){if(!budget.effects||!scopedOnly(weapon)||effects.length>20)return;
- if(PolyVisual.buildCasing){const o=PolyVisual.buildCasing(T);o.position.set(x+Math.cos(yaw)*.3,y-.18,z-Math.sin(yaw)*.3);scene.add(o);effects.push({o,life:.7,v:new T.Vector3(Math.cos(yaw)*1.7,1.1,-Math.sin(yaw)*1.7),spin:true});}
- const o=new T.Mesh(new T.IcosahedronGeometry(.075,0),new T.MeshBasicMaterial({color:0xc4c9c3,transparent:true,opacity:.3,depthWrite:false}));o.position.copy(origin).addScaledVector(dir,.85);scene.add(o);effects.push({o,life:.45,smoke:true,v:new T.Vector3(0,.15,0)});
+// The tracer start point: the real barrel tip when the viewmodel has a muzzle
+// empty, otherwise a small offset in front of the camera so the tracer still
+// appears to leave the player. Never the grip, never the camera, never the
+// rear of the model: the bullet visibly exits the barrel the player sees.
+function muzzlePellet(target){
+ const m=muzzleOrigin();
+ if(m){const to=target.clone().sub(m);const len=to.length();if(len>1e-4){to.multiplyScalar(Math.min(len,.35)/len);return m.clone().add(to);}return m.clone();}
+ // No viewmodel yet (assets still loading): fall back to just ahead of the eye.
+ return origin.clone().addScaledVector(dir,.35);
+}
+function shotEffects(){if(!budget.effects||effects.length>20)return;
+ // Shells leave the ACTION, not the camera: the ejection port sits a little
+ // behind the muzzle, to the player's right. Only the rifle and the shotgun
+ // eject in this roster; pistols keep their brass internal.
+ const ejects=weapon==='akm'||weapon==='mossberg';
+ if(ejects&&PolyVisual.buildCasing){const e=ejectionOrigin();if(e){const o=PolyVisual.buildCasing(T);o.position.copy(e);scene.add(o);
+  const r=shotRight.set(Math.cos(yaw),0,-Math.sin(yaw));
+  effects.push({o,life:.8,v:r.clone().multiplyScalar(1.8).setY(1.4),spin:true});}}
+ if(scopedOnly(weapon)){const o=new T.Mesh(new T.IcosahedronGeometry(.075,0),new T.MeshBasicMaterial({color:0xc4c9c3,transparent:true,opacity:.3,depthWrite:false}));o.position.copy(origin).addScaledVector(dir,.85);scene.add(o);effects.push({o,life:.45,smoke:true,v:new T.Vector3(0,.15,0)});}
 }
 // A zero-length segment (muzzle under a target's hit point) yields NaN
 // normals; degenerate tracers are skipped rather than poisoning the geometry.
@@ -589,11 +715,11 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
    if(th){const part2=th.object.userData.part||'body';
     if(part2==='body'){const g2=bots[th.object.userData.botId];if(g2&&th.point.y-g2.position.y>BOT_H*0.82)part2='head';}
     applyHit(weapon,th.object.userData.botId,part2,th.distance,th.point);
-    if(budget.effects)tracer(origin.clone().addScaledVector(right,.18).add(new T.Vector3(0,-.14,0)),th.point,0xffdf91);
+    if(budget.effects)tracer(muzzlePellet(th.point),th.point,0xffdf91);
    }else if(budget.effects&&ph[0]&&ph[0].object.userData.botId===undefined)spawnDecal(ph[0]);
   }
  }
- shotEffects();if(isFirearm(weapon))tracer(origin.clone().addScaledVector(right,.25).add(new T.Vector3(0,-.2,0)),end,0xffdf91);
+ shotEffects();if(isFirearm(weapon))tracer(muzzlePellet(end),end,0xffdf91);
  if(weapon==='akm'){const p=spray[burst%30];pitch=Math.min(1.45,pitch+p.up*.009);yaw+=p.side*.007;burst++;}else if(isFirearm(weapon))pitch=Math.min(1.45,pitch+w.recoil*.013);
  // Firing kicks the player out of the scope, but iron-sight ADS is a held
  // aim posture and must survive a shot — clearing it here made every
@@ -638,7 +764,7 @@ function loadMap(id){
  for(const b of bots){if(!b.parent)scene.add(b);b.traverse(n=>{n.matrixAutoUpdate=true;});}
  // Rebuild the bot models if this arena needs a different count.
  rebuildBots();
- document.querySelector('.brand small').textContent=C.MAP.name||mapId.toUpperCase();cam.far=budget.far;cam.updateProjectionMatrix();
+ document.querySelectorAll('.brand small').forEach(el=>el.textContent=C.MAP.name||mapId.toUpperCase());cam.far=budget.far;cam.updateProjectionMatrix();
 }
 function leave(){localDrops=[];document.body.classList.remove('low-health');if(onlineMode){onlineMode=false;online.close();}running=false;started=false;clearInput();A.setPaused(false);if(document.pointerLockElement)document.exitPointerLock();$('pause').hidden=true;$('hud').hidden=true;$('menu').hidden=false;$('start').focus();}
 let settingsReturn=null;
@@ -800,12 +926,29 @@ $('toMenu').onclick=leave;
 $('onlineButton').onclick=()=>{$('onlinePanel').hidden=false;$('hostRoom').focus();};
 $('hostRoom').onclick=()=>{A.start();online.host($('mapSelect').value);$('roomCode').textContent=online.code;};$('joinRoom').onclick=()=>{A.start();online.join($('roomInput').value);};
 $('cancelOnline').onclick=()=>{online.close();$('roomCode').textContent='';$('onlinePanel').hidden=true;$('onlineButton').focus();};
+// ---- music: independent bus, menu theme on first user gesture ----
+// The AudioContext cannot start until a user gesture, so the theme is started
+// from the same click that starts the match / opens settings, not on load.
+(function(){
+ const set=$('musicToggle'),vol=$('musicVolume'),volOut=$('musicVolumeValue');
+ const apply=()=>{if(!A.ready)return;const on=set.checked;A.setMusicMuted(!on||Number(vol.value)<=0);};
+ if(set){set.checked=!A.isMusicMuted();set.onchange=()=>{A.start();if(set.checked)A.startMusic('menu');apply();};}
+ if(vol){vol.oninput=()=>{volOut.textContent=vol.value+'%';apply();};}
+ // Start the menu theme once a menu panel is opened (any user gesture counts).
+ ['settingsButton','onlineButton'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{A.start();if(!A.musicState().playing)A.startMusic('menu');},{once:true});});
+})();
 $('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').onclick=()=>deploy(false);
+// The HUD icons are fetched once on first interaction (not at page load, so the
+// menu never waits on them) and cached for the rest of the session.
+['start','restart','resume'].forEach(id=>$(id).addEventListener('click',()=>{try{PS_ICONS.preload();}catch(_){}},{once:false}));
+// Paint the static health/armor glyphs into the vitals the first time the DOM
+// is ready; they never change after that.
+if(typeof PS_ICONS!=='undefined')PS_ICONS.preload().then(()=>{hudIconNode('health',18).then(n=>{const h=$('healthIcon');if(h&&n)h.replaceChildren(n);});hudIconNode('armor',18).then(n=>{const a=$('armorIcon');if(a&&n)a.replaceChildren(n);});});
 document.addEventListener('pointerlockchange',()=>{locked=!!document.pointerLockElement;if(!locked&&running&&!fallback)pause();});document.addEventListener('pointerlockerror',()=>{fallback=true;});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});window.addEventListener('blur',pause);
 document.addEventListener('mousemove',e=>{if(!running||(!locked&&!drag))return;const s=.002*Number($('sensitivity').value)*((scoped||ads)?Number($('adsSensitivity').value):1);yaw-=e.movementX*s;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*s));});
 $('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){ if(inspecting()){cancelInspect();return;} trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;inspectHold=false;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2'].indexOf(e.code);if(i>=0)select([primary,secondary][i]);if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){startInspect();ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
+document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2','Digit3','Digit4'].indexOf(e.code);if(i>=0)select(inventory()[i]);if(e.code==='Digit5'||e.code==='KeyB')cycleEquipment();if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){startInspect();ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
 document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;if(e.code==='KeyF')inspectHold=false;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
 function move(dt){
  const crouch=held.has('ControlLeft')||held.has('ControlRight')||held.has('KeyC');
@@ -836,47 +979,141 @@ function hud(){const w=C.WEAPONS[weapon];
  // C is the bare POLY_CORE facade until loadMap() reassigns it to a per-map
  // context; both carry segmentClear, and POLY_CORE.MAP is the default map, so
  // one lookup resolves the live solids in either state. Never a different array
- // from what the bot firing gate uses — only the one it was always meant to have.
+ // from what the bot firing gate uses - only the one it was always meant to have.
  const solids=(C.MAP||match.map||POLY_CORE.MAP).solids;
-$('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);$('weaponName').textContent=w.name;const rounds=(isFirearm(weapon)&&ammo[weapon])?ammo[weapon].mag:0;$('ammo').textContent=isFirearm(weapon)?rounds:'∞';
- // Ammo colour gradient: clean white at full, amber through the middle, deep red at empty.
- const cap=Math.max(1,w.mag);const ratio=rounds/cap;$('ammo').style.color=(!isFirearm(weapon))?'':ratio<=.001?'#ff4a4a':ratio<=.34?'#ff7a5c':ratio<=.67?'#ffd354':'';
- $('reserve').textContent=(!isFirearm(weapon)||!ammo[weapon])?'':` / ${ammo[weapon].reserve}`;const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);$('score').innerHTML=`${String(match.score.player).padStart(2,'0')} <span>ROUND ${String(match.round).padStart(2,'0')}<br>${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}</span> ${String(match.score.enemy).padStart(2,'0')}`;$('objective').textContent=match.training?(match.mode==='active'?`TRAINING · LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`TRAINING · ${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;$('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / DEAGLE · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';// Melee weapons have no magazine; the reload prompt would never clear.
-$('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&reload<=0?'RELOAD! · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';$('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads;$('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);$('hitmarker').style.opacity=hit>0?1:0;$('damage').style.opacity=Math.max(0,hurt)*.7;$('fps').textContent=`${Math.round(fps)} FPS`;
+ // ---- vitals: compact icon-led health/armor (bottom-left) ----
+ $('health').textContent=Math.ceil(match.hp);$('armor').textContent=Math.ceil(match.armor);
+ $('armorVital').style.display=match.armor>0?'':'none';
+ $('weaponName').textContent=w.name;
+ const rounds=(isFirearm(weapon)&&ammo[weapon])?ammo[weapon].mag:0;
+ $('ammo').textContent=isFirearm(weapon)?rounds:(w.throwable?(ammo[weapon]?ammo[weapon].mag:''):'∞');
+ $('ammoRow').classList.toggle('empty',isFirearm(weapon)&&rounds===0);
+ $('ammoRow').classList.toggle('low',isFirearm(weapon)&&rounds>0&&rounds/Math.max(1,w.mag)<=.34);
+ $('reserve').textContent=(!isFirearm(weapon)||!ammo[weapon]||!ammo[weapon].reserve)?'':` / ${ammo[weapon].reserve}`;
+ // ---- top centre: team score / round / clock / match state ----
+ const time=match.training?0:Math.ceil(match.phase==='buy'?match.buyClock:match.roundClock);
+ $('scorePlayer').textContent=String(match.score.player);
+ $('scoreEnemy').textContent=String(match.score.enemy);
+ $('roundLabel').textContent=match.training?'TRAINING':'ROUND '+String(match.round).padStart(2,'0');
+ $('roundClock').textContent=match.training?'- -':`${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}`;
+ $('objective').textContent=match.training?(match.mode==='active'?`LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;
+ $('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / SIDEARM · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';
+ // Melee weapons have no magazine; the reload prompt would never clear.
+ $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&reload<=0?'RELOAD · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';
+ $('scope').hidden=!scoped;$('crosshair').hidden=scoped||ads||!!w.melee||!!w.throwable;
+ $('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);
+ $('hitmarker').style.opacity=hit>0?1:0;
+ $('damage').style.opacity=Math.max(0,hurt)*.7;
+ $('fps').textContent=`${Math.round(fps)} FPS`;
+ $('flashblind').style.opacity=String(Math.max(0,Math.min(1,flashAlpha)));
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
- const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);$('feed').replaceChildren(...feed.map(t=>{const d=document.createElement('div');const skull=document.createElement('span');skull.className='skull'+(t.headshot?' headshot':'');skull.textContent='☠';skull.setAttribute('aria-label',t.headshot?'Headshot':'Elimination');d.append(skull,document.createTextNode(' '+t.text));return d;}));document.querySelectorAll('[data-slot]').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));if(!$('scoreboard').hidden)renderScoreboard();
- $('primarySlot').dataset.slot=primary;$('primarySlot').querySelector('b').textContent=dropped?'DROPPED':C.WEAPONS[primary].name;$('primarySlot').classList.toggle('empty',dropped);
- // Secondary slot tracks the equipped sidearm, blade or throwable so the HUD
- // always names the thing actually in the player's hands.
- $('secondarySlot').dataset.slot=secondary;$('secondarySlot').querySelector('b').textContent=C.WEAPONS[secondary]?C.WEAPONS[secondary].name:'';
- $('killBanner').textContent=killTime>0?killText:'';$('pickupPrompt').textContent=dropped&&nearestDrop()?'E · PICK UP '+C.WEAPONS[nearestDrop().weapon].name:'';
- $('connectionStatus').textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING —'):'OFFLINE';
+ const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);
+ // ---- kill feed: killer + CS:GO weapon icon + victim ----
+ // Rows are reused DOM nodes; only entries whose signature changed are
+ // rewritten, so an idle feed costs no DOM work.
+ const feedHost=$('feed');
+ for(let i=0;i<Math.max(feed.length,feedHost.children.length);i++){
+  if(i>=feed.length){feedHost.children[i].remove();continue;}
+  const e=feed[i];
+  let el=feedHost.children[i];
+  if(!el||!el.classList.contains('row')){el=document.createElement('div');el.className='row';feedHost.insertBefore(el,feedHost.children[i]||null);}
+  const want=`${e.text}|${e.headshot?1:0}`;
+  if(el.dataset.sig===want)continue;
+  el.dataset.sig=want;el.replaceChildren();
+  if(!e.isKill){el.append(document.createTextNode(e.text));continue;}
+  const k=document.createElement('span');k.className='killer';k.textContent=e.killer;el.append(k);
+  const hs=e.headshot?document.createElement('span'):null;
+  if(hs){hs.className='hs';hs.title='Headshot';el.append(hs);}
+  const wi=document.createElement('span');wi.className='wicon';el.append(wi);
+  const v=document.createElement('span');v.className='victim';v.textContent=e.victim;el.append(v);
+  // Icons resolve SYNCHRONOUSLY after preload (hudIconNode returns a node, not
+  // a promise, once the SVG is cached), so they land in the same frame the row
+  // is built — no deferred write for a later clear to wipe.
+  const iconNode=weaponIconKey(e.weapon||weapon);
+  paintIcon(wi,iconNode,14,el,want);
+  if(hs)paintIcon(hs,'headshot',14,el,want);
+ }
+ // ---- weapon selector: [1] primary [2] secondary [3] knife [4] equipment ----
+ setSlot($('primarySlot'),primary,dropped?'DROPPED':null);
+ setSlot($('secondarySlot'),secondary,null);
+ setSlot($('knifeSlot'),melee,null);
+ setSlot($('equipSlot'),equipment,null);
+ document.querySelectorAll('#slots .slot').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));
+ $('killBanner').textContent=killTime>0?killText:'';
+ $('pickupPrompt').textContent=dropped&&nearestDrop()?'E · PICK UP '+C.WEAPONS[nearestDrop().weapon].name:'';
+ $('connectionStatus').textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING -'):'OFFLINE';
  document.body.classList.toggle('low-health',running&&match.hp>0&&match.hp<20);
- const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;$('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
+ const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;
+ $('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
+ if(!$('scoreboard').hidden)renderScoreboard();
+ // ---- radar: the MAP is FIXED; the player marker rotates over it ----
+ // World north (map -Z) is always up on the disc. The player is drawn as a
+ // triangle pointing the way they face, and only the marker turns - the map
+ // and the solids never rotate, so a player who knows the map reads the disc
+ // instantly instead of having to re-orient with the camera.
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);
- // Radar rotates with the player: up on the disc is the direction the operator
- // faces (yaw), so geometry and contacts turn with the view the way a tactical
- // radar does. World (x,z) -> radar (rx,ry) is rotate by +yaw about the player,
- // then centre + 2px per metre.
- // The rotation direction is NOT arbitrary. This project's camera uses
- // rotation.order='YXZ' with cam.rotation.set(pitch,yaw,0), which makes the
- // world forward at yaw=0 be (0,0,-1) and the player's right be
- // (+cos yaw,-sin yaw). Inverting to cos(-yaw)/sin(-yaw) (the transpose)
- // sends a contact that is STRAIGHT AHEAD of the player to BELOW the radar
- // centre for every yaw that is not a multiple of pi/2 — the contacts appeared
- // to lag/flip behind the player's real facing. Verified numerically against
- // three.js r149 before and after: see tests/radar.test.cjs.
- const cy=Math.cos(yaw), sy=Math.sin(yaw);
- function rp(wx,wz){const dx=wx-x,dz=wz-z;return [85+(dx*cy-dz*sy)*2,85+(dx*sy+dz*cy)*2];}
- rc.fillStyle='#b5baa650';for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
- rc.fillStyle='#d9f577';rc.beginPath();rc.arc(85,85,3,0,Math.PI*2);rc.fill();
- // Facing needle points straight up (the disc is already rotated to yaw).
- rc.strokeStyle='#d9f577';rc.beginPath();rc.moveTo(85,85);rc.lineTo(85,75);rc.stroke();
- // Radar contacts follow the same line-of-sight rule as the bots' own firing
- // gate: a hostile behind cover is NOT drawn, so the radar cannot be used as a
- // wallhack. segmentClear is the same test match.step() uses each tick, so the
- // radar and the AI can never disagree about who is visible.
- rc.fillStyle='#ff735e';for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}}
+ // The radar window follows the player but stays axis-aligned: centre on the
+ // player, 2px per metre, no rotation.
+ function rp(wx,wz){return [85+(wx-x)*2,85+(wz-z)*2];}
+ rc.fillStyle='#1d282c';
+ for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
+ rc.fillStyle='#ff735e';
+ for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}
+ // Player marker: a triangle that rotates with yaw, over the fixed map.
+ rc.save();rc.translate(85,85);rc.rotate(-yaw);
+ rc.beginPath();rc.moveTo(0,-6);rc.lineTo(4,4);rc.lineTo(-4,4);rc.closePath();
+ rc.fillStyle='#c9d870';rc.fill();
+ rc.strokeStyle='#0b1216';rc.lineWidth=1.2;rc.stroke();rc.restore();
+ // North marker at the top of the fixed disc.
+ rc.fillStyle='#7e8c80';rc.font='8px monospace';rc.textAlign='center';rc.fillText('N',85,10);rc.textAlign='left';
+}
+// ---- CS:GO icon helpers ------------------------------------------------------
+// Bundled silhouettes (assets/icons/) are keyed by the CS:GO asset name, not by
+// the POLY STRIKE weapon key. The roster's real-world weapons map onto the
+// closest CS:GO counterpart in the supplied pack; the icon is a HUD glyph only
+// and the weapon's own name/model/stats are untouched.
+const WEAPON_ICONS={akm:'ak47',l96:'awp',hecate:'g3sg1',mossberg:'nova',deagle:'deagle',glock:'glock',knife:'knife',grenade:'hegrenade',flash:'flashbang'};
+// addKill() stores the parsed DISPLAY NAME ("AKM"), not the roster key, so the
+// feed needs a name->icon fallback alongside the key path.
+const NAME_TO_ICON={};
+function weaponIconKey(weaponKey){
+ if(WEAPON_ICONS[weaponKey])return WEAPON_ICONS[weaponKey];
+ if(!Object.keys(NAME_TO_ICON).length)for(const k in C.WEAPONS)if(WEAPON_ICONS[k])NAME_TO_ICON[C.WEAPONS[k].name]=WEAPON_ICONS[k];
+ return NAME_TO_ICON[weaponKey]||null;
+}
+function hudIconNode(iconName,size){
+ // nodeFor returns a NODE once the SVG is cached (same-frame paint) and a
+ // promise only on the cold first load, so the hot path never defers.
+ if(typeof PS_ICONS==='undefined'||!PS_ICONS)return null;
+ const n=PS_ICONS.nodeFor(iconName,size);
+ return (n&&typeof n.then==='function')?n:Promise.resolve(n);
+}
+// Paint an icon into `target`. If the SVG is already cached the node is placed
+// immediately; otherwise it loads and lands only if the row still matches.
+function paintIcon(target,iconName,size,el,sig){
+ if(!target)return;
+ if(typeof PS_ICONS==='undefined'||!PS_ICONS)return;
+ const n=PS_ICONS.nodeFor(iconName,size);
+ if(n&&typeof n.then==='function'){n.then(m=>{if(m&&target.isConnected&&el.dataset.sig===sig)target.replaceChildren(m);});return;}
+ if(n)target.replaceChildren(n);
+}
+// Paint one [n] slot: icon + name + active/empty state. The element's own
+// data-slot tracks what it currently shows, so an unchanged slot costs no DOM
+// writes on a 60fps HUD tick.
+function setSlot(el,key,override){
+ if(!el)return;
+ const changed=el.dataset.slot!==String(key)||el.dataset.override!==String(override||'');
+ el.dataset.slot=String(key);el.dataset.override=String(override||'');
+ const w=C.WEAPONS[key];
+ const name=override||(w?w.name:'');
+ el.querySelector('.sname').textContent=name;
+ el.classList.toggle('empty',!w&&!override);
+ el.classList.toggle('inactive',!!override);
+ if(changed){
+  const icon=el.querySelector('.sicon');
+  if(icon)hudIconNode(weaponIconKey(key),19).then(n=>{icon.replaceChildren(n||'');});
+ }
+}
 function animateWeapon(dt){
  if(match.playerDead)inspectHold=false;
  stepInspect(dt);
@@ -970,11 +1207,15 @@ function animateWeapon(dt){
  // Melee swing: the knife has no muzzle, so the attack is a swing of the
  // blade itself. swing is set on fire and decays in tick(); this drives a
  // single outward arc (pitch down and away, then back) on top of the pose.
+ // The slash is a DIAGONAL arc, not a pistol-style jab: the blade chops down
+ // and out across the body, then returns. On top of the tactical pose above.
  if(swing>0){
   const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
-  m.rotation.x-=arc*.9;
-  m.rotation.z+=arc*.35;
-  m.position.y+=arc*.06;
+  m.rotation.x-=arc*1.15;
+  m.rotation.y-=arc*.5;
+  m.rotation.z+=arc*.45;
+  m.position.x+=arc*.05;
+  m.position.y+=arc*.07;
  }
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
@@ -1033,7 +1274,7 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();
       if(match.playerDead&&oldHp>0&&!oldPlayerDead){A.sound('death');}
       if(match.hp<oldHp){const b=match.bots[match.lastAttacker];if(b){damageFrom(b.pos.x,b.pos.z);tracer(new T.Vector3(b.pos.x,BOT_H*0.7,b.pos.z),new T.Vector3(x,y,z),0xff735e);}}oldPlayerDead=match.playerDead;if(oldPhase!=='matchover'&&match.phase==='matchover')finishMatch(match.matchWinner==='player');if(match.training){match.botViews=bots;syncBots();}
- killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(swing>0)swing=Math.max(0,swing-dt);if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
+ if(flashAlpha>0)flashAlpha=Math.max(0,flashAlpha-dt*.4);killTime=Math.max(0,killTime-dt);heartbeat-=dt;if(match.hp>0&&match.hp<20&&heartbeat<=0){A.sound('heartbeat');heartbeat=.85;}if(swing>0)swing=Math.max(0,swing-dt);if(bolt>0){bolt=Math.max(0,bolt-dt);if(!boltSound&&bolt<(C.WEAPONS[weapon].boltTime||C.WEAPONS[weapon].fireInterval)*.7){A.sound('bolt');boltSound=true;}}cool=Math.max(0,cool-dt);slideCool=Math.max(0,slideCool-dt);equip=Math.max(0,equip-dt);recoil=Math.max(0,recoil-dt*6);hit=Math.max(0,hit-dt);hurt=Math.max(0,hurt-dt*2);flashTime=Math.max(0,flashTime-dt);if(reload>0&&!onlineMode){reload-=dt;if(reload<=0&&reloadKey){const a=ammo[reloadKey],n=Math.min(C.WEAPONS[reloadKey].mag-a.mag,a.reserve);a.mag+=n;a.reserve-=n;reloadKey=null;A.sound('reload');}}if(trigger&&C.WEAPONS[weapon].auto)shoot();
  {cam.position.set(x,y,z);cam.rotation.set(pitch+(budget.effects?Math.sin(elapsed*91)*recoil*.0018:0),yaw+(budget.effects?Math.sin(elapsed*73)*recoil*.001:0),0);cam.fov+=((fovTarget())-cam.fov)*Math.min(1,dt*18);cam.updateProjectionMatrix();}}
  // The reload timer is decremented and resolved inside the running branch
  // above (line ~579); a second decrement here would count the same reload

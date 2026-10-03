@@ -43,13 +43,12 @@
     l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:false, price:700, killAward:300, falloff:0.006, recoil:0.85 },
-    // The knife shares the SECONDARY slot with the Deagle: the player picks one
-    // or the other, never both. slot:'secondary' (not a separate 'close' slot)
-    // keeps inventory()/select()/dropPrimary working unchanged, and isFirearm()
-    // returns false for it so firing/reload/ammo paths skip it and the melee
-    // swing in game.js owns its own attack. ads:false means right-click is a
-    // no-op for it.
-    knife: { key:'knife', name:'FA-03 Bayonet', slot:'secondary', auto:false, mag:0, reserve:0, damage:55, headMult:1.6, legMult:0.7, fireInterval:0.55, reloadTime:0, spreadBase:0.5, spreadScoped:0.5, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, melee:true },
+    // The knife is the player's MELEE slot: slot:'melee' (not 'secondary').
+    // The inventory is [primary, secondary, melee, equipment], so the blade is
+    // always carried alongside the sidearm — the player no longer has to choose
+    // between a Deagle and a knife. isFirearm() returns false for it so the
+    // firing/reload/ammo paths skip it and the melee swing owns its own attack.
+    knife: { key:'knife', name:'FA-03 Bayonet', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:1.6, legMult:0.7, fireInterval:0.55, reloadTime:0, spreadBase:0.5, spreadScoped:0.5, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, melee:true },
     // The Glock 19 is its own secondary pistol, separate from the Desert Eagle:
     // higher capacity, lower per-hit damage, faster handling. Uses the supplied
     // `fps-Fps Rig.glb` (Glock19 + arms) so it has real first-person hands and
@@ -65,7 +64,13 @@
     // so the shooting path knows to throw instead of fire a bullet: no bullet
     // raycast, no muzzle flash, no magazine consumed on the throw, no reload.
     // One "round" is one grenade; the throw uses the existing effects pool.
-    grenade: { key:'grenade', name:'M67 Grenade', slot:'secondary', auto:false, mag:2, reserve:0, damage:120, headMult:1.0, legMult:1.0, fireInterval:1.1, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, throwable:true },
+    grenade: { key:'grenade', name:'M67 Grenade', slot:'equipment', auto:false, mag:2, reserve:0, damage:120, headMult:1.0, legMult:1.0, fireInterval:1.1, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, throwable:true },
+    // The flashbang is the second piece of EQUIPMENT: slot:'equipment', a
+    // throwable like the grenade but with no lethal blast — it detonates as a
+    // bright flash that blinds anything facing it. Equipment shares ONE slot:
+    // the player swaps between the grenade and the flash in slot 4. One "round"
+    // is one grenade, exactly like the M67's throwable branch.
+    flash: { key:'flash', name:'Flashbang', slot:'equipment', auto:false, mag:2, reserve:0, damage:0, headMult:1.0, legMult:1.0, fireInterval:1.1, reloadTime:0, spreadBase:0, spreadScoped:0, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, throwable:true, flash:true },
   };
   const BUY_ITEMS = ['akm', 'l96', 'hecate', 'deagle', 'knife', 'armor'];
 
@@ -308,7 +313,7 @@
       lossStreak: 0,
       hp: 100, armor: 0,
       kills: 0, deaths: 0, shotsFired: 0, shotsHit: 0, headshots: 0,
-      owned: { primary: null, secondary: 'deagle' },
+      owned: { primary: null, secondary: 'deagle', equipment: 'grenade' },
       lastWinner: null,
       bots: [],
       events: [],              // transient feed events for the HUD
@@ -400,7 +405,8 @@
       if (this.money < w.price) return false;
       this.money -= w.price;
       if (w.slot === 'primary') this.owned.primary = item;
-      else this.owned.secondary = item;
+      else if (w.slot === 'secondary') this.owned.secondary = item;
+      else this.owned.equipment = item;   // the grenade / flashbang slot
       return true;
     };
 
