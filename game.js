@@ -31,6 +31,13 @@ const secondaryOf=()=>secondary;
 // Crosshair customization, persisted locally.
 const crosshair={color:'#d9f577',gap:6,length:7,thickness:2,dot:true};
 try{const saved=JSON.parse(localStorage.getItem('poly-crosshair'));if(saved&&typeof saved==='object')Object.assign(crosshair,{color:String(saved.color||'#d9f577'),gap:Math.max(0,Math.min(20,+(saved.gap||6))),length:Math.max(2,Math.min(20,+(saved.length||7))),thickness:Math.max(1,Math.min(6,+(saved.thickness||2))),dot:saved.dot!==false});}catch(_){}
+// FPS cap setting. 0 = unlimited. Persisted. PolySettings clamps it to the
+// supported set (0/60/90/120/144/160/165/240).
+let fpsLimit=0;try{const fl=+localStorage.getItem('poly-fpscap');if(Number.isFinite(fl)&&[0,60,90,120,144,160,165,240].includes(fl))fpsLimit=fl;}catch(_){}
+let lastTickAt=0;
+// Wraps PolySettings and applies the cap on demand. Keeps the v42 settings
+// screen's select and the stored preset in one place.
+function setFpsCap(v){fpsLimit=[0,60,90,120,144,160,165,240].includes(+v)?+v:0;try{localStorage.setItem('poly-fpscap',String(fpsLimit));}catch(_){}}
 function applyCrosshair(){const c=$('crosshair');c.style.setProperty('--gap',crosshair.gap+'px');c.style.setProperty('--ch-len',crosshair.length+'px');c.style.setProperty('--ch-thick',crosshair.thickness+'px');c.style.setProperty('--ch-color',crosshair.color);for(let i=0;i<4;i++)c.children[i].style.background=crosshair.color;
  // Rebuild a dot element on demand.
  let dot=c.querySelector('.ch-dot');if(crosshair.dot&&!dot){dot=document.createElement('i');dot.className='ch-dot';c.appendChild(dot);}if(!crosshair.dot&&dot)dot.remove();
@@ -83,8 +90,10 @@ try {
 // (false) returns only the cleared buffer in headless captures.
 const renderer=new T.WebGLRenderer({canvas:$('game'),antialias:false,powerPreference:'high-performance',preserveDrawingBuffer:true});
 renderer.setPixelRatio(1);renderer.info.autoReset=false; renderer.outputEncoding=T.sRGBEncoding; renderer.autoClear=false;
-const scene=new T.Scene();scene.background=new T.Color(0xa9c6ca);scene.fog=new T.Fog(0xa9c6ca,35,110);
-scene.add(new T.HemisphereLight(0xe5f4ff,0x756042,1.25));const sun=new T.DirectionalLight(0xffeccb,1.7);sun.position.set(-20,40,15);scene.add(sun);
+const scene=new T.Scene();scene.background=new T.Color(0x0d161b);scene.fog=new T.Fog(0x0d161b,12,60);
+scene.add(new T.HemisphereLight(0xe5f4ff,0x4a5a60,1.15));const sun=new T.DirectionalLight(0xffeccb,1.5);sun.position.set(-20,40,15);scene.add(sun);
+// A warm rim for the menu stage so the operator reads against the dark base.
+const menuRim=new T.DirectionalLight(0xffd9a8,.8);menuRim.position.set(6,5,-8);scene.add(menuRim);
 const cam=new T.PerspectiveCamera(75,1,.06,180);cam.rotation.order='YXZ';
 const viewScene=new T.Scene(),viewCam=new T.PerspectiveCamera(65,1,.02,10);viewScene.add(new T.HemisphereLight(0xffffff,0x697681,1.6));const vl=new T.DirectionalLight(0xffe5cf,1.7);vl.position.set(-2,3,4);viewScene.add(vl);
 // The asset suite loads asynchronously. Everything that depends on it is
@@ -93,7 +102,83 @@ const bots=C.MAP.spawnBots.map((sp)=>{const s=new T.Group();s.position.set(sp.x,
 // Hoisted to module scope: rebuildBots() (which runs from deploy()) must be
 // able to reach it. Assigned once assets resolve in readyAll().then() below.
 let attachSoldier=null;
+// ====================================================== MENU CHARACTER ======
+// A playable operator stands centre-stage in the main menu. It is the SAME
+// Soldier rig the bots use (same GLB, same Mixamo clips already bundled in
+// assets/models/anims/), posed with a rifle and looping an idle, so nothing
+// new is downloaded and the menu never waits on an asset that might not come.
+// It renders into the shared #game canvas through menuCam while !started.
+let menuChar=null,menuMixer=null,menuIdle=null;
+// Built with the SAME path the bots use (PolyAsset.soldierRig + clip('idle')),
+// so nothing new downloads and the menu never waits on an extra asset. It is
+// its own THREE.Group, NOT one of `bots`, and its meshes carry no botId — it
+// must never be a raycast target for player or bot fire.
+function buildMenuCharacter(){
+  if(menuChar)return;
+  if(!PolyAsset||!PolyAsset.soldierRig||!PolyAsset.clip)return;
+  const rig=PolyAsset.soldierRig();
+  if(!rig)return;
+  const g=new T.Group();
+  g.name='menuCharacter';
+  g.add(rig);
+  g.position.set(0,0,0);
+  g.rotation.set(0,Math.PI,0);        // face the camera (menuCam sits at +Z looking -Z)
+  scene.add(g);
+  menuChar=g;
+  const idle=PolyAsset.clip('idle');
+  if(idle){
+    menuMixer=new T.AnimationMixer(rig);
+    menuIdle=menuMixer.clipAction(idle);
+    if(menuIdle){menuIdle.setLoop(T.LoopRepeat,Infinity);menuIdle.clampWhenFinished=true;menuIdle.play();}
+  }
+   armMenuBot(rig);
+  }
+// Re-arm the menu stage when the loadout changes so it always shows the live
+// primary. Safe to call before the character exists.
+function rearmMenuCharacter(){
+  if(!menuChar)return;
+  // Drop the previous weapon pivot, then re-arm.
+  menuChar.traverse(n=>{if(n.userData&&n.userData.botWeapon)n.removeFromParent();});
+  const rig=menuChar.children[0];
+  if(rig)armMenuBot(rig);
+}
 let arena=null,worldNodes=[];
+// Pose the menu operator with the equipped primary, mirroring armBot() above
+// but with no combat wiring (no botId, no firing). Defined AFTER readyAll so
+// the armBot reference it echoes is already in scope; it only uses PolyAsset.
+function armMenuBot(rig){
+  try{
+    if(!PolyAsset.weapon)return;
+    const w=PolyAsset.weapon(primary);
+    if(!w)return;
+    let hand=null;
+    rig.traverse(n=>{if(!hand&&n.isBone&&/RightHand$/.test(n.name))hand=n;});
+    if(!hand)return;
+    // Same scale-cancelling pivot armBot() uses: the rig is Mixamo cm-scale and
+    // the fitted weapon is weapon-scale, so parent through a 1/rs pivot.
+    const rs=Math.max(1e-6,rig.scale.x||0.01);
+    const pivot=new T.Group();
+    pivot.scale.setScalar(1/rs);
+    pivot.add(w);
+    hand.add(pivot);
+    pivot.position.set(0,0,0.02);
+    pivot.rotation.set(0,Math.PI*-0.06,0);
+    pivot.userData.botWeapon=true;
+    w.visible=true;
+  }catch(_){}
+}
+const menuCam=new T.PerspectiveCamera(42,1,.1,60);
+menuCam.position.set(0,1.35,4.6);
+menuCam.lookAt(0,1.15,0);
+// The character is built once the asset pipeline resolves; safe to call twice.
+if(window.PolyAsset)PolyAsset.ready().then(()=>{buildMenuCharacter();});
+// Slow idle sway — subtle, never a zoom.
+let menuYaw=0;
+function tickMenu(dt){
+  if(menuMixer)menuMixer.update(dt);
+  menuYaw+=dt*.18;
+  if(menuChar)menuChar.rotation.set(0,Math.PI+Math.sin(menuYaw*.5)*.12,0);
+}
 // The addon shim in index.html is a module and loads asynchronously; wait
 // for both it and the assets before building anything mesh-shaped.
 const readyAll = () => Promise.all([
@@ -393,11 +478,9 @@ function addKill(text,headshot=false){
  const wk=isKill?(Object.keys(C.WEAPONS).find(k=>C.WEAPONS[k].name===wn)||Object.keys(C.WEAPONS).find(k=>k.toLowerCase()===wn.toLowerCase())||''):'';
  feed.unshift({text,headshot,killer:isKill?username:'',weapon:wk,weaponName:wn,victim:isKill?parts[1]:'',isKill});
  feed=feed.slice(0,4);killCount=elapsed-killClock<5?killCount+1:1;killClock=elapsed;killTime=2;killText=(headshot?'HEADSHOT':'ELIMINATION')+' · '+killCount+' KILL'+(killCount>1?'S':'');// Streak tiers map directly onto the announcer pack tiers: 1=First Blood,
-// 2=Double, 3=Triple, 4=Multi, then Mega/Ultra/Unstoppable/... up the pack.
-// Kill-count voice lines are capped per pack: the female announcer stops at 9
-// and the male announcer runs to 14. audio.js applies that cap (announce()
-// resolves the active pack's own TIER_CAPS), so the caller must not gate the
-// streak here — a shared hard cap here would clip the male pack at 9 again.
+// 2=Double, 3=Triple, 4=Multi, then up the pack. Voice lines are HARD-CAPPED
+// at 10 in v42: audio.js resolves nothing above that, so the caller must not
+// add a second gate here — it would only duplicate the rule and drift.
 // First Blood fires exactly once per match: the streak counter resets to 1
 // whenever the 5s window lapses, so a raw killCount===1 test would replay it
 // on every isolated kill. firstBlood is cleared by reset on each deploy.
@@ -408,11 +491,11 @@ function pose(){return {x,y,z,yaw,pitch,weapon,primary,name:username};}
 const online=PolyOnline.create(C,{
  rematch:s=>{if(typeof s==='object'){if(!online.hostRole)$('nextMap').value=s.nextMapId;$('rematch').disabled=s.local;$('rematch').textContent=s.remote&&!s.local?'ACCEPT REMATCH':'REQUEST REMATCH';$('rematchStatus').textContent=s.local?'Consent sent — waiting for opponent':s.remote?'Opponent requests a rematch — accept to play':'Both players must consent';}else $('rematchStatus').textContent=s;},
  status:s=>{$('netStatus').textContent=s;if(online.code)$('roomCode').textContent=online.code;},
- close:s=>{if(onlineMode){onlineMode=false;leave();$('onlinePanel').hidden=false;}$('netStatus').textContent=s;$('roomCode').textContent='';},
+ close:s=>{if(onlineMode){onlineMode=false;leave();navTo('play');selectMode('online');}$('netStatus').textContent=s;$('roomCode').textContent='';},
  ready:info=>{
   loadMap(info.mapId);$('mapSelect').value=info.mapId;match=C.createMatch();onlineMode=true;finished=false;enemyPose=null;netRound=0;lastNetEvent='';netHp=100;spawn();weapon=primary;
   if(info.id===1){const s=C.MAP.spawnOpponent||C.MAP.spawnBots[0];x=s.x;z=s.z;yaw=Math.PI;}
-  started=true;running=false;$('rematchControls').hidden=true;clearInput();$('menu').hidden=true;$('onlinePanel').hidden=true;$('hud').hidden=false;$('pause').hidden=false;$('pauseTitle').textContent='OPPONENT CONNECTED';$('pauseText').textContent='Click resume to enter. Online rounds continue while menus are open.';$('resume').hidden=false;feed=[];
+  started=true;running=false;$('rematchControls').hidden=true;clearInput();$('menu').hidden=true;$('hud').hidden=false;$('pause').hidden=false;$('pauseTitle').textContent='OPPONENT CONNECTED';$('pauseText').textContent='Click resume to enter. Online rounds continue while menus are open.';$('resume').hidden=false;feed=[];
  },
  snapshot:({state:s,id})=>{
   const p=s.players[id],q=s.players[1-id];
@@ -768,8 +851,8 @@ function loadMap(id){
 }
 function leave(){localDrops=[];document.body.classList.remove('low-health');if(onlineMode){onlineMode=false;online.close();}running=false;started=false;clearInput();A.setPaused(false);if(document.pointerLockElement)document.exitPointerLock();$('pause').hidden=true;$('hud').hidden=true;$('menu').hidden=false;$('start').focus();}
 let settingsReturn=null;
-function openSettings(){settingsReturn=document.activeElement;if(running)pause();$('settingsPanel').hidden=false;$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
-$('settingsButton').onclick=openSettings;$('pauseSettings').onclick=openSettings;
+function openSettings(){settingsReturn=document.activeElement;if(running)pause();navTo('settings');$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
+$('settingsButton').onclick=()=>{A.start();navTo('settings');};$('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
 $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==='performance';};
 // FOV: applies to the world camera only. The viewmodel rides a separate
@@ -794,7 +877,7 @@ function applyAnnouncerVoice(){const sel=$('announcerVoice');if(sel)sel.value=an
 $('announcerVoice').onchange=e=>{announcerVoice=e.target.value;try{localStorage.setItem('poly-announcer',announcerVoice);}catch(_){}applyAnnouncerVoice();A.sound('switch');};
 $('fov').oninput=e=>{const v=clampFov(+e.target.value);fov=v;applyFov();};
 $('fov').onchange=()=>{A.sound('switch');};
-$('applySettings').onclick=()=>{preset=PolySettings.normalize($('graphics').value);budget=PolySettings.PRESETS[preset];try{localStorage.setItem('poly-graphics',preset);}catch(_){}document.body.classList.toggle('performance',preset==='performance');loadMap(mapId);resize();document.activeElement.blur();$('settingsPanel').hidden=true;if(settingsReturn)settingsReturn.focus();};
+$('applySettings').onclick=()=>{preset=PolySettings.normalize($('graphics').value);budget=PolySettings.PRESETS[preset];try{localStorage.setItem('poly-graphics',preset);}catch(_){}document.body.classList.toggle('performance',preset==='performance');loadMap(mapId);resize();document.activeElement.blur();if(settingsReturn)settingsReturn.focus();};
 function fitLoadoutModel(key,wm){
  // Weapons are modelled in view-model space (long axis along -Z, stock at +Z).
  // Measure the actual geometry and re-centre + scale so the preview fills the
@@ -854,14 +937,14 @@ const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0
  // Rebuild the skin selector for the newly selected weapon.
  }
 function renderLoadoutCards(){
- const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');};return el;};
+ const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');rearmMenuCharacter();};return el;};
  $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].pellets?'Pump shotgun':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
  // Secondaries: the Desert Eagle, the Glock-19, the FA-03 bayonet (melee, no
  // ammo) and the grenade (a throwable, not a firearm).
  const secTag=k=>k==='knife'?'Blade · melee':k==='grenade'?'Throwable · explosive':'Semi-auto pistol';
  $('secondaryCards').replaceChildren(...['deagle','glock','knife','grenade'].map(k=>mk(k,secTag(k))));}
-$('loadoutButton').onclick=()=>{renderLoadoutCards();$('loadoutPanel').hidden=false;setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
-$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;$('loadoutPanel').hidden=true;$('loadoutInspect').hidden=true;stopLoadoutInspect();$('loadoutButton').focus();};
+$('loadoutButton').onclick=()=>{renderLoadoutCards();navTo('loadout');setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
+$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;stopLoadoutInspect();navTo('home');$('loadoutButton').focus();};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
 // A drag overrides the idle drift until the player releases the mouse.
 let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false,loadoutInspectTime=0;
@@ -871,7 +954,7 @@ loadoutCanvas.addEventListener('pointerdown',e=>{loadoutDragging=true;loadoutDra
 loadoutCanvas.addEventListener('pointermove',e=>{if(!loadoutDragging||loadoutDragX===null)return;const dx=e.clientX-loadoutDragX;loadoutDragX=e.clientX;loadoutYaw-=dx*.011;loadoutPitch=Math.max(-.5,Math.min(.5,loadoutPitch+e.movementY*.008));window.__loadoutYaw=loadoutYaw;window.__loadoutPitch=loadoutPitch;});
 const endLoadoutDrag=()=>{loadoutDragging=false;loadoutDragX=null;loadoutCanvas.style.cursor='grab';};
 loadoutCanvas.addEventListener('pointerup',endLoadoutDrag);loadoutCanvas.addEventListener('pointercancel',endLoadoutDrag);loadoutCanvas.addEventListener('pointerleave',endLoadoutDrag);
-function tickLoadoutPreview(dt){if($('loadoutPanel').hidden)return;const m=loadoutModels[loadoutSelected];if(!m||!m.visible)return;
+function tickLoadoutPreview(dt){if($('nav-loadout').hidden)return;const m=loadoutModels[loadoutSelected];if(!m||!m.visible)return;
  // Slow idle drift while idle, cinematic pose while inspecting.
  // The pose sets rotation+position every frame, so the branch order matters:
  // drag first, then the scripted inspect, then the idle drift as the default.
@@ -923,21 +1006,92 @@ function openCareer(){ // Career reads real stats tracked during matches. A firs
  $('careerStats').innerHTML=mk(career.matches,'MATCHES PLAYED')+mk(career.wins,'MATCHES WON')+mk(career.kills,'TOTAL ELIMINATIONS')+mk(career.deaths,'DEATHS')+mk(career.headshots,'HEADSHOTS')+mk(kdr,'K/D RATIO')+mk(acc+'%','LIFETIME ACCURACY')+mk(career.roundsWon,'ROUNDS WON');$('careerPanel').hidden=false;}
 $('pauseCareer').onclick=openCareer;$('careerClose').onclick=()=>{$('careerPanel').hidden=true;$('pauseCareer').focus();};
 $('toMenu').onclick=leave;
-$('onlineButton').onclick=()=>{$('onlinePanel').hidden=false;$('hostRoom').focus();};
+$('onlineButton').onclick=()=>{A.start();navTo('play');selectMode('online');};
 $('hostRoom').onclick=()=>{A.start();online.host($('mapSelect').value);$('roomCode').textContent=online.code;};$('joinRoom').onclick=()=>{A.start();online.join($('roomInput').value);};
-$('cancelOnline').onclick=()=>{online.close();$('roomCode').textContent='';$('onlinePanel').hidden=true;$('onlineButton').focus();};
-// ---- music: independent bus, menu theme on first user gesture ----
-// The AudioContext cannot start until a user gesture, so the theme is started
-// from the same click that starts the match / opens settings, not on load.
+$('cancelOnline')&&($('cancelOnline').onclick=()=>{online.close();$('roomCode').textContent='';navTo('play');selectMode('offline');});
+// ---- music: removed in v42 (the spec ships no music assets and forbids
+// inventing any). The AudioContext unlock on first gesture is KEPT, because
+// every other sound (gunfire, announcer, steps) still needs it. ----
 (function(){
- const set=$('musicToggle'),vol=$('musicVolume'),volOut=$('musicVolumeValue');
- const apply=()=>{if(!A.ready)return;const on=set.checked;A.setMusicMuted(!on||Number(vol.value)<=0);};
- if(set){set.checked=!A.isMusicMuted();set.onchange=()=>{A.start();if(set.checked)A.startMusic('menu');apply();};}
- if(vol){vol.oninput=()=>{volOut.textContent=vol.value+'%';apply();};}
- // Start the menu theme once a menu panel is opened (any user gesture counts).
- ['settingsButton','onlineButton'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{A.start();if(!A.musicState().playing)A.startMusic('menu');},{once:true});});
+  ['settingsButton','onlineButton','start','loadoutButton'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{A.start();},{once:true});});
 })();
 $('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').onclick=()=>deploy(false);
+// ============================================================ MENU NAV =====
+// CS2-style: one persistent top nav, sections swap in place, the character
+// stays on stage behind them. navTo() is the only way to change section.
+const NAV_SECTIONS=['home','play','loadout','settings'];
+function navTo(id){
+ if(!NAV_SECTIONS.includes(id))id='home';
+ for(const s of NAV_SECTIONS){const el=$('nav-'+s);if(el)el.hidden=s!==id;}
+ document.querySelectorAll('#topnav .nav,[data-nav]').forEach(b=>{
+   if(b.dataset.nav)b.classList.toggle('on',b.dataset.nav===id);
+ });
+ if(id==='loadout'){renderLoadoutCards();setLoadoutPreview(primary);resizeLoadout();}
+ if(id==='play')selectMode(modeSel);
+ window.__nav=id;
+}
+// The icon rail mirrors the primary nav; data-nav buttons all route through
+// navTo so there is one code path and one source of truth.
+document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{A.start();navTo(b.dataset.nav);}));
+document.querySelectorAll('[data-quit]').forEach(()=>{});
+// PLAY screen: two mode cards, one sub-panel each.
+let modeSel='offline';
+function selectMode(m){
+ modeSel=m;
+ document.querySelectorAll('.modecard').forEach(c=>c.classList.toggle('sel',c.dataset.mode===m));
+ $('playOffline').hidden=m!=='offline';
+ $('playOnline').hidden=m!=='online';
+ $('mapDescription').textContent=m==='online'?'HOST SELECTS MAP · SKIRMISH':'SKIRMISH · FIRST TO FIVE';
+ window.__mode=modeSel;
+}
+document.querySelectorAll('.modecard').forEach(c=>c.addEventListener('click',()=>{A.sound('switch');selectMode(c.dataset.mode);}));
+$('start2').onclick=()=>deploy();
+// SETTINGS tabs.
+document.querySelectorAll('#setTabs .stab').forEach(b=>b.addEventListener('click',()=>{
+  A.sound('switch');
+  document.querySelectorAll('#setTabs .stab').forEach(t=>t.setAttribute('aria-selected',String(t===b)));
+  document.querySelectorAll('#setBody .stabody').forEach(body=>body.hidden=body.dataset.tab!==b.dataset.tab);
+}));
+// ---- FPS cap control (VIDEO tab) ----
+(function(){
+  const sel=$('fpsCap');if(!sel)return;
+  sel.value=String(fpsLimit);
+  sel.onchange=()=>{setFpsCap(+sel.value);A.sound('switch');};
+})();
+// ---- FPS counter (hidden by default; INTERFACE tab toggles it) ----
+if(!document.getElementById('fps')){const f=document.createElement('div');f.id='fps';f.style.display='none';document.getElementById('hud').appendChild(f);}
+// ---- INTERFACE tab: HUD scale / radar scale / HUD opacity / feed toggle ----
+(function(){
+ const applyIface=()=>{
+  const s=Math.max(.7,Math.min(1.3,(+$('hudScale').value)/100));
+  const r=Math.max(.7,Math.min(1.3,(+$('radarScale').value)/100));
+  const o=Math.max(.4,Math.min(1,(+$('hudOpacity').value)/100));
+  $('hud').style.setProperty('--hudscale',String(s));
+  $('hud').style.setProperty('--hudop',String(o));
+  $('radar').style.setProperty('--rad',String(r));
+  $('fps').style.display=$('showFps').checked?'':'none';
+  $('feed').classList.toggle('off',!$('killFeedOn').checked);
+  $('damage').classList.toggle('off',!$('damageFeedback').checked);
+ };
+ for(const [id,out] of [['hudScale','hudScaleValue'],['radarScale','radarScaleValue'],['hudOpacity','hudOpacityValue']]){
+   const inp=$(id),lab=$(out);if(!inp||!lab)continue;
+   inp.oninput=()=>{lab.textContent=inp.value+'%';applyIface();};
+ }
+ for(const id of ['showFps','killFeedOn','damageFeedback']){const c=$(id);if(c)c.onchange=applyIface;}
+ applyIface();
+})();
+// ---- AUDIO tab sliders: master / sfx / announcer / mute ----
+(function(){
+ const setVol=(id,outKey)=>{const inp=$(id);if(!inp)return;inp.oninput=()=>{const v=+inp.value;
+   if(A.setMaster){A.setMaster(v/100);}else if(A.setVolume){A.setVolume(v/100);}
+   const lab=$(id+'Value');if(lab)lab.textContent=v+'%';
+   try{localStorage.setItem('poly-'+id,String(v));}catch(_){}
+ };};
+ for(const id of ['masterVolume','sfxVolume','annVolume'])setVol(id);
+ for(const id of ['masterVolume','sfxVolume','annVolume']){try{const v=localStorage.getItem('poly-'+id);if(v!==null)$(id).value=v;}catch(_){}}
+ const mute=$('muteAll');if(mute)mute.onchange=()=>{A.setMuted?.(mute.checked);try{localStorage.setItem('poly-muted',mute.checked?'1':'0');}catch(_){}};
+ try{if(localStorage.getItem('poly-muted')==='1'&&mute)mute.checked=true;}catch(_){}
+})();
 // The HUD icons are fetched once on first interaction (not at page load, so the
 // menu never waits on them) and cached for the rest of the session.
 ['start','restart','resume'].forEach(id=>$(id).addEventListener('click',()=>{try{PS_ICONS.preload();}catch(_){}},{once:false}));
@@ -996,7 +1150,10 @@ function hud(){const w=C.WEAPONS[weapon];
  $('scoreEnemy').textContent=String(match.score.enemy);
  $('roundLabel').textContent=match.training?'TRAINING':'ROUND '+String(match.round).padStart(2,'0');
  $('roundClock').textContent=match.training?'- -':`${Math.floor(time/60)}:${String(time%60).padStart(2,'0')}`;
- $('objective').textContent=match.training?(match.mode==='active'?`LIVE BOTS · ${match.aliveBots().length} HOSTILES`:`${match.aliveBots().length} STATIC TARGETS · SHOOT THE RED SWITCH FOR LIVE BOTS`):`${match.aliveBots().length} HOSTILES REMAIN · FIRST TO 5`;
+ // The objective strip was a CS:GO-style banner under the score; the v42 HUD
+ // has no such element, so the text is dead. Kept as a comment so the
+ // round/training state is still discoverable here.
+ // (was: $('objective').textContent = training/live/buy phase line)
  $('banner').innerHTML=match.phase==='buy'?`GET READY<small>PRIMARY / SIDEARM · ${Math.ceil(match.buyClock)}</small>`:match.phase==='end'?`${match.lastWinner==='player'?'ROUND SECURED':'ROUND LOST'}<small>${match.lastWinner==='player'?'COMPOUND CLEAR':match.hp<=0?'OPERATOR DOWN':'TIME EXPIRED'} · ${match.kills} KILLS · ${accuracy()}% ACCURACY</small>`:'';
  // Melee weapons have no magazine; the reload prompt would never clear.
  $('status').textContent=isFirearm(weapon)&&ammo[weapon]&&ammo[weapon].mag===0&&reload<=0?'RELOAD · R':reload>0?`RELOADING ${reload.toFixed(1)}s`:slide>0?'SLIDING':A.muted?'SOUND OFF':fallback?'DRAG RIGHT MOUSE TO LOOK':'';
@@ -1004,7 +1161,8 @@ function hud(){const w=C.WEAPONS[weapon];
  $('crosshair').style.setProperty('--gap',`${6+moving*6+recoil*10}px`);
  $('hitmarker').style.opacity=hit>0?1:0;
  $('damage').style.opacity=Math.max(0,hurt)*.7;
- $('fps').textContent=`${Math.round(fps)} FPS`;
+ const fpsEl=$('fps');
+ if(fpsEl&&fpsEl.textContent!==`${Math.round(fps)} FPS`)fpsEl.textContent=`${Math.round(fps)} FPS`;
  $('flashblind').style.opacity=String(Math.max(0,Math.min(1,flashAlpha)));
  // Low-health vignette: a gradual pulsing red edge warning below 25 hp.
  const critical=match.hp>0&&match.hp<25;document.body.classList.toggle('low-health',critical);if(critical)$('damage').style.opacity=Math.max(Number($('damage').style.opacity)||0,Math.sin(elapsed*3.4)*.25+.4);
@@ -1033,15 +1191,14 @@ function hud(){const w=C.WEAPONS[weapon];
   paintIcon(wi,iconNode,14,el,want);
   if(hs)paintIcon(hs,'headshot',14,el,want);
  }
- // ---- weapon selector: [1] primary [2] secondary [3] knife [4] equipment ----
- setSlot($('primarySlot'),primary,dropped?'DROPPED':null);
- setSlot($('secondarySlot'),secondary,null);
- setSlot($('knifeSlot'),melee,null);
- setSlot($('equipSlot'),equipment,null);
+ // ---- weapon selector: COMPACT VERTICAL STACK, bottom-right ----
+ // [1] primary / [2] secondary / [3] knife / [4] equipment, built once from
+ // the live inventory and then only the active class moves per tick.
+ buildSlots();
  document.querySelectorAll('#slots .slot').forEach(el=>el.classList.toggle('active',el.dataset.slot===weapon));
  $('killBanner').textContent=killTime>0?killText:'';
  $('pickupPrompt').textContent=dropped&&nearestDrop()?'E · PICK UP '+C.WEAPONS[nearestDrop().weapon].name:'';
- $('connectionStatus').textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING -'):'OFFLINE';
+ const csNet=$('connectionStatus');if(csNet)csNet.textContent=onlineMode?(online.connected?'CONNECTED':'CONNECTING')+' · '+(Number.isFinite(online.ping)?Math.round(online.ping)+' ms':'PING -'):'OFFLINE';
  document.body.classList.toggle('low-health',running&&match.hp>0&&match.hp<20);
  const angle=damageSource?(Math.atan2(damageSource.x-x,-(damageSource.z-z))+yaw)*180/Math.PI:0;
  $('damageDirection').style.transform=`rotate(${angle}deg)`;$('damageDirection').dataset.angle=angle;$('damageDirection').style.opacity=hurt>0?Math.min(1,hurt*3):0;
@@ -1052,10 +1209,14 @@ function hud(){const w=C.WEAPONS[weapon];
  // and the solids never rotate, so a player who knows the map reads the disc
  // instantly instead of having to re-orient with the camera.
  const rc=$('radar').getContext('2d');rc.clearRect(0,0,170,170);
+ // TRANSLUCENT base, not a black disc: the CSS panel already tints the
+ // canvas, so a low-alpha wash keeps the panel's own depth and lets the
+ // geometry read through it.
+ rc.fillStyle='rgba(20,34,40,.55)';rc.fillRect(0,0,170,170);
  // The radar window follows the player but stays axis-aligned: centre on the
  // player, 2px per metre, no rotation.
  function rp(wx,wz){return [85+(wx-x)*2,85+(wz-z)*2];}
- rc.fillStyle='#1d282c';
+ rc.fillStyle='#2a3d42';
  for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
  rc.fillStyle='#ff735e';
  for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}
@@ -1101,23 +1262,43 @@ function paintIcon(target,iconName,size,el,sig){
 // data-slot tracks what it currently shows, so an unchanged slot costs no DOM
 // writes on a 60fps HUD tick.
 function setSlot(el,key,override){
- if(!el)return;
- const changed=el.dataset.slot!==String(key)||el.dataset.override!==String(override||'');
- el.dataset.slot=String(key);el.dataset.override=String(override||'');
- const w=C.WEAPONS[key];
- const name=override||(w?w.name:'');
- el.querySelector('.sname').textContent=name;
- el.classList.toggle('empty',!w&&!override);
- el.classList.toggle('inactive',!!override);
- if(changed){
-  const icon=el.querySelector('.sicon');
-  if(icon)hudIconNode(weaponIconKey(key),19).then(n=>{icon.replaceChildren(n||'');});
+  const changed=el.dataset.slot!==String(key)||el.dataset.override!==String(override||'');
+  el.dataset.slot=String(key);el.dataset.override=String(override||'');
+  const w=C.WEAPONS[key];
+  const name=override||(w?w.name:'');
+  el.querySelector('.sname').textContent=name;
+  el.classList.toggle('empty',!w&&!override);
+  el.classList.toggle('inactive',!!override);
+  if(changed){
+   const icon=el.querySelector('.sicon');
+   if(icon)hudIconNode(weaponIconKey(key),19).then(n=>{icon.replaceChildren(n||'');});
+  }
  }
+// Build the vertical weapon stack once per inventory signature. The stack is
+// [1] primary [2] secondary [3] knife [4] equipment in CS:GO order, stacked
+// bottom-up so slot 1 sits at the TOP of the column (the read order matches
+// the number keys). An empty primary collapses to nothing, never a gap.
+let slotSig='';
+function buildSlots(){
+ const inv=inventory();
+ const sig=inv.join('|')+(dropped?'|d':'');
+ if(sig===slotSig)return;
+ slotSig=sig;
+ const host=$('slots');host.replaceChildren();
+ inv.forEach((k,i)=>{
+  const el=document.createElement('div');el.className='slot';el.dataset.slot=k;
+  const num=document.createElement('i');num.className='snum';num.textContent=String(i+1);
+  const ic=document.createElement('span');ic.className='sicon';
+  const nm=document.createElement('span');nm.className='sname';
+  el.append(num,ic,nm);host.append(el);
+  setSlot(el,k,dropped&&k===primary?'DROPPED':null);
+ });
 }
 function animateWeapon(dt){
- if(match.playerDead)inspectHold=false;
- stepInspect(dt);
- for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
+  if(match.playerDead)inspectHold=false;
+  stepInspect(dt);
+  buildSlots();
+  for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
  const m=models[weapon];if(!m)return;const u=m.userData;adsBlend+=(Number(ads)-adsBlend)*Math.min(1,dt*18);
  // The fit maps the measured bore onto -Z with sights on +Y, so the weapon
  // already faces forward and level. Position and recoil rotate in that same
@@ -1269,7 +1450,25 @@ function animateWeapon(dt){
   u.mixer.update(dt);
  }
 }
-function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;frames++;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
+function tick(now){
+  // FPS LIMIT. The cap paces the whole loop — render, simulation and HUD —
+  // because this is a deterministic single-threaded game and an uncapped loop
+  // only burns cycles. requestAnimationFrame is re-armed on the browser's
+  // vsync tick (typically 60/120/240 Hz); the cap then SKIPS frames that
+  // arrive sooner than the target interval, so a 60 Hz monitor at a 240 cap
+  // still renders at 60 and a 144 Hz monitor at a 60 cap renders at exactly
+  // 60 with no tearing and no busy-spin. 0 = unlimited (vsync only).
+  // NOTE: `now` is undefined on the very first rAF callback in some engines;
+  // fall back to a timestamp so the wait arithmetic never NaNs the loop dead.
+  if (now === undefined) now = performance.now();
+  frames++;
+  if (fpsLimit > 0 && lastTickAt > 0) {
+    const wait = 1000 / fpsLimit - (now - lastTickAt);
+    if (wait > 0.5) { requestAnimationFrame(tick); return; }
+  }
+  lastTickAt = now;
+  requestAnimationFrame(tick);
+  const rawDt=Math.max(.001,(now-last)/1000),dt=Math.min(.04,rawDt);last=now;elapsed+=dt;fps+=(1/rawDt-fps)*.03;
  if(onlineMode)online.step(dt,pose());
  if(running){const oldPhase=match.phase,oldRound=match.round,oldHp=match.hp;if(match.phase==='buy'||match.phase==='live')move(dt);if(!onlineMode){const sense={px:x,pz:z,bots:match.bots.map(b=>({los:C.segmentClear({x,z},b.pos,C.MAP.solids),dist:Math.hypot(x-b.pos.x,z-b.pos.z)}))};match.step(dt,rng,sense);}if(match.round!==oldRound)spawn();
       if(match.playerDead&&oldHp>0&&!oldPlayerDead){A.sound('death');}
@@ -1279,7 +1478,16 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // The reload timer is decremented and resolved inside the running branch
  // above (line ~579); a second decrement here would count the same reload
  // down twice and complete it early, so there is deliberately none.
- if(!started){cam.position.set(27+Math.sin(elapsed*.08)*5,17,30);cam.lookAt(0,0,-3);}
+ if(!started){
+   // MENU STAGE. The operator stands centre-frame on the shared canvas while
+   // the menu is open; gameplay takes the camera back over on deploy().
+   tickMenu(dt);
+   const r=renderer.domElement;
+   menuCam.aspect=r.clientWidth/Math.max(1,r.clientHeight);
+   menuCam.updateProjectionMatrix();
+   if(!menuChar&&window.PolyAsset&&PolyAsset.progress&&PolyAsset.progress().soldier)buildMenuCharacter();
+   cam.position.copy(menuCam.position);cam.quaternion.copy(menuCam.quaternion);
+ }
  // Full-auto only: semi-auto weapons fire once per trigger pull (shoot() is
  // already called on mousedown), so re-firing here would break their cadence.
  if(trigger&&running&&match.phase==='live'&&cool<=0&&reload<=0&&bolt<=0&&C.WEAPONS[weapon].auto)shoot();
@@ -1313,7 +1521,10 @@ function tick(now){frames++;requestAnimationFrame(tick);const rawDt=Math.max(.00
  // Loadout hub: the preview renders into its own WebGL context on
  // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main
  // scene's viewport is never touched and the panel cannot paint over it.
- if(!$('loadoutPanel').hidden){tickLoadoutPreview(dt);resizeLoadout();loadoutRenderer.render(loadoutScene,loadoutCam);window.__loadoutCalls=loadoutRenderer.info.render.calls;}
+ // In v42 the loadout is an in-menu nav section (#nav-loadout), not a modal
+ // panel, so it is shown whenever the menu is open AND that section is the
+ // visible one.
+ if(!$('nav-loadout').hidden){tickLoadoutPreview(dt);resizeLoadout();loadoutRenderer.render(loadoutScene,loadoutCam);window.__loadoutCalls=loadoutRenderer.info.render.calls;}
  hudClock-=dt;if(hudClock<=0&&started){hud();hudClock=1/budget.hudHz;}
  // Grenades in flight run on the same clock as everything else: gravity, fuse,
  // spin and the detonation. They are removed with the effects they spawn.

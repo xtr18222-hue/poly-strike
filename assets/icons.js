@@ -1,15 +1,15 @@
 /* ============================================================================
- * POLY-STRIKE UI icon registry.
+ * POLY-STRIKE UI icon registry (CS2 panorama glyphs).
  *
- * Loads the bundled CS:GO UI icons (assets/icons/*.svg) ONCE, converts each to
- * a reusable DOM node, and caches the result. The HUD, kill feed and weapon
- * selector reuse the same nodes: there is no per-frame SVG parsing and no
- * network fetch at runtime.
+ * Loads the bundled Counter-Strike 2 interface icons (assets/cs2/*.svg) ONCE,
+ * converts each to a reusable DOM node and caches it. The HUD, the kill feed,
+ * the weapon stack and the menu chrome all reuse those nodes: there is no
+ * per-frame SVG parsing and no network fetch at runtime.
  *
- * LICENCE: the Counter-Strike icons are the property of Valve Corporation and
- * are used here for community/informational purposes. They are NOT POLY STRIKE
- * artwork; see assets/icons/ATTRIBUTION.md. POLY STRIKE is not affiliated with
- * Valve Corporation.
+ * SOURCE: Juknum/counter-strike-icons, cs2/panorama/images/icons/.
+ * These glyphs are the property of Valve Corporation, used here for
+ * community/informational purposes. They are NOT POLY STRIKE artwork; see
+ * assets/cs2/ATTRIBUTION.md. POLY STRIKE is not affiliated with Valve.
  * ========================================================================= */
 
 /* global window, document, fetch */
@@ -17,9 +17,9 @@
 var PS_ICONS = (function () {
   'use strict';
 
-  // POLY STRIKE weapon key -> CS:GO icon file (silhouette). Every entry is a
-  // bundled local file (assets/icons/*.svg). The icon is a HUD glyph only: the
-  // weapon's own name, 3D model and stats are untouched.
+  // POLY STRIKE weapon key -> CS2 panorama equipment file. The icon is a HUD
+  // glyph only: the weapon's own name, 3D model and stats are untouched. Every
+  // entry resolves to a bundled local file.
   var WEAPON_ICON = {
     akm: 'ak47',
     l96: 'awp',
@@ -28,29 +28,62 @@ var PS_ICONS = (function () {
     deagle: 'deagle',
     glock: 'glock',
     knife: 'knife',
+    knife_tactical: 'knife_tactical',
     grenade: 'hegrenade',
     flash: 'flashbang'
   };
 
-  // Non-weapon HUD glyphs bundled from the same pack.
+  // Non-weapon HUD glyphs, all from the same CS2 panorama set.
   var HUD_ICON = {
-    headshot: 'icon_headshot',
+    headshot: 'kill_headshot',
     health: 'health',
-    armor: 'kevlar',
+    armor: 'armor',
     helmet: 'helmet',
+    kevlar: 'kevlar',
     bullet: 'bullet'
   };
 
-  var ICON_DIR = 'assets/icons/';
-  var cache = {};   // file name -> Promise<SVGElement|null>
-  var isSettled = {};   // file name -> true once the fetch has a value
-  var cachedValue = {}; // file name -> the settled SVGElement|null
+  // Menu chrome (the top navigation and the icon rail), from ui/.
+  var UI_ICON = {
+    home: 'home',
+    news: 'news',
+    settings: 'settings',
+    power: 'power',
+    play: 'play',
+    loadout: 'loadout',
+    inventory: 'inventory',
+    bot: 'bot',
+    back: 'back',
+    close: 'cancel',
+    pause: 'pause',
+    resume: 'resumegame',
+    online: 'online',
+    timer: 'timer',
+    muted: 'muted',
+    unmuted: 'unmuted',
+    warning: 'warning',
+    crosshair: 'crosshair'
+  };
+
+  var ICON_DIR = 'assets/cs2/';
+  var cache = {};        // file name -> Promise<SVGElement|null>
+  var isSettled = {};    // file name -> true once the fetch has a value
+  var cachedValue = {};  // file name -> the settled SVGElement|null
 
   function fileFor(name) {
     if (WEAPON_ICON[name]) return WEAPON_ICON[name];
     if (HUD_ICON[name]) return HUD_ICON[name];
-    // Callers may pass the CS:GO file name directly.
+    if (UI_ICON[name]) return UI_ICON[name];
+    // Callers may pass the CS2 panorama file name directly.
     return /^[a-z0-9_]+$/i.test(name) ? name : null;
+  }
+
+  function allNames() {
+    var out = [];
+    [WEAPON_ICON, HUD_ICON, UI_ICON].forEach(function (table) {
+      Object.keys(table).forEach(function (k) { out.push(table[k]); });
+    });
+    return out;
   }
 
   // Fetch once, parse once. Repeat callers get the same promise. A missing or
@@ -76,15 +109,10 @@ var PS_ICONS = (function () {
     return p;
   }
 
-  function preload() {
-    var all = [];
-    Object.keys(WEAPON_ICON).forEach(function (k) { all.push(load(WEAPON_ICON[k])); });
-    Object.keys(HUD_ICON).forEach(function (k) { all.push(load(HUD_ICON[k])); });
-    return Promise.all(all);
-  }
+  function preload() { return Promise.all(allNames().map(function (f) { return load(f); })); }
 
-  // Clone the cached SVG at a fixed pixel height, width follows the glyph's
-  // aspect ratio. CSS sizes/tints the result (.ps-icon).
+  // Clone the cached SVG at a fixed pixel height; width follows the glyph's
+  // own aspect ratio. CSS sizes/tints the result (.ps-icon).
   function cloneAt(svg, px) {
     var n = svg.cloneNode(true);
     var vb = n.viewBox && n.viewBox.baseVal;
@@ -97,7 +125,7 @@ var PS_ICONS = (function () {
   }
 
   // Public: nodeFor(name, px) -> Element|Promise<Element|null>|null
-  // name is a POLY STRIKE weapon key, a HUD glyph key, or a CS:GO file name.
+  // name is a POLY STRIKE weapon key, a HUD/UI glyph key, or a CS2 file name.
   // Returns a NODE (not a promise) whenever the SVG has already loaded, so the
   // HUD can paint it in the same frame it asks. The HUD reuses row elements
   // across kills and clears them on every signature change; a promise-only API
@@ -115,9 +143,13 @@ var PS_ICONS = (function () {
   return {
     WEAPON_ICON: WEAPON_ICON,
     HUD_ICON: HUD_ICON,
+    UI_ICON: UI_ICON,
     preload: preload,
     nodeFor: nodeFor,
+    fileFor: fileFor,
+    allNames: allNames,
     weaponFile: function (k) { return WEAPON_ICON[k] || null; },
-    hudFile: function (n) { return HUD_ICON[n] || null; }
+    hudFile: function (n) { return HUD_ICON[n] || null; },
+    uiFile: function (n) { return UI_ICON[n] || null; }
   };
 })();

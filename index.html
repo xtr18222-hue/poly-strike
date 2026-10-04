@@ -24,65 +24,218 @@
     g.SkeletonUtils = { clone: skeletonClone };
     window.__psAddonsBound = true;
   }
-</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#102128"><meta name="description" content="POLY-STRIKE: an offline-ready low-poly tactical FPS. Four iconic weapons. Five opponents. One courtyard."><title>POLY-STRIKE — Field Operations</title><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,"></head>
+</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0e1418"><meta name="description" content="POLY STRIKE — a competitive low-poly tactical FPS. Five weapons. Five opponents. One battleground."><title>POLY STRIKE — Tactical Operations</title><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,"></head>
 <body><canvas id="game" aria-label="3D first-person arena"></canvas>
+
+<!-- ============================================================================
+     GAMEPLAY HUD. Compact, low-noise, icon-led. No boxed panels: every element
+     sits on a thin translucent strip or nothing at all. Weapon/equipment icons
+     are the bundled CS2 panorama glyphs (assets/cs2/), tinted by CSS.
+     ============================================================================ -->
 <div id="hud" hidden>
- <!-- ===== POLY STRIKE competitive HUD (CS:GO-style structure) ===== -->
- <!-- Top centre: team score / round / match state -->
+ <!-- Top centre: team score / round / clock. One slim strip, no box. -->
  <div id="topbar"><div id="topInner">
    <div id="scoreEnemy" class="teamscore">0</div>
    <div id="roundBox"><b id="roundLabel">ROUND 1</b><span id="roundClock">1:30</span></div>
    <div id="scorePlayer" class="teamscore">0</div>
- </div><div id="objective">ELIMINATE ALL HOSTILES</div></div>
- <div id="fps">60 FPS</div>
+ </div>
+ <!-- Legacy strips, kept hidden so hud() never throws on a dead element. -->
+ <div id="objective" hidden></div><div id="connectionStatus" hidden></div></div>
  <canvas id="radar" width="170" height="170" aria-label="Radar: fixed map overview, visible enemies"></canvas>
  <div id="feed"></div>
  <div id="banner"></div>
- <div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker">+</div>
+ <div id="crosshair"><i></i><i></i><i></i><i></i></div><div id="hitmarker"></div>
  <div id="scope" hidden><div class="scope-glass"><span class="reticle-h"></span><span class="reticle-v"></span><span class="mildots">&#183; &#183; &#183; &#183; &#183; &#183; &#183; &#183; &#183;</span><small>8&#215; / POLY STRIKE OPTICS</small></div></div>
  <div id="flashblind" aria-hidden="true"></div>
  <div id="damage"></div><div id="damageDirection" aria-hidden="true"><i></i></div>
- <!-- Bottom left: health + armor, compact, icon-led -->
+ <!-- Bottom left: health + armor. Icon-led, thin divider, no black box. -->
  <div id="vitals">
    <div class="vital" id="healthVital"><span class="vi" id="healthIcon"></span><b id="health">100</b></div>
    <div class="vital" id="armorVital"><span class="vi" id="armorIcon"></span><b id="armor">100</b></div>
    <div id="status"></div>
  </div>
- <!-- Bottom right: ammunition -->
+ <!-- Bottom right: ammunition. Weapon name + icon, mag | reserve. -->
  <div id="ammoBlock">
-   <span id="weaponName">AKM</span>
-   <div id="ammoRow"><b id="ammo">30</b><span id="reserve"> / 90</span><span id="ammoIcon" class="ammoIcon"></span></div>
+   <div id="ammoHead"><span id="weaponName">AKM</span><span id="ammoIcon" class="ammoIcon"></span></div>
+   <div id="ammoRow"><b id="ammo">30</b><span id="reserve"> / 90</span></div>
  </div>
- <!-- Weapon selector: [1] primary [2] secondary [3] knife [4] equipment -->
- <div id="slots">
-   <span id="primarySlot" class="slot" data-slot="akm"><i class="snum">1</i><span class="sicon"></span><b class="sname">AKM</b></span>
-   <span id="secondarySlot" class="slot" data-slot="deagle"><i class="snum">2</i><span class="sicon"></span><b class="sname">DEAGLE</b></span>
-   <span id="knifeSlot" class="slot" data-slot="knife"><i class="snum">3</i><span class="sicon"></span><b class="sname">KNIFE</b></span>
-   <span id="equipSlot" class="slot" data-slot="grenade"><i class="snum">4</i><span class="sicon"></span><b class="sname">GRENADE</b></span>
- </div>
- <div id="killBanner" role="status"></div><div id="pickupPrompt"></div><div id="connectionStatus"></div>
+ <!-- Weapon selector: a COMPACT VERTICAL STACK above the ammo readout. -->
+ <div id="slots"></div>
+ <div id="killBanner" role="status"></div><div id="pickupPrompt"></div>
  <div id="lowHealth" aria-hidden="true"></div>
  <div id="scoreboard" hidden></div>
 </div>
-</div>
-<main id="menu"><div class="eyebrow">FIELD OPERATIONS / SEASON 02</div><h1 class="ps-title">POLY<span>STRIKE</span><em>_</em></h1><p class="intro">Three battlegrounds. Your loadout.<br>Find your edge.</p>
-<label for="username">PLAYER USERNAME<input id="username" type="text" maxlength="20" autocomplete="nickname" placeholder="Operator"></label>
-<div id="mainActions"><button id="start">Play Offline (vs Bots)</button><button id="onlineButton" class="secondary">Play Online</button><button id="loadoutButton" class="secondary">Loadout</button><button id="settingsButton" class="secondary">Settings</button></div>
-<div class="map-card"><div class="eyebrow">GAME MODE</div><small>SKIRMISH — ELIMINATE THE ENEMY TEAM · FIRST TO FIVE</small><label for="mapSelect" style="margin-top:10px">BATTLEGROUND</label><select id="mapSelect"><option value="desert">01 / Sandline — Desert Compound</option><option value="industrial">02 / Ironworks — Industrial Warehouse</option><option value="urban">03 / Crossfire — Urban Alleyways</option><option value="harbor">04 / Drydock — Coastal Sawmill</option><option value="training">05 / Training Range — Firing &amp; Movement Drills</option><option value="shipment">06 / Shipment — Container Maze</option><option value="dust2">07 / Dust 2 — Desert Lanes</option></select><small id="mapDescription">FLANK ROUTES · FIRST TO FIVE</small></div>
-<label><input id="rotateMaps" type="checkbox" checked> Rotate map after match</label><label><input id="fallback" type="checkbox"> Drag-to-look (hold right mouse)</label><details><summary>FIELD MANUAL / CONTROLS</summary><p>WASD move · Shift sprint · C while sprinting slide<br>Mouse aim · Left click fire · Right click ADS/scope<br>1 primary · 2 secondary · 3 knife · 4 equipment · 5/B swap equipment<br>G drop primary · E pickup<br>Space jump · Ctrl crouch · Tab scoreboard · Esc menu<br>M mute · Q previous weapon · Mouse wheel cycle · F hold to inspect</p><p>Offline: five bots. Skirmish is the only mode: 90 seconds, first to five rounds.<br>Online: share a room code with one friend. Host selects map. Direct WebRTC requires internet and public signaling; restrictive networks may block connection. Peer IP addresses are exposed to each other. Casual play, not anti-cheat protected.</p></details><footer><strong class="credit">Made by XTR</strong><br>ORIGINAL BROWSER FPS / NOT AFFILIATED WITH VALVE<br>Desktop keyboard + mouse · No downloads · Offline-ready</footer></main>
-<div id="pause" class="panel" hidden><div><div class="eyebrow">OPERATOR MENU</div><h2 id="pauseTitle">PAUSED</h2><p id="pauseText">Your offline match is frozen.</p><button id="resume">RESUME OPERATION ↗</button><button id="pauseSettings" class="secondary">Settings</button><button id="pauseCareer" class="secondary">Career / Stats</button><div id="rematchControls" hidden><label>Next battleground<select id="nextMap"><option value="desert">Sandline</option><option value="industrial">Ironworks</option><option value="urban">Crossfire</option><option value="harbor">Drydock</option><option value="training">Training Range</option><option value="shipment">Shipment</option><option value="dust2">Dust 2</option></select></label><button id="rematch">REQUEST REMATCH</button><p id="rematchStatus" role="status"></p></div><button id="restart" class="secondary">NEW OFFLINE MATCH</button><button id="toMenu" class="secondary">LEAVE TO MAIN MENU</button><p>Online matches continue while this menu is open.</p></div></div>
-<div id="settingsPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden><div><div class="eyebrow">TUNE YOUR EXPERIENCE</div><h2 id="settingsTitle">SETTINGS</h2><label>Graphics preset<select id="graphics"><option value="high">High</option><option value="medium" selected>Medium</option><option value="performance">Performance Mode</option></select></label><label><input type="checkbox" id="performanceToggle"> Performance Mode — ultra-light</label><p id="presetDetails">No post-processing or shadow maps. Performance Mode caps render pixels at 307,200, removes decorative geometry and uses simpler materials. Targets low-end hardware; FPS depends on your device.</p><label>Mouse sensitivity <output id="sensitivityValue">1.00</output><input id="sensitivity" type="range" min="0.1" max="3" step="0.01" value="1"></label><label>ADS sensitivity multiplier <output id="adsSensitivityValue">0.50</output><input id="adsSensitivity" type="range" min="0.1" max="2" step="0.01" value="0.5"></label><div class="eyebrow" style="margin-top:6px">CROSSHAIR</div><label>Crosshair color<select id="crosshairColor"><option value="#d9f577">Lime</option><option value="#ffffff">White</option><option value="#ff5454">Red</option><option value="#54d9ff">Cyan</option><option value="#ffd354">Amber</option></select></label><label>Crosshair gap <output id="crosshairGapValue">6</output><input id="crosshairGap" type="range" min="0" max="20" step="1" value="6"></label><label>Crosshair length <output id="crosshairLengthValue">7</output><input id="crosshairLength" type="range" min="2" max="20" step="1" value="7"></label><label>Crosshair thickness <output id="crosshairThicknessValue">2</output><input id="crosshairThickness" type="range" min="1" max="6" step="1" value="2"></label><label><input type="checkbox" id="crosshairDot" checked> Center dot</label><div class="eyebrow" style="margin-top:6px">AUDIO</div><label><input type="checkbox" id="musicToggle" checked> Background music</label><label>Music volume <output id="musicVolumeValue">35%</output><input id="musicVolume" type="range" min="0" max="100" step="5" value="35"></label><div class="eyebrow" style="margin-top:6px">ANNOUNCER</div>
-<label>Announcer voice pack<select id="announcerVoice"><option value="male" selected>Male</option><option value="female">Female</option></select></label><div class="eyebrow" style="margin-top:6px">VIDEO</div><label>Field of view <output id="fovValue">90°</output><input id="fov" type="range" min="70" max="110" step="1" value="90"></label><small>World camera only — the weapon view keeps its own scale at every value.</small>
-<button id="applySettings">APPLY & CLOSE</button></div></div>
-<div id="loadoutPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="loadoutTitle" hidden><div><div class="eyebrow">FIELD OPERATIONS / ARMOURY</div><h2 id="loadoutTitle">LOADOUT</h2><p>Select and inspect your kit. Click a weapon to preview it, then press INSPECT for a full cinematic examination.</p>
-<div class="loadout-stage"><canvas id="loadoutCanvas" width="360" height="240" aria-label="Weapon preview"></canvas><div id="loadoutInfo"><b id="loadoutName">AKM</b><small id="loadoutDesc">Assault rifle</small></div></div>
-<div id="primaryCards"></div>
-<div class="eyebrow" style="margin-top:18px">SECONDARY</div>
-<div id="secondaryCards"></div>
-<button id="loadoutInspect" class="secondary" hidden>INSPECT WEAPON (F)</button>
-<button id="loadoutClose" class="secondary">CONFIRM &amp; CLOSE</button></div></div>
-<div id="careerPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="careerTitle" hidden><div><div class="eyebrow">SERVICE RECORD</div><h2 id="careerTitle">CAREER</h2><div id="careerStats"></div><button id="careerClose" class="secondary">CLOSE</button></div></div>
-<div id="onlinePanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="onlineTitle" hidden><div><div class="eyebrow">DIRECT CONNECTION / 1V1</div><h2 id="onlineTitle">PLAY ONLINE</h2><p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p><button id="hostRoom">CREATE ROOM</button><label>Room code<input id="roomInput" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Paste room code"></label><button id="joinRoom" class="secondary">JOIN ROOM</button><output id="roomCode" aria-live="polite"></output><p id="netStatus" role="status">Ready to connect.</p><button id="cancelOnline" class="secondary">CANCEL / BACK</button><p class="subtle">Public PeerJS signaling + WebRTC. No custom server or account. NAT/firewall restrictions can prevent a connection; no TURN relay is bundled.</p></div></div>
+
+<!-- ============================================================================
+     MAIN MENU. CS2-style: persistent top navigation, small icon rail, a
+     centred 3D operator on an atmospheric stage, and section panels that swap
+     in place. The character renders into the shared #game canvas through a
+     dedicated menu camera (see menuStage in game.js).
+     ============================================================================ -->
+<main id="menu" class="screen">
+ <div id="menuChrome">
+  <!-- Top-left utility icon rail (CS2-style monochrome glyphs). -->
+  <nav id="iconRail" aria-label="Utility">
+    <button class="irail" data-nav="home" title="Home"><span class="ric"></span></button>
+    <button class="irail" data-nav="news" title="Patch Notes"><span class="ric"></span></button>
+    <button class="irail" data-nav="settings" title="Settings"><span class="ric"></span></button>
+    <button class="irail" data-quit="1" title="Exit to Desktop"><span class="ric"></span></button>
+  </nav>
+  <!-- Primary top navigation. -->
+  <nav id="topnav" aria-label="Primary">
+    <button class="nav" data-nav="home">HOME</button>
+    <button class="nav" data-nav="loadout">LOADOUT</button>
+    <button class="nav primary" data-nav="play">PLAY</button>
+    <button class="nav" data-nav="settings">SETTINGS</button>
+  </nav>
+  <div id="brandMini">POLY<span>STRIKE</span></div>
+ </div>
+
+ <div id="menuStage" aria-hidden="true"></div>
+ <div id="menuVignette" aria-hidden="true"></div>
+
+ <!-- HOME -->
+ <section id="nav-home" class="navsec">
+   <div class="eyebrow">TACTICAL OPERATIONS / SEASON 02</div>
+   <h1 class="ps-title">POLY<span>STRIKE</span></h1>
+   <p class="intro">Five weapons. Five opponents.<br>Find your edge.</p>
+   <div id="homeActions">
+     <button id="start" class="cta">PLAY OFFLINE<span>VS BOTS</span></button>
+     <button id="onlineButton" class="ghost">PLAY ONLINE</button>
+     <button id="loadoutButton" class="ghost">LOADOUT</button>
+     <button id="settingsButton" class="ghost">SETTINGS</button>
+   </div>
+   <label for="username" class="userlabel">OPERATOR<input id="username" type="text" maxlength="20" autocomplete="nickname" placeholder="Operator"></label>
+   <label class="tick"><input id="fallback" type="checkbox"> Drag-to-look (hold right mouse)</label>
+   <details><summary>FIELD MANUAL / CONTROLS</summary><p>WASD move &#183; Shift sprint &#183; C while sprinting slide<br>Mouse aim &#183; Left click fire &#183; Right click ADS/scope<br>1 primary &#183; 2 secondary &#183; 3 knife &#183; mouse wheel cycle<br>G drop primary &#183; E pickup<br>Space jump &#183; Ctrl crouch &#183; Tab scoreboard &#183; Esc menu<br>M mute &#183; Q previous weapon &#183; F hold to inspect</p><p>Offline: five bots. Skirmish is the only mode: 90 seconds, first to five rounds.<br>Online: share a room code with one friend. Host selects map. Direct WebRTC requires internet and public signaling; restrictive networks may block connection. Peer IP addresses are exposed to each other. Casual play, not anti-cheat protected.</p></details>
+ </section>
+
+ <!-- PLAY -->
+ <section id="nav-play" class="navsec" hidden>
+   <div class="eyebrow">DEPLOYMENT</div>
+   <h2 class="sectitle">PLAY</h2>
+   <div class="modecards">
+     <button class="modecard" data-mode="offline">
+       <span class="mc-icon" data-icon="bot"></span>
+       <b>OFFLINE</b><small>Practice against bots. Pick a battleground and deploy solo.</small>
+     </button>
+     <button class="modecard" data-mode="online">
+       <span class="mc-icon" data-icon="online"></span>
+       <b>ONLINE</b><small>Host a 1v1 room or join a friend's code. Direct WebRTC.</small>
+     </button>
+   </div>
+   <div id="playOffline" class="playsub">
+     <label for="mapSelect">BATTLEGROUND<select id="mapSelect"><option value="desert">01 / Sandline &#8212; Desert Compound</option><option value="industrial">02 / Ironworks &#8212; Industrial Warehouse</option><option value="urban">03 / Crossfire &#8212; Urban Alleyways</option><option value="harbor">04 / Drydock &#8212; Coastal Sawmill</option><option value="training">05 / Training Range &#8212; Firing &amp; Movement Drills</option><option value="shipment">06 / Shipment &#8212; Container Maze</option><option value="dust2">07 / Dust 2 &#8212; Desert Lanes</option></select></label>
+     <small id="mapDescription">SKIRMISH &#183; FIRST TO FIVE</small>
+     <label class="tick"><input id="rotateMaps" type="checkbox" checked> Rotate map after match</label>
+     <button id="start2" class="cta sm">DEPLOY</button>
+   </div>
+   <div id="playOnline" class="playsub" hidden>
+     <p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p>
+     <button id="hostRoom" class="cta sm">CREATE ROOM</button>
+     <label>ROOM CODE<input id="roomInput" type="text" maxlength="20" autocomplete="off" spellcheck="false" placeholder="Paste room code"></label>
+     <button id="joinRoom" class="ghost sm">JOIN ROOM</button>
+     <output id="roomCode" aria-live="polite"></output>
+     <p id="netStatus" role="status">Ready to connect.</p>
+     <p class="subtle">Public PeerJS signaling + WebRTC. No custom server or account. NAT/firewall restrictions can prevent a connection; no TURN relay is bundled.</p>
+   </div>
+ </section>
+
+ <!-- LOADOUT -->
+ <section id="nav-loadout" class="navsec" hidden>
+   <div class="eyebrow">FIELD OPERATIONS / ARMOURY</div>
+   <h2 class="sectitle">LOADOUT</h2>
+   <div class="loadout-stage"><canvas id="loadoutCanvas" width="360" height="240" aria-label="Character and weapon preview"></canvas>
+     <div id="loadoutInfo"><b id="loadoutName">AKM</b><small id="loadoutDesc">Assault rifle</small></div>
+   </div>
+   <div class="eyebrow small">PRIMARY</div>
+   <div id="primaryCards"></div>
+   <div class="eyebrow small">SECONDARY</div>
+   <div id="secondaryCards"></div>
+   <div class="eyebrow small">MELEE</div>
+   <div id="meleeCards"></div>
+   <button id="loadoutInspect" class="ghost sm" hidden>INSPECT WEAPON (F)</button>
+   <button id="loadoutClose" class="ghost sm">CONFIRM &amp; CLOSE</button>
+ </section>
+
+ <!-- SETTINGS -->
+ <section id="nav-settings" class="navsec" hidden>
+   <div class="eyebrow">TUNE YOUR EXPERIENCE</div>
+   <h2 class="sectitle">SETTINGS</h2>
+   <div id="setTabs" role="tablist">
+     <button class="stab" data-tab="gameplay" role="tab">GAMEPLAY</button>
+     <button class="stab" data-tab="video" role="tab">VIDEO</button>
+     <button class="stab" data-tab="audio" role="tab">AUDIO</button>
+     <button class="stab" data-tab="iface" role="tab">INTERFACE</button>
+     <button class="stab" data-tab="controls" role="tab">CONTROLS</button>
+   </div>
+   <div id="setBody">
+    <div class="stabody" data-tab="gameplay">
+      <label>Mouse sensitivity <output id="sensitivityValue">1.00</output><input id="sensitivity" type="range" min="0.1" max="3" step="0.01" value="1"></label>
+      <label>ADS sensitivity multiplier <output id="adsSensitivityValue">0.50</output><input id="adsSensitivity" type="range" min="0.1" max="2" step="0.01" value="0.5"></label>
+      <label>Field of view <output id="fovValue">90&#176;</output><input id="fov" type="range" min="70" max="110" step="1" value="90"></label>
+      <small>World camera only &#8212; the weapon view keeps its own scale at every value.</small>
+      <div class="eyebrow small">CROSSHAIR</div>
+      <label>Crosshair color<select id="crosshairColor"><option value="#d9f577">Lime</option><option value="#ffffff">White</option><option value="#ff5454">Red</option><option value="#54d9ff">Cyan</option><option value="#ffd354">Amber</option></select></label>
+      <label>Crosshair gap <output id="crosshairGapValue">6</output><input id="crosshairGap" type="range" min="0" max="20" step="1" value="6"></label>
+      <label>Crosshair length <output id="crosshairLengthValue">7</output><input id="crosshairLength" type="range" min="2" max="20" step="1" value="7"></label>
+      <label>Crosshair thickness <output id="crosshairThicknessValue">2</output><input id="crosshairThickness" type="range" min="1" max="6" step="1" value="2"></label>
+      <label><input type="checkbox" id="crosshairDot" checked> Center dot</label>
+    </div>
+    <div class="stabody" data-tab="video" hidden>
+      <label>Graphics preset<select id="graphics"><option value="high">High</option><option value="medium" selected>Medium</option><option value="performance">Performance Mode</option></select></label>
+      <label><input type="checkbox" id="performanceToggle"> Performance Mode &#8212; ultra-light</label>
+      <p id="presetDetails">No post-processing or shadow maps. Performance Mode caps render pixels at 307,200, removes decorative geometry and uses simpler materials.</p>
+      <label>Frame rate limit<select id="fpsCap"><option value="60">60 FPS</option><option value="90">90 FPS</option><option value="120">120 FPS</option><option value="144">144 FPS</option><option value="160">160 FPS</option><option value="165">165 FPS</option><option value="240">240 FPS</option><option value="0" selected>Unlimited</option></select></label>
+      <small>Limits the render loop's frame pacing. &#8220;Unlimited&#8221; leaves the browser in charge of vsync.</small>
+      <label><input type="checkbox" id="showFps"> Show frame counter (debug)</label>
+    </div>
+    <div class="stabody" data-tab="audio" hidden>
+      <label>Master volume <output id="masterVolumeValue">100%</output><input id="masterVolume" type="range" min="0" max="100" step="5" value="100"></label>
+      <label>Effects volume <output id="sfxVolumeValue">100%</output><input id="sfxVolume" type="range" min="0" max="100" step="5" value="100"></label>
+      <label>Announcer volume <output id="annVolumeValue">100%</output><input id="annVolume" type="range" min="0" max="100" step="5" value="100"></label>
+      <label><input type="checkbox" id="muteAll"> Mute all audio</label>
+      <div class="eyebrow small">ANNOUNCER</div>
+      <label>Announcer voice pack<select id="announcerVoice"><option value="male" selected>Male</option><option value="female">Female</option></select></label>
+      <small>Kill callouts stop at 10 kills: no announcer plays beyond that.</small>
+    </div>
+    <div class="stabody" data-tab="iface" hidden>
+      <label>HUD scale <output id="hudScaleValue">100%</output><input id="hudScale" type="range" min="70" max="130" step="5" value="100"></label>
+      <label>Radar scale <output id="radarScaleValue">100%</output><input id="radarScale" type="range" min="70" max="130" step="5" value="100"></label>
+      <label>HUD opacity <output id="hudOpacityValue">100%</output><input id="hudOpacity" type="range" min="40" max="100" step="5" value="100"></label>
+      <label><input type="checkbox" id="killFeedOn" checked> Kill feed</label>
+      <label><input type="checkbox" id="damageFeedback" checked> Damage feedback</label>
+    </div>
+    <div class="stabody" data-tab="controls" hidden>
+      <div class="keyrows">
+        <div><b>MOVE</b><span>W A S D</span></div>
+        <div><b>SPRINT</b><span>SHIFT</span></div>
+        <div><b>SLIDE</b><span>C (while sprinting)</span></div>
+        <div><b>JUMP</b><span>SPACE</span></div>
+        <div><b>CROUCH</b><span>CTRL</span></div>
+        <div><b>FIRE</b><span>LEFT MOUSE</span></div>
+        <div><b>AIM / SCOPE</b><span>RIGHT MOUSE</span></div>
+        <div><b>RELOAD</b><span>R</span></div>
+        <div><b>INSPECT</b><span>F (hold)</span></div>
+        <div><b>PRIMARY</b><span>1</span></div>
+        <div><b>SECONDARY</b><span>2</span></div>
+        <div><b>KNIFE</b><span>3</span></div>
+        <div><b>CYCLE WEAPON</b><span>WHEEL / Q</span></div>
+        <div><b>DROP / PICKUP</b><span>G / E</span></div>
+        <div><b>SCOREBOARD</b><span>TAB</span></div>
+        <div><b>MENU</b><span>ESC</span></div>
+        <div><b>MUTE</b><span>M</span></div>
+      </div>
+    </div>
+   </div>
+   <button id="applySettings" class="cta sm">APPLY &amp; CLOSE</button>
+ </section>
+
+ <footer id="menuFoot"><strong class="credit">POLY STRIKE</strong><br>Made by XTR &#183; ORIGINAL BROWSER FPS &#183; NOT AFFILIATED WITH VALVE<br>Desktop keyboard + mouse &#183; No downloads &#183; Offline-ready</footer>
+</main>
+
+<div id="pause" class="panel" hidden><div><div class="eyebrow">OPERATOR MENU</div><h2 id="pauseTitle">PAUSED</h2><p id="pauseText">Your offline match is frozen.</p><button id="resume" class="cta">RESUME OPERATION</button><button id="pauseSettings" class="ghost">Settings</button><button id="pauseCareer" class="ghost">Career / Stats</button><div id="rematchControls" hidden><label>Next battleground<select id="nextMap"><option value="desert">Sandline</option><option value="industrial">Ironworks</option><option value="urban">Crossfire</option><option value="harbor">Drydock</option><option value="training">Training Range</option><option value="shipment">Shipment</option><option value="dust2">Dust 2</option></select></label><button id="rematch">REQUEST REMATCH</button><p id="rematchStatus" role="status"></p></div><button id="restart" class="ghost">NEW OFFLINE MATCH</button><button id="toMenu" class="ghost">LEAVE TO MAIN MENU</button><p>Online matches continue while this menu is open.</p></div></div>
+<div id="careerPanel" class="panel" role="dialog" aria-modal="true" aria-labelledby="careerTitle" hidden><div><div class="eyebrow">SERVICE RECORD</div><h2 id="careerTitle">CAREER</h2><div id="careerStats"></div><button id="careerClose" class="ghost">CLOSE</button></div></div>
 <div id="error" class="panel" hidden><div><h2>Unable to start WebGL</h2><p id="errorText">Enable hardware acceleration and use a current desktop browser.</p></div></div>
 <script src="vendor/three.min.js"></script><script src="maps.js"></script><script src="core.js"></script><script src="visuals.js"></script><script src="audio.js"></script><script src="settings.js"></script><script src="vendor/peerjs.min.js"></script><script src="net.js"></script><script src="duel.js"></script><script src="online.js"></script>
 

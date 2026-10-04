@@ -150,9 +150,9 @@ test('radar keeps the map fixed and rotates the player marker', () => {
   assert.ok(/rc\.moveTo\(0,-6\);rc\.lineTo\(4,4\);rc\.lineTo\(-4,4\)/.test(GAME),
     'the marker is a heading triangle, not a centre dot');
   // The map itself never turns: solids are plotted through the same unrotated
-  // helper as the contacts.
-  assert.ok(/rc\.fillStyle='#1d282c';[\s\S]*for\(const s of solids\)/.test(GAME),
-    'solids are drawn over the fixed disc');
+  // helper as the contacts, over a translucent base wash (v42 radar pass).
+  assert.ok(/rc\.fillStyle='rgba\(20,34,40,\.55\)';[\s\S]*?rc\.fillStyle='#2a3d42';[\s\S]*?for\(const s of solids\)/.test(GAME),
+    'solids are drawn over the translucent fixed disc');
 });
 
 test('the knife is a true melee weapon with no firearm logic', () => {
@@ -199,7 +199,10 @@ test('the roster wires all eight weapons into the loadout and the HUD', () => {
   // The loadout panel must list every weapon and the secondary slot must name
   // the equipped one, whatever it is.
   assert.ok(/\['deagle','glock','knife','grenade'\]/.test(GAME), 'the four secondaries are listed');
-  assert.ok(/\$\(\'secondarySlot\'\)/.test(GAME), 'the secondary slot is updated by the HUD');
+  // v42 builds the vertical weapon stack from inventory() in one place
+  // (buildSlots) instead of writing four fixed slot elements per tick.
+  assert.ok(/function buildSlots\(\)/.test(GAME), 'the slot stack is built by buildSlots()');
+  assert.ok(/function setSlot\(el,key,override\)/.test(GAME), 'a single setSlot() still paints one slot');
   // The ready/inspect framing tables must cover the new weapons or the
   // viewmodel falls back to the AKM pose silently.
   for (const k of ['glock', 'mossberg', 'grenade']) {

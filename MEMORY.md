@@ -4,6 +4,73 @@ Location: C:/Users/xtr18/Projects/poly-strike. Read before resuming; never store
 Repo: https://github.com/xtr18222-hue/poly-strike
 Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 
+
+2026-10-04 — v42 COMPLETE UI / FRONTEND OVERHAUL — DONE
+======================================================
+CS2-style presentation rebuild on top of the v41 HUD systems. Nothing working
+was rewritten; the DOM/CSS layer was replaced.
+
+Shipped:
+- CS2 panorama icons are the PRIMARY icon set (assets/cs2/, ~450 SVGs copied
+  from Juknum/counter-strike-icons cs2/ folder, inline fills stripped so CSS
+  tints them, assets/cs2/ATTRIBUTION.md credits Valve). assets/icons.js now
+  loads from assets/cs2/ through a WEAPON_ICON/HUD_ICON/UI_ICON registry with
+  nodeFor(name,px) returning a NODE once cached (same-frame paint; a promise
+  only on the cold load). The old assets/icons/ CS:GO silhouettes are retired
+  from the UI but the directory is untouched.
+- MAIN MENU rebuilt: persistent top nav (HOME/LOADOUT/PLAY/SETTINGS) + icon
+  rail, sections swap in place through navTo(), a 3D operator stands
+  centre-stage (PolyAsset.soldierRig() + clip('idle') + armMenuBot() holding
+  the equipped primary, re-armed on every loadout change), camera now renders
+  the stage through menuCam while !started. Scene background darkened to
+  0x0d161b with a warm rim light.
+- PLAY screen: two mode cards (OFFLINE/ONLINE) switching sub-panels in place
+  of the old modal #onlinePanel/#settingsPanel/#loadoutPanel. All three modal
+  IDs were removed from the DOM; every game.js reference to them was routed
+  through navTo() instead.
+- LOADOUT is now an in-menu section; tickLoadoutPreview/render gate on
+  #nav-loadout.hidden instead of #loadoutPanel.hidden.
+- SETTINGS rebuilt with tabs (GAMEPLAY/VIDEO/AUDIO/INTERFACE/CONTROLS) and
+  the first real FPS CAP: select 60/90/120/144/160/165/240/Unlimited,
+  persisted, enforced in tick() by skipping frames that arrive sooner than
+  the target interval. Verified live: capped=60 exactly, unlimited=vsync 120.
+  INTERFACE tab drives HUD scale / radar scale / HUD opacity / feed toggle /
+  damage-feedback toggle / FPS counter. AUDIO tab has master/sfx/announcer
+  sliders + mute; the MUSIC toggle and music volume slider are GONE.
+- HUD: vitals are icon-led with a thin divider (no box), ammo is clean
+  hierarchy, the weapon selector is a COMPACT VERTICAL STACK above the ammo
+  (built once per inventory signature by buildSlots(), not rebuilt per tick).
+  #objective and #connectionStatus are retired from the layout but kept as
+  hidden inert elements so hud() never throws on a dead element.
+- Radar contrast pass: translucent base wash instead of the flat dark disc.
+- ANNOUNCER HARD CAP AT 10: TIER_CAPS = {male:10, female:10}, the male pack
+  was trimmed from 14 tiers to exactly 10 (Devastation/Annihilation/
+  Monster-Kill/Godlike removed), the female pack from 9 to 8, and announce()
+  resolves nothing above the cap. The old "male 14 / female 9" split and its
+  comment are gone.
+- BGM REMOVED: the procedural menu theme is gone; startMusic/stopMusic/
+  setMusicMuted/isMusicMuted/musicState stay as no-op accessors so callers
+  and tests do not break. The AudioContext unlock on first gesture is KEPT
+  (every other sound still needs it).
+- sw.js bumped to cache 'poly-strike-v42-ui' and now precaches the ~34 CS2
+  glyphs the registry actually names (not the whole 7.3MB directory).
+
+Verified: 122/122 assertions (84 core/visuals/fieldops/trainer/overhaul,
+12 viewmodel, 11 masterpass, 8 radar, 7 boot) with zero failures. Live Chrome
+checks: zero runtime exceptions, menu nav + loadout (8 cards, preview switch
+AKM->L96 A1), match deploy, 4-slot stack with CS2 SVGs and correct active
+state, kill feed with weapon icon, reload (30->0 then 30/60), knife hides the
+crosshair, inspect state machine, FPS cap measured (121 frames/2s at the 60
+cap vs 120 unlimited), settings tabs, music controls absent.
+
+KEY LESSON (recurring): sw.js caches aggressively and serves the STALE build
+after a deploy — unregister the SW + wipe caches before trusting any local
+probe. The first live check showed the OLD title and OLD DOM because v41 was
+still intercepted.
+KEY LESSON: a Chrome tab left in the background stops firing requestAnimationFrame,
+so frames:0 means "hidden tab", not "dead loop". Bring the tab to the front
+(Page.bringToFront) before concluding the render loop is broken.
+
 ## 2026-10-02 — v38 RENDER FIX (white region / frozen frames) — DONE, SW v38
 
 ROOT CAUSE (proved in real headless Chrome over CDP, NOT guessed): the render

@@ -186,33 +186,27 @@ window.PolyAudio = (() => {
   }
   let musicNextAt = 0;
 
-  function startMusic(track) {
-    if (!ctx) return;
-    if (!MUSIC_TRACKS.includes(track)) track = 'menu';
-    const bus = musicBus();
-    musicTrack = track; musicOn = true;
-    musicNextAt = ctx.currentTime + .15;
-    tickMusic();
-    if (musicTimer) clearInterval(musicTimer);
-    musicTimer = setInterval(tickMusic, 1000);
-  }
-  function stopMusic() {
-    musicOn = false; musicTrack = null;
-    if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
-  }
+  // BACKGROUND MUSIC IS REMOVED. The spec has no supplied music assets and
+  // forbids inventing or downloading any, so the procedural menu theme is
+  // gone. These accessors stay as safe no-ops: game.js and the tests still
+  // call them, and removing the functions would break those callers. Nothing
+  // is scheduled, nothing is decoded, no bus is ever created.
+  function startMusic(track) { musicTrack = null; musicOn = false; }
+  function stopMusic() { musicOn = false; musicTrack = null; if (musicTimer) { clearInterval(musicTimer); musicTimer = null; } }
   // Mute is independent of the SFX mute and applies instantly: the music bus
   // gain ramps to zero, killing what is already sounding.
   function setMusicMuted(m) {
-    musicMuted = !!m;
-    try { localStorage.setItem('poly-music-muted', musicMuted ? '1' : '0'); } catch (_) {}
-    if (musicGain && ctx) musicGain.gain.setTargetAtTime(musicMuted ? 0 : .16, ctx.currentTime, .05);
+    musicMuted = true;   // permanently muted: there is no music to hear
+    try { localStorage.setItem('poly-music-muted', '1'); } catch (_) {}
   }
-  function isMusicMuted() { return musicMuted; }
-  function musicState() { return { track: musicTrack, playing: musicOn, muted: musicMuted }; }
-  try { if (localStorage.getItem('poly-music-muted') === '1') musicMuted = true; } catch (_) {}
+  function isMusicMuted() { return true; }
+  function musicState() { return { track: null, playing: false, muted: true }; }
 
 
   const PACKS = {
+    // V42 HARD CAP: ten tiers, no more. The announcer calls kills 1..10 and
+    // then falls silent for the rest of the match — nothing above tier 10 may
+    // be shipped, because it can never play.
     male: [
       '[audio]First......lood!',
       'Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill',
@@ -224,10 +218,6 @@ window.PolyAudio = (() => {
       'Mortal-Kombat-Announcer-2026-09-20-07-00-Rampage!',
       'Mortal-Kombat-Announcer-2026-09-20-07-01-Dominating!',
       'Mortal-Kombat-Announcer-2026-09-20-07-03-Unreal!',
-      'Mortal-Kombat-Announcer-2026-09-20-07-06-Devastation!',
-      'Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation',
-      '[audio]Monster-Kill !',
-      '[audio]Godlike!',
     ],
     female: [
       '[UT Sexy Female Announcer]First......Blood',
@@ -238,7 +228,6 @@ window.PolyAudio = (() => {
       '[UT Sexy Female Announcer]Ultra......ll!!!',
       '[UT Sexy Female Announcer]Unbel......able!',
       '[UT Sexy Female Announcer]holy ......op!!! (1)',
-      '[UT Sexy Female Announcer]Monster-Kill!',
     ],
   };
   let voicePack = 'male';
@@ -262,12 +251,12 @@ window.PolyAudio = (() => {
     src.start();
     src.onended = () => { src.disconnect(); g.disconnect(); };
   }
-  // Kill-count tiers stop at the last line in the pack: beyond it the
-  // announcer goes completely silent rather than looping or replaying the top.
-  // The packs are capped separately: the female announcer runs to 9 kills and
-  // the male announcer to 14, so each pack is indexed by its own length and
-  // the shared hard cap is gone.
-  const TIER_CAPS = { male: 14, female: 9 };
+  // KILL ANNOUNCER HARD CAP. The spec is explicit: the male announcer may
+  // call kills 1..10 and NO further. Beyond 10 kills there is no kill voice at
+  // all, ever — no streak tier, no milestone, no hidden path. The cap is
+  // enforced HERE (the single place a clip resolves), not at the call site,
+  // so no other code path can route around it.
+  const TIER_CAPS = { male: 10, female: 10 };
   function announce(kind, kills) {
     if (!ctx) return;
     const list = PACKS[voicePack] || PACKS.male;
@@ -278,9 +267,12 @@ window.PolyAudio = (() => {
     // keeps the mapping honest if that ever changes.
     if (kind === 'firstblood') name = list[0];
     // A streak of N plays list[N-1]: the pack is ordered from First Blood at
-    // index 0 through the top tier, so the cap is the pack's own length.
-    else if (kind === 'streak' && Number.isInteger(kills) && kills >= 2 && kills <= cap) {
-      name = list[Math.min(kills - 1, list.length - 1)];
+    // index 0 through the top tier. The HARD CAP is 10 — no announcer may
+    // call a kill beyond that, ever. A pack shorter than the cap (the female
+    // pack ships 9 tiers) falls silent at its own end rather than looping or
+    // replaying its top line, so each kill still maps to a distinct clip.
+    else if (kind === 'streak' && Number.isInteger(kills) && kills >= 2 && kills <= cap && kills <= list.length) {
+      name = list[kills - 1];
     }
     if (!name) return;
     loadClip(name).then(playClip);

@@ -89,7 +89,9 @@ test('announcer packs map every clip and the Clutch line is gone', () => {
   const fs = require('fs');
   const path = require('path');
   const audio = fs.readFileSync(path.join(ROOT, 'audio.js'), 'utf-8');
-  const male = ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill','Mortal-Kombat-Announcer-2026-09-20-07-07-Annihilation'];
+  // The male pack is hard-capped at 10 tiers in v42, so Annihilation (tier 12)
+  // is no longer shipped — it must not be referenced anywhere.
+  const male = ['[audio]First......lood!','Mortal-Kombat-Announcer-2026-09-20-06-53-Double-Kill'];
   const female = ['[UT Sexy Female Announcer]First......Blood','[UT Sexy Female Announcer]holy ......op!!! (1)'];
   for (const name of male.concat(female)) {
     assert.ok(audio.includes(name), 'pack maps ' + name.slice(0, 30));
@@ -99,6 +101,10 @@ test('announcer packs map every clip and the Clutch line is gone', () => {
   // reference anywhere in the game code.
   for (const name of ['Clutch','Mortal-Kombat-Announcer-2026-09-20-06-52-Clutch']) {
     assert.ok(!audio.includes(name), 'audio.js no longer references ' + name);
+  }
+  // v42 hard cap: no tier above 10 may ship, because it can never play.
+  for (const name of ['Devastation','Annihilation','Monster-Kill','Godlike']) {
+    assert.ok(!audio.includes(name), 'audio.js ships no tier above the 10-kill cap: ' + name);
   }
   for (const f of ['game.js','core.js','visuals.js','maps.js']) {
     const src = fs.readFileSync(path.join(ROOT, f), 'utf-8');
@@ -115,27 +121,34 @@ test('tick audio cue exists', () => {
   assert.ok(src('audio.js').includes('tick:'), 'audio.js must define a tick cue');
 });
 
-test('male announcer walks 14 sequential tiers, female caps at 9', () => {
-  // The packs are capped separately. The male announcer must resolve every
-  // tier 1..14 to a distinct clip with a real file; the female announcer stops
-  // at 9 and must not be held to the male cap.
+test('announcer hard cap at 10 kills for every pack', () => {
+  // The v42 contract: the announcer calls kills 1..10 and NOTHING beyond.
+  // Both packs share one cap, and there is no path that can exceed it.
   const fs = require('fs');
   const path = require('path');
   const audio = src('audio.js');
-  assert.ok(/const TIER_CAPS = \{ male: 14, female: 9 \}/.test(audio),
-    'TIER_CAPS is split per pack (male 14, female 9)');
+  assert.ok(/const TIER_CAPS = \{ male: 10, female: 10 \}/.test(audio),
+    'TIER_CAPS is a shared hard cap of 10 (male 10, female 10)');
   assert.ok(!/\bTIER_CAP\b\s*=/.test(audio), 'the shared TIER_CAP constant is gone');
+  assert.ok(/kills <= cap/.test(audio), 'announce() rejects kills above the cap');
 
   const dir = path.join(ROOT, 'assets/audio');
-  for (const [pack, cap] of [['male', 14], ['female', 9]]) {
+  for (const pack of ['male', 'female']) {
     const m = new RegExp('    ' + pack + ': \\[([\\s\\S]*?)\\n    \\],').exec(audio);
     assert.ok(m, pack + ' pack found');
     const clips = m[1].split('\n').map(l => l.trim().replace(/,$/, '').replace(/^'|'$/g, '')).filter(x => x && !x.startsWith('//'));
-    assert.equal(clips.length, cap, pack + ' pack lists exactly ' + cap + ' tiers, got ' + clips.length);
+    // No pack may exceed the shared hard cap: anything beyond tier 10 is dead
+    // code that can never play, so it must not be shipped.
+    assert.ok(clips.length <= 10, pack + ' pack respects the 10-kill cap, got ' + clips.length);
     assert.equal(new Set(clips).size, clips.length, pack + ' tiers are all distinct');
     for (const name of clips)
       assert.ok(fs.existsSync(path.join(dir, name + '.mp3')), name.slice(0, 28) + ' exists on disk');
   }
+  // The male pack is the reference: it must ship all ten tiers so every kill
+  // 1..10 gets its own callout.
+  const m10 = /    male: \[([\s\S]*?)\n    \],/.exec(audio);
+  const male = m10[1].split('\n').map(l => l.trim().replace(/,$/, '').replace(/^'|'$/g, '')).filter(x => x && !x.startsWith('//'));
+  assert.equal(male.length, 10, 'male pack ships exactly the 10 tiers, got ' + male.length);
 });
 
 
