@@ -94,6 +94,18 @@ const scene=new T.Scene();scene.background=new T.Color(0x0d161b);scene.fog=new T
 scene.add(new T.HemisphereLight(0xe5f4ff,0x4a5a60,1.15));const sun=new T.DirectionalLight(0xffeccb,1.5);sun.position.set(-20,40,15);scene.add(sun);
 // A warm rim for the menu stage so the operator reads against the dark base.
 const menuRim=new T.DirectionalLight(0xffd9a8,.8);menuRim.position.set(6,5,-8);scene.add(menuRim);
+// Menu stage lighting (toggled by setMenuSetVisible with the stage set).
+const menuKey=new T.DirectionalLight(0xdcecff,1.35);menuKey.position.set(-5,6,6);scene.add(menuKey);
+const menuFill=new T.HemisphereLight(0x9fb4c4,0x20282c,.5);scene.add(menuFill);
+// The Soldier rig's gear is authored near-black (0x020202) and the menu set is a
+// dark hangar, so the operator needs its own dedicated illumination to separate
+// from the backdrop: a hot key from camera-left and a strong rim from behind-
+// right. These light ONLY the menu stage (visible toggled with the set).
+const menuSpot=new T.DirectionalLight(0xfff2dc,3.0);menuSpot.position.set(-2.6,2.8,4.4);scene.add(menuSpot);
+const menuRim2=new T.DirectionalLight(0xffd9a8,2.2);menuRim2.position.set(4.5,3.0,-3.5);scene.add(menuRim2);
+// A tight back-top wash so the helmet and shoulders hold their silhouette
+// against the back wall instead of merging with it.
+const menuTop=new T.DirectionalLight(0xbfd4e4,1.0);menuTop.position.set(0,6,2);scene.add(menuTop);
 const cam=new T.PerspectiveCamera(75,1,.06,180);cam.rotation.order='YXZ';
 const viewScene=new T.Scene(),viewCam=new T.PerspectiveCamera(65,1,.02,10);viewScene.add(new T.HemisphereLight(0xffffff,0x697681,1.6));const vl=new T.DirectionalLight(0xffe5cf,1.7);vl.position.set(-2,3,4);viewScene.add(vl);
 // The asset suite loads asynchronously. Everything that depends on it is
@@ -143,6 +155,74 @@ function rearmMenuCharacter(){
   if(rig)armMenuBot(rig);
 }
 let arena=null,worldNodes=[];
+// ==================================================== MENU STAGE SET =======
+// A dedicated dark tactical environment for the main menu, kept in its own
+// THREE.Group so it can be shown/hidden without touching the arena. The menu
+// must never drop the player into a bright desert: it is a dim hangar bay with
+// a lit operator, visible floor, cover and depth behind the character.
+let menuSet=null,menuSetMaterials=null;
+function buildMenuSet(){
+  if(menuSet)return menuSet;
+  const g=new T.Group();g.name='menuSet';
+  const perf=preset==='performance';
+  const mat=(c,kind)=>perf?new T.MeshBasicMaterial({color:c}):new T.MeshLambertMaterial({color:c});
+  const floorMat=mat(0x121d23),wallMat=mat(0x18262d),trimMat=mat(0x243640),crateMat=mat(0x2a3a42),accentMat=mat(0x33505c),darkMat=mat(0x0c1418);
+  menuSetMaterials=[floorMat,wallMat,trimMat,crateMat,accentMat,darkMat];
+  const add=(m,w,h,d,x,y,z)=>{const o=new T.Mesh(new T.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.receiveShadow=false;g.add(o);return o;};
+  // Floor: a wide plate with a subtle grid of seam lines gives a hangar feel.
+  add(floorMat,60,1,60,0,-.5,0);
+  if(!perf){
+    for(let gx=-24;gx<=24;gx+=8)add(trimMat,.06,.02,48,gx,.005,0);
+    for(let gz=-24;gz<=24;gz+=8)add(trimMat,48,.02,.06,0,.005,gz);
+  }
+  // Back wall with structural bays — the depth behind the operator.
+  add(wallMat,60,7,1,0,3,-22);
+  if(!perf){
+    for(let i=-5;i<=5;i++)add(trimMat,.5,6.8,.2,i*5,3,-21.4);
+    add(darkMat,60,1.4,1,0,6.4,-21.9);
+    // Wall lamps: emissive markers so the bays read as lit even without
+    // shadow maps (this game has none).
+    for(let i=-4;i<=4;i+=2){
+      const lm=new T.Mesh(new T.BoxGeometry(1.2,.14,.4),new T.MeshBasicMaterial({color:0xffcf8a}));
+      lm.position.set(i*6,5.6,-21.5);g.add(lm);
+    }
+  }
+  // Side walls for enclosure, with a gap on the operator's right so the stage
+  // is not a flat corridor when the camera drifts.
+  add(wallMat,1,7,60,-24,3,-2);add(wallMat,1,7,36,24,3,-8);
+  // Cover crates around the operator at varying heights — tactical staging,
+  // never symmetric, so the composition reads as a real place.
+  const crate=(x,z,s,r)=>{const o=add(crateMat,s,s,s,x,s/2,z);o.rotation.y=r;return o;};
+  crate(-7,-6,2.4,.5);crate(8,-9,3,-.4);crate(-11,-12,1.6,.2);
+  crate(13,-3,2,.7);crate(6,-15,3.2,-.2);crate(-4,-16,2.2,.35);
+  // Long crate stacks flanking the back for a strong silhouette.
+  add(crateMat,5,1.6,5,-16,.8,-16);add(crateMat,4,1.2,4,17,.6,-15);
+  add(crateMat,3.4,2,3.4,-14,1,-19);add(crateMat,3,1.4,3,15,.7,-18);
+  // An accent stripe across the back wall: the POLY STRIKE tacit colour line.
+  add(accentMat,60,.16,.4,0,2.1,-21.6);
+  // Ceiling spars for overhead structure (depth above the frame).
+  if(!perf)for(let i=-3;i<=3;i++)add(darkMat,1.6,.5,44,i*7,7,-2);
+  scene.add(g);
+  menuSet=g;
+  return g;
+}
+function setMenuSetVisible(on){
+  if(!menuSet)buildMenuSet();
+  menuSet.visible=on;
+  // The menu gets its own lighting state: dark base + a tight key/rim pair on
+  // the operator, while the gameplay arena keeps its authored sun.
+  menuKey.visible=on;menuRim.visible=on;menuFill.visible=on;
+  menuSpot.visible=on;menuRim2.visible=on;menuTop.visible=on;
+  scene.background=on?menuBgColor:sceneBackground;
+  scene.fog=on?menuFog:sceneFogBase;
+}
+// The gameplay look (set by buildArena/loadMap, restored on deploy).
+let sceneBackground=null,sceneFogBase=null;
+const menuBgColor=new T.Color(0x0b1216),menuFog=new T.Fog(0x0b1216,8,34);
+// Key light: a cool-white tactical spot from camera-left above; rim light:
+// warm edge from camera-right behind, so the operator separates from the set.
+// (menuKey/menuFill/menuRim are declared with the scene lights above and all
+// three are toggled together by setMenuSetVisible().)
 // Pose the menu operator with the equipped primary, mirroring armBot() above
 // but with no combat wiring (no botId, no firing). Defined AFTER readyAll so
 // the armBot reference it echoes is already in scope; it only uses PolyAsset.
@@ -167,9 +247,16 @@ function armMenuBot(rig){
     w.visible=true;
   }catch(_){}
 }
+// The menu camera frames the operator inside the STAGE. The nav panel covers
+// the left ~45% of the viewport, so the camera is offset left of the operator
+// (camX -0.68 at depth 3.4, fov 42) to push the figure to screen x 51-97%,
+// clear of the panel, and fills the stage height (13-91% of the viewport): a
+// full-body operator, not a miniature. A centred camera put the character at
+// 40-72% — half-hidden behind the panel, which is why the operator read as
+// invisible; a 5m depth made it a 627-pixel speck.
 const menuCam=new T.PerspectiveCamera(42,1,.1,60);
-menuCam.position.set(0,1.35,4.6);
-menuCam.lookAt(0,1.15,0);
+menuCam.position.set(-0.68,1.45,3.4);
+menuCam.lookAt(-0.58,1.0,0);
 // The character is built once the asset pipeline resolves; safe to call twice.
 if(window.PolyAsset)PolyAsset.ready().then(()=>{buildMenuCharacter();});
 // Slow idle sway — subtle, never a zoom.
@@ -531,7 +618,11 @@ function lock(){fallback=$('fallback').checked;if(fallback)return;try{const p=$(
 function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=false;online.close();}
  // Standard map selection only: the code-entry test maps were removed.
  const target=$('mapSelect').value;
- loadMap(target);match=C.MAP.training?C.createTrainingMatch('skirmish'):C.createMatch(C.MAP,'skirmish');rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();A.setPaused(false);lock();}
+ loadMap(target);
+ // Hand the stage to the arena: restore its own background/fog and drop the
+ // menu key/rim lights so the match looks like the map, not the lobby.
+ setMenuSetVisible(false);
+ match=C.MAP.training?C.createTrainingMatch('skirmish'):C.createMatch(C.MAP,'skirmish');rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();A.setPaused(false);lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();A.setPaused(true);$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function cancelInspect(){ if(inspPhase===INSP.READY) return; inspectHold=false; if(inspPhase===INSP.HOLD||inspPhase===INSP.IN){ inspPhase=INSP.OUT; inspT=1-Math.max(0,Math.min(1,inspT)); } }
 function startInspect(){ if(inspPhase!==INSP.READY) return; inspectHold=true; inspPhase=INSP.IN; inspT=0; }
@@ -837,6 +928,11 @@ function rebuildBots(){
 function loadMap(id){
  mapId=['desert','industrial','urban','harbor','training','shipment','dust2'].includes(id)?id:'desert';C=POLY_CORE.forMap?POLY_CORE.forMap(mapId):POLY_CORE;
  disposeWorld();const before=new Set(scene.children);arena=PolyVisual.buildArena(T,scene,C,preset);
+ // buildArena sets scene.background/fog to this map's palette; remember it so
+ // the menu stage can swap in its own dark look and restore this one on play.
+ sceneBackground=scene.background;sceneFogBase=scene.fog;
+ // The menu set lives in the same scene; keep it hidden during a match.
+ if(menuSet)menuSet.visible=false;
  worldNodes.push(...scene.children.filter(o=>!before.has(o)));for(const o of worldNodes){o.updateMatrixWorld(true);o.traverse(n=>{n.matrixAutoUpdate=false;});}
  // disposeWorld() pulled the bot groups out of the scene along with the arena
  // nodes; nothing in the load path re-adds them, so every match rendered
@@ -850,8 +946,8 @@ function loadMap(id){
  document.querySelectorAll('.brand small').forEach(el=>el.textContent=C.MAP.name||mapId.toUpperCase());cam.far=budget.far;cam.updateProjectionMatrix();
 }
 function leave(){localDrops=[];document.body.classList.remove('low-health');if(onlineMode){onlineMode=false;online.close();}running=false;started=false;clearInput();A.setPaused(false);if(document.pointerLockElement)document.exitPointerLock();$('pause').hidden=true;$('hud').hidden=true;$('menu').hidden=false;$('start').focus();}
-let settingsReturn=null;
-function openSettings(){settingsReturn=document.activeElement;if(running)pause();navTo('settings');$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
+let settingsReturn=null,settingsFrom=null;
+function openSettings(){settingsReturn=document.activeElement;settingsFrom=window.__nav||'home';if(running)pause();navTo('settings');$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
 $('settingsButton').onclick=()=>{A.start();navTo('settings');};$('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
 $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==='performance';};
@@ -944,7 +1040,9 @@ function renderLoadoutCards(){
  const secTag=k=>k==='knife'?'Blade · melee':k==='grenade'?'Throwable · explosive':'Semi-auto pistol';
  $('secondaryCards').replaceChildren(...['deagle','glock','knife','grenade'].map(k=>mk(k,secTag(k))));}
 $('loadoutButton').onclick=()=>{renderLoadoutCards();navTo('loadout');setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
-$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;stopLoadoutInspect();navTo('home');$('loadoutButton').focus();};
+$('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;stopLoadoutInspect();navTo('play');$('loadoutButton').focus();};
+// CREDITS: a dedicated attribution section, so the main menu stays clean.
+$('creditsClose').onclick=()=>{A.sound('switch');navTo('play');};
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
 // A drag overrides the idle drift until the player releases the mouse.
 let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false,loadoutInspectTime=0;
@@ -1019,7 +1117,7 @@ $('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').on
 // ============================================================ MENU NAV =====
 // CS2-style: one persistent top nav, sections swap in place, the character
 // stays on stage behind them. navTo() is the only way to change section.
-const NAV_SECTIONS=['home','play','loadout','settings'];
+const NAV_SECTIONS=['home','play','loadout','settings','credits'];
 function navTo(id){
  if(!NAV_SECTIONS.includes(id))id='home';
  for(const s of NAV_SECTIONS){const el=$('nav-'+s);if(el)el.hidden=s!==id;}
@@ -1028,11 +1126,19 @@ function navTo(id){
  });
  if(id==='loadout'){renderLoadoutCards();setLoadoutPreview(primary);resizeLoadout();}
  if(id==='play')selectMode(modeSel);
+ // The operator stays on stage for every section; the stage never goes blank.
  window.__nav=id;
 }
 // The icon rail mirrors the primary nav; data-nav buttons all route through
 // navTo so there is one code path and one source of truth.
 document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{A.start();navTo(b.dataset.nav);}));
+// Paint the icon rail's glyphs once at boot with the CS2 chrome icons. The
+// rail buttons carry data-nav, so their clicks already route through navTo.
+document.querySelectorAll('#iconRail .ric').forEach(s=>{
+  const btn=s.closest('.irail'); if(!btn)return;
+  const name=btn.dataset.nav;
+  if(name)try{paintIcon(s,name,17,null,0);}catch(_){}
+});
 document.querySelectorAll('[data-quit]').forEach(()=>{});
 // PLAY screen: two mode cards, one sub-panel each.
 let modeSel='offline';
@@ -1046,6 +1152,15 @@ function selectMode(m){
 }
 document.querySelectorAll('.modecard').forEach(c=>c.addEventListener('click',()=>{A.sound('switch');selectMode(c.dataset.mode);}));
 $('start2').onclick=()=>deploy();
+// PLAY screen: the mode cards switch sub-panels. The BACK button returns to
+// the landing section; the online panel has its own cancel that tears down the
+// room first. PLAY is the top-nav home of the deploy flow.
+$('playBack').onclick=()=>{A.sound('switch');if(onlineMode){onlineMode=false;leave();}navTo('home');};
+// BACK from settings returns to wherever settings was opened from. When it was
+// opened from the pause panel mid-match, that panel is still up underneath, so
+// BACK focuses the pause panel's resume button instead of stranding the player
+// on the landing section with a frozen match.
+$('settingsClose').onclick=()=>{A.sound('switch');const r=settingsReturn;if(r&&document.contains(r)&&r.id==='pauseSettings'){r.focus();return;}navTo(settingsFrom&&settingsFrom!=='settings'?settingsFrom:'home');};
 // SETTINGS tabs.
 document.querySelectorAll('#setTabs .stab').forEach(b=>b.addEventListener('click',()=>{
   A.sound('switch');
@@ -1251,11 +1366,13 @@ function hudIconNode(iconName,size){
 }
 // Paint an icon into `target`. If the SVG is already cached the node is placed
 // immediately; otherwise it loads and lands only if the row still matches.
+// `el`/`sig` are optional: static chrome (the icon rail) passes them null and
+// the icon lands unconditionally, because those containers are never rebuilt.
 function paintIcon(target,iconName,size,el,sig){
  if(!target)return;
  if(typeof PS_ICONS==='undefined'||!PS_ICONS)return;
  const n=PS_ICONS.nodeFor(iconName,size);
- if(n&&typeof n.then==='function'){n.then(m=>{if(m&&target.isConnected&&el.dataset.sig===sig)target.replaceChildren(m);});return;}
+ if(n&&typeof n.then==='function'){n.then(m=>{if(!m)return;if(!el){if(target.isConnected)target.replaceChildren(m);return;}if(target.isConnected&&el.dataset.sig===sig)target.replaceChildren(m);});return;}
  if(n)target.replaceChildren(n);
 }
 // Paint one [n] slot: icon + name + active/empty state. The element's own
@@ -1481,6 +1598,9 @@ function tick(now){
  if(!started){
    // MENU STAGE. The operator stands centre-frame on the shared canvas while
    // the menu is open; gameplay takes the camera back over on deploy().
+   // The tactical set owns the stage while the arena is not live, so the menu
+   // never presents the bright desert map as a backdrop.
+   setMenuSetVisible(true);
    tickMenu(dt);
    const r=renderer.domElement;
    menuCam.aspect=r.clientWidth/Math.max(1,r.clientHeight);

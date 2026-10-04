@@ -62,7 +62,8 @@ var PS_ICONS = (function () {
     muted: 'muted',
     unmuted: 'unmuted',
     warning: 'warning',
-    crosshair: 'crosshair'
+    crosshair: 'crosshair',
+    credits: 'info'
   };
 
   var ICON_DIR = 'assets/cs2/';

@@ -74,19 +74,22 @@
      ============================================================================ -->
 <main id="menu" class="screen">
  <div id="menuChrome">
-  <!-- Top-left utility icon rail (CS2-style monochrome glyphs). -->
+  <!-- Top-left utility icon rail (CS2-style monochrome glyphs). The primary
+       navigation sits to its right; there is no HOME item. -->
   <nav id="iconRail" aria-label="Utility">
-    <button class="irail" data-nav="home" title="Home"><span class="ric"></span></button>
     <button class="irail" data-nav="news" title="Patch Notes"><span class="ric"></span></button>
     <button class="irail" data-nav="settings" title="Settings"><span class="ric"></span></button>
+    <button class="irail" data-nav="credits" title="Credits"><span class="ric"></span></button>
     <button class="irail" data-quit="1" title="Exit to Desktop"><span class="ric"></span></button>
   </nav>
-  <!-- Primary top navigation. -->
+  <!-- Primary top navigation. PLAY is the deploy hub; HOME is the landing
+       section the menu opens on. -->
   <nav id="topnav" aria-label="Primary">
     <button class="nav" data-nav="home">HOME</button>
     <button class="nav" data-nav="loadout">LOADOUT</button>
     <button class="nav primary" data-nav="play">PLAY</button>
     <button class="nav" data-nav="settings">SETTINGS</button>
+    <button class="nav" data-nav="credits">CREDITS</button>
   </nav>
   <div id="brandMini">POLY<span>STRIKE</span></div>
  </div>
@@ -94,11 +97,11 @@
  <div id="menuStage" aria-hidden="true"></div>
  <div id="menuVignette" aria-hidden="true"></div>
 
- <!-- HOME -->
+ <!-- HOME (the landing section the menu opens on) -->
  <section id="nav-home" class="navsec">
    <div class="eyebrow">TACTICAL OPERATIONS / SEASON 02</div>
    <h1 class="ps-title">POLY<span>STRIKE</span></h1>
-   <p class="intro">Five weapons. Five opponents.<br>Find your edge.</p>
+   <p class="intro tagline">TACTICAL COMBAT.<br>NO SECOND CHANCES.</p>
    <div id="homeActions">
      <button id="start" class="cta">PLAY OFFLINE<span>VS BOTS</span></button>
      <button id="onlineButton" class="ghost">PLAY ONLINE</button>
@@ -114,6 +117,7 @@
  <section id="nav-play" class="navsec" hidden>
    <div class="eyebrow">DEPLOYMENT</div>
    <h2 class="sectitle">PLAY</h2>
+   <p class="intro tagline">CHOOSE YOUR ENTRY.<br>PICK A BATTLEGROUND.</p>
    <div class="modecards">
      <button class="modecard" data-mode="offline">
        <span class="mc-icon" data-icon="bot"></span>
@@ -129,6 +133,7 @@
      <small id="mapDescription">SKIRMISH &#183; FIRST TO FIVE</small>
      <label class="tick"><input id="rotateMaps" type="checkbox" checked> Rotate map after match</label>
      <button id="start2" class="cta sm">DEPLOY</button>
+     <button id="playBack" class="ghost sm">BACK</button>
    </div>
    <div id="playOnline" class="playsub" hidden>
      <p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p>
@@ -143,8 +148,9 @@
 
  <!-- LOADOUT -->
  <section id="nav-loadout" class="navsec" hidden>
-   <div class="eyebrow">FIELD OPERATIONS / ARMOURY</div>
+   <div class="eyebrow">PREP / CUSTOMISE</div>
    <h2 class="sectitle">LOADOUT</h2>
+   <p class="intro tagline">PICK YOUR TOOLS.<br>ROTATE. INSPECT.</p>
    <div class="loadout-stage"><canvas id="loadoutCanvas" width="360" height="240" aria-label="Character and weapon preview"></canvas>
      <div id="loadoutInfo"><b id="loadoutName">AKM</b><small id="loadoutDesc">Assault rifle</small></div>
    </div>
@@ -162,6 +168,7 @@
  <section id="nav-settings" class="navsec" hidden>
    <div class="eyebrow">TUNE YOUR EXPERIENCE</div>
    <h2 class="sectitle">SETTINGS</h2>
+   <p class="intro tagline">TUNE THE RIG.<br>APPLY WHEN READY.</p>
    <div id="setTabs" role="tablist">
      <button class="stab" data-tab="gameplay" role="tab">GAMEPLAY</button>
      <button class="stab" data-tab="video" role="tab">VIDEO</button>
@@ -229,9 +236,47 @@
     </div>
    </div>
    <button id="applySettings" class="cta sm">APPLY &amp; CLOSE</button>
+   <button id="settingsClose" class="ghost sm">BACK</button>
  </section>
 
- <footer id="menuFoot"><strong class="credit">POLY STRIKE</strong><br>Made by XTR &#183; ORIGINAL BROWSER FPS &#183; NOT AFFILIATED WITH VALVE<br>Desktop keyboard + mouse &#183; No downloads &#183; Offline-ready</footer>
+ <!-- CREDITS -->
+ <section id="nav-credits" class="navsec" hidden>
+   <div class="eyebrow">PROJECT / ATTRIBUTION</div>
+   <h2 class="sectitle">CREDITS</h2>
+   <div id="creditsBody">
+     <div class="cr-block">
+       <b class="cr-title">POLY STRIKE</b>
+       <p class="cr-line">Created by <strong>XTR</strong></p>
+       <p class="cr-line">Original browser tactical FPS project.</p>
+     </div>
+     <div class="cr-block">
+       <div class="eyebrow small">TECHNOLOGY</div>
+       <p class="cr-line">Three.js (r149) &#183; PeerJS (WebRTC)</p>
+       <p class="cr-line">Vanilla JavaScript. No engine, no downloads.</p>
+     </div>
+     <div class="cr-block">
+       <div class="eyebrow small">3D ASSETS</div>
+       <p class="cr-line">Soldier rig &#183; Mad Troll Studio (CC0)</p>
+       <p class="cr-line">Pro Rifle Pack &#183; Pistol Locomotion Pack</p>
+       <p class="cr-line">FPS weapon pack &#183; low-poly model suite</p>
+     </div>
+     <div class="cr-block">
+       <div class="eyebrow small">INTERFACE ICONS</div>
+       <p class="cr-line">Counter-Strike 2 panorama glyphs</p>
+       <p class="cr-line">Source: Juknum / counter-strike-icons</p>
+       <p class="cr-subtle">These glyphs are the property of Valve Corporation, used here for
+         community and informational purposes. POLY STRIKE is not affiliated with,
+         endorsed by, or sponsored by Valve.</p>
+     </div>
+     <div class="cr-block">
+       <div class="eyebrow small">AUDIO</div>
+       <p class="cr-line">Procedural Web Audio synthesis</p>
+       <p class="cr-line">Announcer voice packs (male / female)</p>
+     </div>
+   </div>
+   <button id="creditsClose" class="ghost sm">BACK</button>
+ </section>
+
 </main>
 
 <div id="pause" class="panel" hidden><div><div class="eyebrow">OPERATOR MENU</div><h2 id="pauseTitle">PAUSED</h2><p id="pauseText">Your offline match is frozen.</p><button id="resume" class="cta">RESUME OPERATION</button><button id="pauseSettings" class="ghost">Settings</button><button id="pauseCareer" class="ghost">Career / Stats</button><div id="rematchControls" hidden><label>Next battleground<select id="nextMap"><option value="desert">Sandline</option><option value="industrial">Ironworks</option><option value="urban">Crossfire</option><option value="harbor">Drydock</option><option value="training">Training Range</option><option value="shipment">Shipment</option><option value="dust2">Dust 2</option></select></label><button id="rematch">REQUEST REMATCH</button><p id="rematchStatus" role="status"></p></div><button id="restart" class="ghost">NEW OFFLINE MATCH</button><button id="toMenu" class="ghost">LEAVE TO MAIN MENU</button><p>Online matches continue while this menu is open.</p></div></div>
