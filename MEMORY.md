@@ -5,6 +5,46 @@ Repo: https://github.com/xtr18222-hue/poly-strike
 Pages: https://xtr18222-hue.github.io/poly-strike/ (main/root).
 
 
+2026-10-04 — v43 MENU STAGE FINISHED — DONE (commit a6abb21, SW v43-menu)
+======================================================================
+Finished the v42 menu overhaul's remaining visual/nav gaps.
+
+Shipped:
+- MENU STAGE SET (game.js): a dedicated dark tactical environment in its own
+  THREE.Group (menuSet) — dim hangar bay: floor seam grid, structural back-wall
+  bays with emissive lamp markers, side walls, asymmetric cover crates, ceiling
+  spars, accent stripe. Shown while !started, hidden on deploy(). Only a
+  hangar, never the bright desert arena, is ever the menu backdrop.
+- MENU LIGHTING: its own state toggled by setMenuSetVisible() — cool key +
+  hemisphere fill + warm rim, plus a hot key spot and back-top wash on the
+  operator (the Soldier rig's gear is authored near-black 0x020202, so it
+  disappears without dedicated light). loadMap() captures the arena's own
+  background/fog; deploy() restores it, so existing maps are unchanged.
+- CAMERA REFRAMED: the nav panel covers the LEFT ~45% of the viewport. The
+  menu camera is offset LEFT of the operator and aimed right
+  (position (-0.68,1.45,3.4), fov 42, lookAt (-0.58,1.0,0)), pushing the
+  figure to screen x 51-97% at full-body height (was 40-72%, half-hidden
+  behind the panel — this is exactly why the operator read as invisible).
+- MENU CHROME: footer removed; CREDITS section added (5 attribution blocks
+  incl. the Valve disclaimer, eyebrow 'PROJECT / ATTRIBUTION'); HOME is back
+  in the top nav; taglines on every section; BACK buttons on PLAY and
+  SETTINGS. Settings opened from the pause panel returns to the pause panel
+  (settingsFrom), not to the landing section with a frozen match.
+- Icon rail glyphs painted once at boot; paintIcon() is null-safe for static
+  chrome (el/sig optional). UI_ICON.credits = 'info'.
+- Service worker v43-menu.
+
+Verification notes (this environment):
+- vision_analyze is UNAVAILABLE on this model. All visual verification used
+  CDP framebuffer pixel probes: toDataURL region stats, A/B hide/show deltas,
+  draw-call counts, and ASCII renders of the screenshot. The operator is
+  confirmed on stage: ~5.5k changed px A/B, silhouette 54-93% width /
+  35-70% height, 115 vs 97 draw calls with/without the character.
+- Headless Chrome needs the ?test=1 URL hook or rAF is throttled and the
+  render loop never advances. SW caches stale game.js/icons.js aggressively —
+  unregister the SW + reload before trusting any local probe.
+
+
 2026-10-04 — v42 COMPLETE UI / FRONTEND OVERHAUL — DONE
 ======================================================
 CS2-style presentation rebuild on top of the v41 HUD systems. Nothing working
