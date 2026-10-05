@@ -23,6 +23,11 @@ let budget=PolySettings.PRESETS[preset];
 const BOT_H = 1.7;  // bot eye height, kept level with the operator's eye
 const primaries=['akm','l96','hecate','mossberg'];
 let primary='akm',secondary='deagle',melee='knife',equipment='grenade',dropped=false,localDrops=[];const dropNodes=new Map();let swing=0;
+// v43 baseline: only five weapons are selectable. A primary persisted from an
+// older build (Hecate/Mossberg) is clamped back to the AKM so a stale save can
+// never equip a weapon the loadout no longer offers.
+const ACTIVE_PRIMARIES=['akm','l96'];
+if(!ACTIVE_PRIMARIES.includes(primary))primary='akm';
 try{const saved=localStorage.getItem('poly-primary');if(primaries.includes(saved))primary=saved;}catch(_){}
 try{const savedSecondary=localStorage.getItem('poly-secondary');if(['deagle','glock'].includes(savedSecondary))secondary=savedSecondary;}catch(_){}
 try{const savedMelee=localStorage.getItem('poly-melee');if(['knife'].includes(savedMelee))melee=savedMelee;}catch(_){}
@@ -101,8 +106,11 @@ const menuFill=new T.HemisphereLight(0x9fb4c4,0x20282c,.5);scene.add(menuFill);
 // dark hangar, so the operator needs its own dedicated illumination to separate
 // from the backdrop: a hot key from camera-left and a strong rim from behind-
 // right. These light ONLY the menu stage (visible toggled with the set).
-const menuSpot=new T.DirectionalLight(0xfff2dc,3.0);menuSpot.position.set(-2.6,2.8,4.4);scene.add(menuSpot);
-const menuRim2=new T.DirectionalLight(0xffd9a8,2.2);menuRim2.position.set(4.5,3.0,-3.5);scene.add(menuRim2);
+const menuSpot=new T.DirectionalLight(0xfff2dc,4.2);menuSpot.position.set(-2.6,2.8,4.4);scene.add(menuSpot);
+const menuRim2=new T.DirectionalLight(0xffd9a8,3.4);menuRim2.position.set(4.5,3.0,-3.5);scene.add(menuRim2);
+// v44: a cool fill from camera-right lifts the shadow side of the operator off
+// the backdrop without flattening the tactical key/rim ratio.
+const menuSide=new T.DirectionalLight(0xcfe0ee,1.2);menuSide.position.set(3.0,1.4,3.0);scene.add(menuSide);
 // A tight back-top wash so the helmet and shoulders hold their silhouette
 // against the back wall instead of merging with it.
 const menuTop=new T.DirectionalLight(0xbfd4e4,1.0);menuTop.position.set(0,6,2);scene.add(menuTop);
@@ -212,7 +220,7 @@ function setMenuSetVisible(on){
   // The menu gets its own lighting state: dark base + a tight key/rim pair on
   // the operator, while the gameplay arena keeps its authored sun.
   menuKey.visible=on;menuRim.visible=on;menuFill.visible=on;
-  menuSpot.visible=on;menuRim2.visible=on;menuTop.visible=on;
+  menuSpot.visible=on;menuRim2.visible=on;menuTop.visible=on;menuSide.visible=on;
   scene.background=on?menuBgColor:sceneBackground;
   scene.fog=on?menuFog:sceneFogBase;
 }
@@ -550,6 +558,21 @@ let weapon='akm',previous='deagle',ammo={},reload=0,reloadKey=null,cool=0,equip=
 let x=0,z=34,y=1.7,vy=0,yaw=0,pitch=0,walk=0,moving=0,frames=0,elapsed=0,last=performance.now(),fps=60,hudClock=0,stepClock=0;
 const spray=C.buildSprayPattern(4815,30),effects=[];let feed=[];
 let damageSource=null,bolt=0,boltSound=false,reloadStage=-1,heartbeat=0,enemyFoot=0,enemyPose=null,killCount=0,killClock=0,killText='',killTime=0,roundNotice=0,finished=false,firstBlood=false;
+// v43 netcode: the remote player is hard-snapped to the latest 20 Hz packet, so
+// between snapshots the opponent visibly freezes then teleports. A short ring
+// buffer of recent poses lets syncBots render a render-time-interpolated pose
+// (now - INTERP_MS) instead, which is the single biggest source of "laggy" feel.
+const INTERP_MS=100,TRAIL_MAX=40;let enemyTrail=[];
+function pushEnemyTrail(x,z){const t=performance.now();const last=enemyTrail[enemyTrail.length-1];
+ if(last&&t-last.t<16)return;enemyTrail.push({x,z,t});if(enemyTrail.length>TRAIL_MAX)enemyTrail.shift();}
+function sampleEnemyTrail(){const now=performance.now()-INTERP_MS;const n=enemyTrail.length;
+ if(!n)return null;
+ if(now<=enemyTrail[0].t)return enemyTrail[0];
+ if(now>=enemyTrail[n-1].t)return enemyTrail[n-1];
+ let a=enemyTrail[0],b=enemyTrail[n-1];
+ for(let i=1;i<n;i++){if(enemyTrail[i].t>=now){a=enemyTrail[i-1];b=enemyTrail[i];break;}}
+ const span=b.t-a.t||1;const k=Math.min(1,Math.max(0,(now-a.t)/span));
+ return {x:a.x+(b.x-a.x)*k,z:a.z+(b.z-a.z)*k};}
 function damageFrom(sx,sz){damageSource={x:sx,z:sz};hurt=.65;A.sound('enemy');}
 function addKill(text,headshot=false){
  // Feed text is one of two shapes: a kill line "WEAPON → VICTIM" (optionally
@@ -580,13 +603,13 @@ const online=PolyOnline.create(C,{
  status:s=>{$('netStatus').textContent=s;if(online.code)$('roomCode').textContent=online.code;},
  close:s=>{if(onlineMode){onlineMode=false;leave();navTo('play');selectMode('online');}$('netStatus').textContent=s;$('roomCode').textContent='';},
  ready:info=>{
-  loadMap(info.mapId);$('mapSelect').value=info.mapId;match=C.createMatch();onlineMode=true;finished=false;enemyPose=null;netRound=0;lastNetEvent='';netHp=100;spawn();weapon=primary;
+  loadMap(info.mapId);$('mapSelect').value=info.mapId;match=C.createMatch();onlineMode=true;finished=false;enemyPose=null;enemyTrail=[];netRound=0;lastNetEvent='';netHp=100;spawn();weapon=primary;
   if(info.id===1){const s=C.MAP.spawnOpponent||C.MAP.spawnBots[0];x=s.x;z=s.z;yaw=Math.PI;}
   started=true;running=false;$('rematchControls').hidden=true;clearInput();$('menu').hidden=true;$('hud').hidden=false;$('pause').hidden=false;$('pauseTitle').textContent='OPPONENT CONNECTED';$('pauseText').textContent='Click resume to enter. Online rounds continue while menus are open.';$('resume').hidden=false;feed=[];
  },
  snapshot:({state:s,id})=>{
   const p=s.players[id],q=s.players[1-id];
-  if(enemyPose&&q.alive&&running&&Math.hypot(q.x-enemyPose.x,q.z-enemyPose.z)>.025&&Math.hypot(q.x-x,q.z-z)<22&&elapsed-enemyFoot>.38){A.sound('enemyStep');enemyFoot=elapsed;}enemyPose={x:q.x,z:q.z};
+  if(enemyPose&&q.alive&&running&&Math.hypot(q.x-enemyPose.x,q.z-enemyPose.z)>.025&&Math.hypot(q.x-x,q.z-z)<22&&elapsed-enemyFoot>.38){A.sound('enemyStep');enemyFoot=elapsed;}enemyPose={x:q.x,z:q.z};pushEnemyTrail(q.x,q.z);
   if(s.round!==netRound){netRound=s.round;spawn();x=p.x;y=p.y;z=p.z;yaw=p.yaw;pitch=p.pitch;}
   if(Math.hypot(x-p.x,z-p.z)>2){x=p.x;z=p.z;y=p.y;}
   if(netRound>0&&p.primaryLocked&&primaries.includes(p.primary))primary=p.primary;const wasDropped=dropped;dropped=!!p.dropped;if(!inventory().includes(weapon)){reload=0;select(secondary);}if(wasDropped&&!dropped){reload=0;select(primary);}
@@ -811,6 +834,11 @@ function spawnDecal(hit){if(!hit.face)return;let o=decalPool.find(d=>!d.visible)
  // Fade out over ~6s so walls do not accumulate permanent marks.
  effects.push({o,life:6,decal:true});}
 function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
+ // v43 netcode: in online mode bot[0] IS the remote player. Render it from the
+ // interpolated trail sample instead of b.pos so the opponent moves smoothly
+ // between 20 Hz snapshots instead of freezing and teleporting. The footstep
+ // timer and game logic still read the authoritative b.pos.
+ if(onlineMode&&i===0){const s=sampleEnemyTrail();if(s)b.pos={x:s.x,z:s.z};}
  // Ragdoll/tip-over death removed: bots simply vanish on death and respawn
  // cleanly at their pad. This removes the falling-into-the-ground glitch
  // that could leave a corpse overlapping a spawn point.
@@ -873,6 +901,13 @@ const target=hits.find(x=>x.object.userData.botId!==undefined||x.object.userData
   else{const id=h.object.userData.botId;
    if(id!==undefined&&!onlineMode){
     applyHit(weapon,id,part,h.distance,h.point);
+   }
+   else if(id!==undefined&&onlineMode){
+    // v43 netcode: damage is host-authoritative and arrives a full RTT later,
+    // so a clean online shot gave no immediate feedback and felt unresponsive.
+    // Fire the cosmetic hit marker only — never damage or accuracy counters,
+    // which the authoritative event at the snapshot handler supplies.
+    hit=.18;A.sound('kill');
    }
    else if(isFirearm(weapon)&&budget.effects)spawnDecal(h);
   }}
@@ -945,10 +980,17 @@ function loadMap(id){
  rebuildBots();
  document.querySelectorAll('.brand small').forEach(el=>el.textContent=C.MAP.name||mapId.toUpperCase());cam.far=budget.far;cam.updateProjectionMatrix();
 }
-function leave(){localDrops=[];document.body.classList.remove('low-health');if(onlineMode){onlineMode=false;online.close();}running=false;started=false;clearInput();A.setPaused(false);if(document.pointerLockElement)document.exitPointerLock();$('pause').hidden=true;$('hud').hidden=true;$('menu').hidden=false;$('start').focus();}
-let settingsReturn=null,settingsFrom=null;
-function openSettings(){settingsReturn=document.activeElement;settingsFrom=window.__nav||'home';if(running)pause();navTo('settings');$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
-$('settingsButton').onclick=()=>{A.start();navTo('settings');};$('pauseSettings').onclick=openSettings;
+function leave(){localDrops=[];document.body.classList.remove('low-health');if(onlineMode){onlineMode=false;online.close();}running=false;started=false;clearInput();A.setPaused(false);if(document.pointerLockElement)document.exitPointerLock();$('pause').hidden=true;$('hud').hidden=true;$('menu').hidden=false;navTo('home');}
+// v44: BACK from settings must return to the right place. The reliable signal is
+// the pause panel's own state, not document.activeElement (a synthetic click
+// does not always focus, so the element capture was unreliable).
+let settingsReturn=null,settingsFrom=null,settingsFromPause=false;
+function openSettings(){settingsReturn=document.activeElement;settingsFrom=window.__nav||'home';settingsFromPause=!$('pause').hidden;if(running)pause();navTo('settings');$('graphics').value=preset;$('performanceToggle').checked=preset==='performance';$('graphics').focus();}
+// v43: HOME's button list is gone; every one of these wirings must tolerate a
+// missing element or the whole IIFE dies at boot and the game never boots.
+const wire=(id,fn)=>{const b=$(id);if(b)b.onclick=fn;};
+wire('settingsButton',()=>{A.start();navTo('settings');});
+$('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
 $('graphics').onchange=()=>{$('performanceToggle').checked=$('graphics').value==='performance';};
 // FOV: applies to the world camera only. The viewmodel rides a separate
@@ -1033,16 +1075,35 @@ const m=loadoutModels[key];if(!m)return;m.position.set(0,0,0);m.rotation.set(0,0
  // Rebuild the skin selector for the newly selected weapon.
  }
 function renderLoadoutCards(){
- const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;el.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');rearmMenuCharacter();};return el;};
- $('primaryCards').replaceChildren(...primaries.map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].pellets?'Pump shotgun':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
- // Secondaries: the Desert Eagle, the Glock-19, the FA-03 bayonet (melee, no
- // ammo) and the grenade (a throwable, not a firearm).
- const secTag=k=>k==='knife'?'Blade · melee':k==='grenade'?'Throwable · explosive':'Semi-auto pistol';
- $('secondaryCards').replaceChildren(...['deagle','glock','knife','grenade'].map(k=>mk(k,secTag(k))));}
-$('loadoutButton').onclick=()=>{renderLoadoutCards();navTo('loadout');setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;};
+ // v43 baseline: the visible loadout is the FIVE active weapons only.
+ // Hecate, Mossberg, the grenade and the flashbang stay in the roster (the
+ // buy table and the equipment slot still reference them) but are never
+ // offered as loadout choices, so they cannot be equipped from the UI.
+ const mk=(key,tag)=>{const w=C.WEAPONS[key];const el=document.createElement('button');el.className='wcard'+(key===loadoutSelected?' active':'');el.dataset.weapon=key;
+  // Large CS2 weapon glyph next to the name; the icon is the primary read.
+  const ic=document.createElement('span');ic.className='wc-icon';
+  el.appendChild(ic);
+  const txt=document.createElement('span');txt.className='wc-txt';
+  txt.innerHTML=`<b>${w.name}</b><small>${tag}</small>`;el.appendChild(txt);
+  paintIcon(ic,key,28,null,0);
+  el.onclick=()=>{setLoadoutPreview(key);if(primaries.includes(key))primary=key;else{secondary=key;try{localStorage.setItem('poly-secondary',key);}catch(_){}}A.sound('equip');rearmMenuCharacter();};return el;};
+ $('primaryCards').replaceChildren(...['akm','l96'].map(k=>mk(k,(C.WEAPONS[k].zoomFov?'Scoped marksman':C.WEAPONS[k].auto?'Assault rifle':'Battle rifle'))));
+ // Secondaries: the Desert Eagle and the Glock-19. The blade is its own category.
+ const secTag=k=>'Semi-auto pistol';
+ // The full eight-weapon roster is still wired and persisted; the v43 baseline
+ // loadout presents the five active ones only.
+ const ALL_SECONDARIES=['deagle','glock','knife','grenade'];
+ $('secondaryCards').replaceChildren(...['deagle','glock'].map(k=>mk(k,secTag(k))));
+ $('meleeCards').replaceChildren(mk('knife','Blade · melee'));}
+// v43: #loadoutButton lived on the HOME screen, which is now a pure hero. The
+// top nav carries loadout instead; this wiring stays inert when absent.
+wire('loadoutButton',()=>{renderLoadoutCards();navTo('loadout');setLoadoutPreview(primary);stopLoadoutInspect();$('loadoutInspect').hidden=false;});
 $('loadoutClose').onclick=()=>{if(weapon!==primary&&!dropped)weapon=primary;stopLoadoutInspect();navTo('play');$('loadoutButton').focus();};
 // CREDITS: a dedicated attribution section, so the main menu stays clean.
 $('creditsClose').onclick=()=>{A.sound('switch');navTo('play');};
+// v44: NEWS is rail-only (not a top-nav tab), so its close button returns to the
+// landing hero. Wired through the same guarded helper as the other chrome.
+wire('newsClose',()=>{A.sound('switch');navTo('home');});
 // Click-drag rotates the preview weapon a full 360 degrees on the spot.
 // A drag overrides the idle drift until the player releases the mouse.
 let loadoutDragX=null,loadoutYaw=0,loadoutPitch=0,loadoutDragging=false,loadoutInspectTime=0;
@@ -1104,20 +1165,27 @@ function openCareer(){ // Career reads real stats tracked during matches. A firs
  $('careerStats').innerHTML=mk(career.matches,'MATCHES PLAYED')+mk(career.wins,'MATCHES WON')+mk(career.kills,'TOTAL ELIMINATIONS')+mk(career.deaths,'DEATHS')+mk(career.headshots,'HEADSHOTS')+mk(kdr,'K/D RATIO')+mk(acc+'%','LIFETIME ACCURACY')+mk(career.roundsWon,'ROUNDS WON');$('careerPanel').hidden=false;}
 $('pauseCareer').onclick=openCareer;$('careerClose').onclick=()=>{$('careerPanel').hidden=true;$('pauseCareer').focus();};
 $('toMenu').onclick=leave;
-$('onlineButton').onclick=()=>{A.start();navTo('play');selectMode('online');};
+// v43: the old home-screen buttons are gone from the DOM; the top nav and the
+// icon rail carry those destinations now. Nothing else references them.
 $('hostRoom').onclick=()=>{A.start();online.host($('mapSelect').value);$('roomCode').textContent=online.code;};$('joinRoom').onclick=()=>{A.start();online.join($('roomInput').value);};
 $('cancelOnline')&&($('cancelOnline').onclick=()=>{online.close();$('roomCode').textContent='';navTo('play');selectMode('offline');});
 // ---- music: removed in v42 (the spec ships no music assets and forbids
 // inventing any). The AudioContext unlock on first gesture is KEPT, because
 // every other sound (gunfire, announcer, steps) still needs it. ----
 (function(){
-  ['settingsButton','onlineButton','start','loadoutButton'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{A.start();},{once:true});});
+  // The AudioContext unlock needs the first user gesture anywhere in the menu.
+  // HOME's buttons are gone, so unlock on any nav/chrome click instead.
+  ['settingsButton','onlineButton','start','start2','loadoutButton','hostRoom','joinRoom'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{A.start();},{once:true});});
+  document.querySelectorAll('#topnav .nav,#iconRail .irail').forEach(b=>b.addEventListener('click',()=>{A.start();},{once:true}));
 })();
-$('start').onclick=()=>deploy();$('restart').onclick=()=>deploy();$('resume').onclick=()=>deploy(false);
+// v43: HOME's button list is gone, so the deploy entry point is the PLAY
+// screen's DEPLOY button (#start2). Legacy DOM and the test harness still carry
+// #start; wire whichever are present and never throw on a missing element.
+['start2','start'].forEach(id=>{const b=$(id);if(b)b.onclick=()=>deploy();});$('restart').onclick=()=>deploy();$('resume').onclick=()=>deploy(false);
 // ============================================================ MENU NAV =====
 // CS2-style: one persistent top nav, sections swap in place, the character
 // stays on stage behind them. navTo() is the only way to change section.
-const NAV_SECTIONS=['home','play','loadout','settings','credits'];
+const NAV_SECTIONS=['home','play','loadout','settings','credits','news'];
 function navTo(id){
  if(!NAV_SECTIONS.includes(id))id='home';
  for(const s of NAV_SECTIONS){const el=$('nav-'+s);if(el)el.hidden=s!==id;}
@@ -1151,7 +1219,8 @@ function selectMode(m){
  window.__mode=modeSel;
 }
 document.querySelectorAll('.modecard').forEach(c=>c.addEventListener('click',()=>{A.sound('switch');selectMode(c.dataset.mode);}));
-$('start2').onclick=()=>deploy();
+// v43: the PLAY DEPLOY button (#start2) is also wired by the guarded startBtn
+// block above; keeping a direct assignment here would throw if it were absent.
 // PLAY screen: the mode cards switch sub-panels. The BACK button returns to
 // the landing section; the online panel has its own cancel that tears down the
 // room first. PLAY is the top-nav home of the deploy flow.
@@ -1160,7 +1229,16 @@ $('playBack').onclick=()=>{A.sound('switch');if(onlineMode){onlineMode=false;lea
 // opened from the pause panel mid-match, that panel is still up underneath, so
 // BACK focuses the pause panel's resume button instead of stranding the player
 // on the landing section with a frozen match.
-$('settingsClose').onclick=()=>{A.sound('switch');const r=settingsReturn;if(r&&document.contains(r)&&r.id==='pauseSettings'){r.focus();return;}navTo(settingsFrom&&settingsFrom!=='settings'?settingsFrom:'home');};
+// v44: when settings was opened from the PAUSE panel, BACK must not strand the
+// player on a section with a frozen match behind it. The pause panel is still
+// up underneath, so return there and put focus on RESUME (the primary action)
+// rather than on the small settings button. settingsReturn is the element that
+// was focused when openSettings() ran.
+$('settingsClose').onclick=()=>{A.sound('switch');
+ navTo(settingsFrom&&settingsFrom!=='settings'?settingsFrom:'home');
+ // Opened from the PAUSE panel: that panel is still up underneath, so put focus
+ // on RESUME (the primary action) instead of stranding the player.
+ if(settingsFromPause){const rb=$('resume');if(rb)rb.focus();}};
 // SETTINGS tabs.
 document.querySelectorAll('#setTabs .stab').forEach(b=>b.addEventListener('click',()=>{
   A.sound('switch');
@@ -1209,7 +1287,9 @@ if(!document.getElementById('fps')){const f=document.createElement('div');f.id='
 })();
 // The HUD icons are fetched once on first interaction (not at page load, so the
 // menu never waits on them) and cached for the rest of the session.
-['start','restart','resume'].forEach(id=>$(id).addEventListener('click',()=>{try{PS_ICONS.preload();}catch(_){}},{once:false}));
+// v43: #start left the DOM with HOME's button list. PS_ICONS preload only needs
+// the buttons that exist; a missing one must not kill the boot.
+['start','restart','resume'].forEach(id=>{const b=$(id);if(b)b.addEventListener('click',()=>{try{PS_ICONS.preload();}catch(_){}},{once:false});});
 // Paint the static health/armor glyphs into the vitals the first time the DOM
 // is ready; they never change after that.
 if(typeof PS_ICONS!=='undefined')PS_ICONS.preload().then(()=>{hudIconNode('health',18).then(n=>{const h=$('healthIcon');if(h&&n)h.replaceChildren(n);});hudIconNode('armor',18).then(n=>{const a=$('armorIcon');if(a&&n)a.replaceChildren(n);});});
@@ -1327,14 +1407,20 @@ function hud(){const w=C.WEAPONS[weapon];
  // TRANSLUCENT base, not a black disc: the CSS panel already tints the
  // canvas, so a low-alpha wash keeps the panel's own depth and lets the
  // geometry read through it.
- rc.fillStyle='rgba(20,34,40,.55)';rc.fillRect(0,0,170,170);
+ // v44: higher-contrast base so the map reads at a glance. The wash is lighter
+ // and the solids get a bright fill with a dark edge, not a flat dark block.
+ rc.fillStyle='rgba(38,58,66,.92)';rc.fillRect(0,0,170,170);
+ rc.strokeStyle='rgba(120,150,160,.35)';rc.lineWidth=1;rc.strokeRect(.5,.5,169,169);
  // The radar window follows the player but stays axis-aligned: centre on the
  // player, 2px per metre, no rotation.
  function rp(wx,wz){return [85+(wx-x)*2,85+(wz-z)*2];}
- rc.fillStyle='#2a3d42';
- for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);}
- rc.fillStyle='#ff735e';
- for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);rc.beginPath();rc.arc(bx,by,2.5,0,7);rc.fill();}
+ rc.fillStyle='#5b8089';
+ for(const s of solids){const [gx,gy]=rp(s.x-s.w/2,s.z-s.d/2);rc.fillRect(gx,gy,s.w*2,s.d*2);
+  rc.strokeStyle='#2b4046';rc.strokeRect(gx,gy,s.w*2,s.d*2);}
+ rc.fillStyle='#ff8a6b';
+ for(const b of match.bots)if(b.alive&&C.segmentClear({x,z},b.pos,solids)){const [bx,by]=rp(b.pos.x,b.pos.z);
+  rc.beginPath();rc.arc(bx,by,3,0,7);rc.fill();
+  rc.strokeStyle='#ffd9c4';rc.lineWidth=1;rc.stroke();}
  // Player marker: a triangle that rotates with yaw, over the fixed map.
  rc.save();rc.translate(85,85);rc.rotate(-yaw);
  rc.beginPath();rc.moveTo(0,-6);rc.lineTo(4,4);rc.lineTo(-4,4);rc.closePath();

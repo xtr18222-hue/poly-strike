@@ -56,7 +56,10 @@ window.PolyOnline = {
    step(dt,pose){
     if(!active||!Number.isFinite(dt)||dt<=0)return;clock+=Math.min(dt,.25);
     if(duel){duel.step(dt);if(pose)duel.move(0,pose);}
-    if(clock>=.05){clock%=.05;if(duel)publish();else if(pose&&current)send({type:'input',state:pose,round:current.round});}
+    // v43 netcode: clock%=TICK discards overrun, so a frame hitch quantizes the
+    // send interval to the frame cadence and produces irregular packet spacing.
+    // Subtracting and carrying the remainder keeps a steady wall-clock 20 Hz.
+    if(clock>=.05){clock-=.05;if(duel)publish();else if(pose&&current)send({type:'input',state:pose,round:current.round});}
    },
    shoot(weapon,origin,dir,pose){
     if(!active||!current||!origin||!dir)return false;const shot={weapon,origin:{x:origin.x,y:origin.y,z:origin.z},dir:{x:dir.x,y:dir.y,z:dir.z},seq:seq++};

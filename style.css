@@ -20,8 +20,12 @@
   --hud-font:'Segoe UI',Inter,'Helvetica Neue',Arial,sans-serif;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;overflow:hidden;background:var(--ink);color:var(--txt);font-family:var(--hud-font);font-size:14px;-webkit-font-smoothing:antialiased}
+html,body{height:100%;margin:0}
+body{overflow:hidden;background:var(--ink);color:var(--txt);font-family:var(--hud-font);font-size:14px;-webkit-font-smoothing:antialiased}
+/* A fullscreen game UI: no browser scrollbars ever. Any element that needs to
+   scroll gets its own overflow region with a hidden scrollbar. */
+::-webkit-scrollbar{width:0;height:0;background:transparent}
+*{scrollbar-width:none;scrollbar-color:transparent transparent}
 button,input,select,summary{cursor:pointer;font-family:inherit}
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 [hidden]{display:none!important}
@@ -44,16 +48,19 @@ svg.ps-icon *{fill:currentColor}
   box-shadow:inset 0 0 240px 60px rgba(3,7,9,.85),inset 0 0 60px 10px rgba(3,7,9,.5)}
 
 /* ---- top chrome: icon rail, primary nav, wordmark ---- */
-#menuChrome{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:26px;
+#menuChrome{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:22px;
   padding:20px 30px;z-index:3;pointer-events:none}
 #menuChrome>*{pointer-events:auto}
-#iconRail{display:flex;gap:4px;background:#0d1619cc;border:1px solid var(--line2);padding:5px}
-.irail{width:34px;height:34px;display:grid;place-items:center;background:none;border:0;color:var(--dim);
-  transition:color .15s,transform .15s,background .15s}
-.irail:hover{color:var(--txt);background:#ffffff10;transform:scale(1.08)}
+/* Compact CS2-style icon rail: no container box, just glyphs on the scrim. */
+#iconRail{display:flex;gap:2px;align-items:center}
+.irail{width:30px;height:30px;display:grid;place-items:center;background:none;border:0;color:#9aa89d;
+  transition:color .15s,transform .15s;opacity:.78}
+.irail:hover{color:var(--txt);transform:scale(1.1);opacity:1}
 .irail:active{transform:scale(.94)}
-.irail .ric{display:inline-flex;width:18px;height:18px}
-.irail .ric .ps-icon{height:17px;width:auto}
+.irail.on{color:var(--accent);opacity:1}
+.irail .ric{display:inline-flex;width:20px;height:20px}
+.irail .ric .ps-icon{height:19px;width:auto}
+.irail:has(+ #topnav){margin-right:6px}
 #topnav{display:flex;gap:2px;align-items:center}
 .nav{background:none;border:0;color:var(--dim);font-size:12px;font-weight:700;letter-spacing:2.5px;
   padding:10px 16px;position:relative;transition:color .18s}
@@ -68,14 +75,31 @@ svg.ps-icon *{fill:currentColor}
 #brandMini{margin-left:auto;font-weight:800;letter-spacing:3px;font-size:13px;color:var(--dim)}
 #brandMini span{color:var(--accent)}
 
-/* ---- sections (HOME / PLAY / LOADOUT / SETTINGS) ---- */
-.navsec{position:absolute;left:0;top:0;bottom:0;width:min(560px,94vw);padding:118px 6vw 40px;overflow:auto;
-  display:flex;flex-direction:column;gap:16px;z-index:2;
+/* ---- sections (HOME / PLAY / LOADOUT / SETTINGS / CREDITS) ---- */
+/* Fullscreen panels: no element scrolls the page. Sections that can exceed the
+   viewport scroll internally with an invisible scrollbar. Content is top-
+   anchored with a centered fallback: when it fits, flex centers it; when it
+   overflows, top alignment keeps the header reachable instead of pushing it
+   off-screen above a centered block. */
+.navsec{position:absolute;left:0;top:0;bottom:0;width:min(560px,94vw);padding:118px 6vw 40px;
+  overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;justify-content:safe center;gap:16px;z-index:2;
   animation:secIn .34s cubic-bezier(.22,.61,.36,1) both}
+/* safe center is not universal: emulate it where it matters most (the loadout,
+   which is taller than a 768px viewport). */
+@supports not (justify-content:safe center){
+  .navsec{justify-content:flex-start}
+  .navsec.home-hero{justify-content:center}
+}
+/* v44: NEWS and SETTINGS use the WIDE composition (operator stays visible
+   centre-right), never a thin left-side panel. */
+#nav-news.news-wide,#nav-settings.settings-wide{width:min(640px,60vw)}
 @keyframes secIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){.navsec{animation:none}}
 .eyebrow{font-size:10px;letter-spacing:3px;color:var(--accent);font-weight:800}
 .eyebrow.small{margin-top:10px;color:var(--faint);letter-spacing:2.5px}
+#nav-loadout .eyebrow.small{margin-top:2px}
+#nav-loadout .loadout-actions{margin-top:2px}
 .ps-title{font-size:clamp(52px,6.4vw,86px);line-height:.86;letter-spacing:-4px;margin:8px 0 4px;font-weight:800;
   text-shadow:0 6px 30px rgba(0,0,0,.55)}
 .ps-title span{display:block;color:var(--accent)}
@@ -137,22 +161,63 @@ button.cta.sm,button.ghost.sm{padding:11px 16px;font-size:11px}
   overflow-wrap:anywhere;min-height:1.2em}
 #netStatus{font-size:11px;color:var(--dim)}
 
-/* ---- LOADOUT ---- */
-.loadout-stage{position:relative;background:#0b1519;border:1px solid var(--line2);border-radius:2px;margin:6px 0 4px;
-  box-shadow:0 14px 40px rgba(0,0,0,.45)}
-#loadoutCanvas{display:block;width:100%;height:auto}
-#loadoutInfo{position:absolute;left:12px;bottom:10px;background:#0b1317d9;padding:5px 12px;border-left:2px solid var(--accent)}
-#loadoutInfo b{display:block;font-size:15px;letter-spacing:1px;color:var(--accent)}
+/* ---- LOADOUT — full-viewport presentation ---- */
+/* The loadout spans the whole viewport, not a corner panel: the stage is a
+   large framed area for the weapon and the categories run down the right
+   side. Content is top-anchored: the stage is taller than a short viewport and
+   centering would push the header above the fold. */
+#nav-loadout{width:100%;padding:96px 4vw 32px;justify-content:flex-start;gap:14px;
+  background:linear-gradient(90deg,rgba(5,10,13,.72) 0%,rgba(5,10,13,.18) 46%,transparent 72%)}
+.loadout-cols{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:26px;
+  align-items:start;max-width:1180px;width:100%;margin:0 auto}
+/* loadout-wide: the full-viewport variant. Top-anchored, never centered — the
+   stage is taller than a short viewport and centering pushes the header above
+   the fold (observed stageY -146 on a 426px viewport). */
+#nav-loadout.loadout-wide{width:100vw;max-width:none;padding:64px 4vw 24px;
+  flex-direction:column;justify-content:flex-start;align-items:stretch;gap:10px}
+.loadout-head{max-width:560px}
+#nav-loadout .eyebrow{font-size:10px}
+#nav-loadout .sectitle{font-size:clamp(26px,2.6vw,36px);margin:0}
+.loadout-cols{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(250px,.75fr);
+  gap:24px;align-items:start;width:100%}
+/* The stage keeps a cinematic aspect ratio but is capped by the viewport so the
+   category picker stays on screen at short heights (the headless probe window
+   is only ~430px tall; an unconstrained stage pushed the picker below the fold). */
+/* v44: the stage is a hairline frame, not a filled box — the operator on the
+   shared #game canvas shows through, so the weapon preview and the character
+   read as one armory. */
+.loadout-stage{position:relative;background:linear-gradient(180deg,#0d1a2080,#0a131740);
+  border:1px solid var(--line2);border-radius:3px;margin:0;
+  aspect-ratio:16/10;max-height:calc(100vh - 340px);min-height:150px;
+  box-shadow:0 12px 34px rgba(0,0,0,.35);overflow:hidden}
+.loadout-stage canvas{display:block;width:100%;height:100%;cursor:grab}
+.loadout-stage canvas:active{cursor:grabbing}
+#loadoutInfo{position:absolute;left:14px;bottom:12px;background:#0b1317e6;padding:6px 14px;
+  border-left:2px solid var(--accent)}
+#loadoutInfo b{display:block;font-size:16px;letter-spacing:1px;color:var(--accent)}
 #loadoutInfo small{font-size:10px;color:var(--dim);letter-spacing:1px}
-#primaryCards,#secondaryCards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-#meleeCards{display:grid;grid-template-columns:1fr;gap:8px}
-.wcard{background:#0f1a1fd9;border:1px solid var(--line2);border-radius:2px;padding:12px 10px;text-align:left;
-  cursor:pointer;color:var(--txt);display:flex;flex-direction:column;gap:3px;transition:border-color .16s,background .16s}
-.wcard b{font-size:12px;letter-spacing:1px}
-.wcard small{font-size:9px;color:var(--dim);letter-spacing:1px;font-weight:400}
-.wcard:hover{border-color:var(--accent2)}
-.wcard.active{border-color:var(--accent);background:#16261f}
+.loadout-picker{display:flex;flex-direction:column;gap:8px}
+.wcards{display:grid;grid-template-columns:1fr;gap:5px}
+/* Compact tactical cards: hairline border, no black box, large weapon glyph
+   on the left, name + role on the right. Active = accent line + glow. */
+.wcard{background:#0e191e80;border:1px solid var(--line2);border-left:2px solid transparent;
+  border-radius:2px;padding:6px 10px;text-align:left;cursor:pointer;color:var(--txt);
+  display:flex;align-items:center;gap:10px;transition:border-color .16s,background .16s,transform .16s}
+.wcard .wc-icon{display:inline-flex;width:76px;height:30px;align-items:center;justify-content:center;
+  color:#b9c6bd;flex:0 0 auto}
+.wcard .wc-icon .ps-icon{height:28px;width:auto;max-width:76px}
+.wcard .wc-txt{display:flex;flex-direction:column;gap:1px;min-width:0}
+.wcard b{font-size:13px;letter-spacing:1.5px;color:var(--txt);font-weight:700}
+.wcard small{font-size:9px;color:var(--faint);letter-spacing:1.5px;font-weight:400}
+.wcard:hover{border-color:var(--accent2);background:#122125d9}
+.wcard.active{border-left-color:var(--accent);background:#16261fd9;
+  box-shadow:0 0 0 1px #c9d87022,0 0 18px #c9d87018}
+.wcard.active .wc-icon{color:var(--accent)}
 .wcard.active b{color:var(--accent)}
+.loadout-actions{display:flex;gap:8px;margin-top:6px}
+.loadout-actions .ghost,.loadout-actions .cta{flex:1;justify-content:center;text-align:center}
+@media(max-width:900px){.loadout-cols{grid-template-columns:1fr;gap:16px}
+  .loadout-stage canvas{min-height:200px}}
 
 /* ---- SETTINGS ---- */
 #setTabs{display:flex;gap:2px;border-bottom:1px solid var(--line2);margin:4px 0 12px;flex-wrap:wrap}
@@ -193,12 +258,12 @@ button+.ghost{margin-top:4px}
 .stat span{font-size:9px;letter-spacing:2px;color:var(--dim)}
 
 /* ========================================================== GAMEPLAY HUD == */
-#hud{position:fixed;inset:0;z-index:5;pointer-events:none;text-shadow:0 2px 5px #0009;
+#hud{position:fixed;inset:0;z-index:5;pointer-events:none;text-shadow:0 1px 2px #000a;
   font-family:var(--hud-font);transform-origin:center;--hudscale:1;transform:scale(var(--hudscale));opacity:var(--hudop,1)}
-/* Score: one slim translucent strip, no box, no objective clutter. */
+/* Top centre: a thin tactical strip. Translucent, hairline border, no box. */
 #topbar{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
-#topInner{display:flex;align-items:center;gap:16px;background:#0b1317cc;border-bottom:1px solid var(--line2);padding:5px 20px}
-.teamscore{font-size:21px;font-weight:800;min-width:40px;text-align:center;line-height:1}
+#topInner{display:flex;align-items:center;gap:18px;background:#0b131799;border-bottom:1px solid var(--line2);padding:4px 22px;border-radius:0 0 3px 3px}
+.teamscore{font-size:19px;font-weight:800;min-width:34px;text-align:center;line-height:1;color:#fff}
 #scoreEnemy{color:var(--gold)}
 #scorePlayer{color:var(--accent)}
 #roundBox{display:flex;flex-direction:column;align-items:center;line-height:1.15;padding:0 12px;
@@ -232,7 +297,7 @@ button+.ghost{margin-top:4px}
 .vital .vi .ps-icon{height:19px;width:auto}
 #healthVital .vi{color:#c9504a}
 #armorVital .vi{color:#6f9fc4}
-.vital b{font-size:26px;font-weight:700;color:var(--txt);min-width:44px;text-shadow:0 2px 4px #000}
+.vital b{font-size:26px;font-weight:700;color:#fff;min-width:44px;text-shadow:0 1px 2px #0008}
 #status{font-size:11px;color:var(--accent);letter-spacing:1px;text-shadow:0 1px 2px #000;max-width:220px}
 /* Ammo: bottom-right, clean hierarchy. */
 #ammoBlock{position:absolute;bottom:26px;right:24px;text-align:right}
@@ -240,22 +305,25 @@ button+.ghost{margin-top:4px}
 .ammoIcon{display:inline-flex;color:var(--accent)}
 .ammoIcon .ps-icon{height:16px;width:auto}
 #ammoRow{display:flex;align-items:baseline;justify-content:flex-end;gap:6px;margin-top:2px}
-#ammoRow b{font-size:36px;font-weight:800;color:var(--txt);line-height:1;text-shadow:0 2px 4px #000}
+#ammoRow b{font-size:36px;font-weight:800;color:#fff;line-height:1;text-shadow:0 1px 2px #0008}
 #ammoRow #reserve{font-size:17px;color:var(--dim)}
 #ammoRow.empty b{color:#ff5454}
 #ammoRow.low b{color:var(--gold)}
 /* Weapon selector: COMPACT VERTICAL STACK, bottom-right, above the ammo. */
-#slots{position:absolute;right:24px;bottom:96px;display:flex;flex-direction:column;gap:4px;align-items:flex-end;pointer-events:none}
-.slot{display:flex;align-items:center;gap:9px;background:#0b1317a0;border:1px solid var(--line2);border-right:2px solid transparent;
+/* v44 weapon selector: large icon + name, thin accent line under the active
+   one. No numbered boxes, no heavy card background. */
+#slots{position:absolute;right:24px;bottom:96px;display:flex;flex-direction:column;gap:6px;align-items:flex-end;pointer-events:none}
+.slot{display:flex;align-items:center;gap:8px;background:none;border:0;border-bottom:2px solid transparent;
   padding:5px 11px;min-width:104px;opacity:.55;transition:opacity .14s,border-color .14s,transform .18s,background .14s}
-.slot .snum{font-style:normal;font-size:9px;color:var(--faint);border:1px solid var(--line);padding:0 4px;line-height:1.4}
-.slot .sicon{display:inline-flex;width:48px;height:20px;align-items:center;justify-content:center;color:var(--txt)}
-.slot .sicon .ps-icon{height:18px;width:auto;max-width:48px}
-.slot .sname{font-size:9px;letter-spacing:1px;color:var(--dim);max-width:70px;overflow:hidden;
+.slot .snum{display:none}
+.slot .sicon{display:inline-flex;width:64px;height:26px;align-items:center;justify-content:center;color:#cfd8cc}
+.slot .sicon .ps-icon{height:24px;width:auto;max-width:64px}
+.slot .sname{font-size:10px;letter-spacing:1.5px;color:#c8d2c6;max-width:78px;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
-.slot.active{opacity:1;border-right-color:var(--accent);background:#15241df2;transform:translateX(-4px)}
-.slot.active .sname,.slot.active .snum{color:var(--accent)}
-.slot.active .sicon{color:var(--accent)}
+.slot.active{opacity:1;border-bottom-color:var(--accent);transform:translateX(-4px)}
+.slot.active .sname{color:var(--accent)}
+.slot.active .sicon{color:var(--accent);filter:drop-shadow(0 0 6px #d9f57755)}
+.slot:not(.active){opacity:.55}
 .slot.empty{opacity:.28}
 /* Crosshair: minimal sharp 4-line + optional dot. */
 #crosshair{position:absolute;left:50%;top:50%;width:0;height:0;--gap:6px}

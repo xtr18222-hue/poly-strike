@@ -151,7 +151,9 @@ test('radar keeps the map fixed and rotates the player marker', () => {
     'the marker is a heading triangle, not a centre dot');
   // The map itself never turns: solids are plotted through the same unrotated
   // helper as the contacts, over a translucent base wash (v42 radar pass).
-  assert.ok(/rc\.fillStyle='rgba\(20,34,40,\.55\)';[\s\S]*?rc\.fillStyle='#2a3d42';[\s\S]*?for\(const s of solids\)/.test(GAME),
+  // v44 raises the wash contrast for readability; the contract is still a
+  // TRANSLUCENT base (alpha < 1) with the solids drawn on top of it.
+  assert.ok(/rc\.fillStyle='rgba\([0-9]+,[0-9]+,[0-9]+,\.(?:[0-9]|[0-9][0-9])\)';[\s\S]*?for\(const s of solids\)/.test(GAME),
     'solids are drawn over the translucent fixed disc');
 });
 

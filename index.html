@@ -74,18 +74,17 @@
      ============================================================================ -->
 <main id="menu" class="screen">
  <div id="menuChrome">
-  <!-- Top-left utility icon rail (CS2-style monochrome glyphs). The primary
-       navigation sits to its right; there is no HOME item. -->
+  <!-- Compact CS2-style icon rail: bare glyphs, no container box. The first
+       item is the home/landing screen; the primary nav sits to its right. -->
   <nav id="iconRail" aria-label="Utility">
     <button class="irail" data-nav="news" title="Patch Notes"><span class="ric"></span></button>
     <button class="irail" data-nav="settings" title="Settings"><span class="ric"></span></button>
-    <button class="irail" data-nav="credits" title="Credits"><span class="ric"></span></button>
+    <button class="irail" data-nav="credits" title="Credits / Attribution"><span class="ric"></span></button>
     <button class="irail" data-quit="1" title="Exit to Desktop"><span class="ric"></span></button>
   </nav>
-  <!-- Primary top navigation. PLAY is the deploy hub; HOME is the landing
-       section the menu opens on. -->
+  <!-- Primary top navigation. HOME is intentionally absent: it is the landing
+       hero screen, reachable from the rail's home glyph. -->
   <nav id="topnav" aria-label="Primary">
-    <button class="nav" data-nav="home">HOME</button>
     <button class="nav" data-nav="loadout">LOADOUT</button>
     <button class="nav primary" data-nav="play">PLAY</button>
     <button class="nav" data-nav="settings">SETTINGS</button>
@@ -97,17 +96,12 @@
  <div id="menuStage" aria-hidden="true"></div>
  <div id="menuVignette" aria-hidden="true"></div>
 
- <!-- HOME (the landing section the menu opens on) -->
- <section id="nav-home" class="navsec">
+ <!-- HOME — the landing hero screen. No navigation list: the primary nav sits
+      in the top chrome and PLAY is where games are started. -->
+ <section id="nav-home" class="navsec home-hero">
    <div class="eyebrow">TACTICAL OPERATIONS / SEASON 02</div>
    <h1 class="ps-title">POLY<span>STRIKE</span></h1>
    <p class="intro tagline">TACTICAL COMBAT.<br>NO SECOND CHANCES.</p>
-   <div id="homeActions">
-     <button id="start" class="cta">PLAY OFFLINE<span>VS BOTS</span></button>
-     <button id="onlineButton" class="ghost">PLAY ONLINE</button>
-     <button id="loadoutButton" class="ghost">LOADOUT</button>
-     <button id="settingsButton" class="ghost">SETTINGS</button>
-   </div>
    <label for="username" class="userlabel">OPERATOR<input id="username" type="text" maxlength="20" autocomplete="nickname" placeholder="Operator"></label>
    <label class="tick"><input id="fallback" type="checkbox"> Drag-to-look (hold right mouse)</label>
    <details><summary>FIELD MANUAL / CONTROLS</summary><p>WASD move &#183; Shift sprint &#183; C while sprinting slide<br>Mouse aim &#183; Left click fire &#183; Right click ADS/scope<br>1 primary &#183; 2 secondary &#183; 3 knife &#183; mouse wheel cycle<br>G drop primary &#183; E pickup<br>Space jump &#183; Ctrl crouch &#183; Tab scoreboard &#183; Esc menu<br>M mute &#183; Q previous weapon &#183; F hold to inspect</p><p>Offline: five bots. Skirmish is the only mode: 90 seconds, first to five rounds.<br>Online: share a room code with one friend. Host selects map. Direct WebRTC requires internet and public signaling; restrictive networks may block connection. Peer IP addresses are exposed to each other. Casual play, not anti-cheat protected.</p></details>
@@ -132,9 +126,11 @@
      <label for="mapSelect">BATTLEGROUND<select id="mapSelect"><option value="desert">01 / Sandline &#8212; Desert Compound</option><option value="industrial">02 / Ironworks &#8212; Industrial Warehouse</option><option value="urban">03 / Crossfire &#8212; Urban Alleyways</option><option value="harbor">04 / Drydock &#8212; Coastal Sawmill</option><option value="training">05 / Training Range &#8212; Firing &amp; Movement Drills</option><option value="shipment">06 / Shipment &#8212; Container Maze</option><option value="dust2">07 / Dust 2 &#8212; Desert Lanes</option></select></label>
      <small id="mapDescription">SKIRMISH &#183; FIRST TO FIVE</small>
      <label class="tick"><input id="rotateMaps" type="checkbox" checked> Rotate map after match</label>
-     <button id="start2" class="cta sm">DEPLOY</button>
-     <button id="playBack" class="ghost sm">BACK</button>
-   </div>
+     <div class="play-actions">
+       <button id="start2" class="cta sm">DEPLOY</button>
+       <button id="playBack" class="ghost sm">BACK</button>
+     </div>
+     </div>
    <div id="playOnline" class="playsub" hidden>
      <p>Host uses your selected map. Share the room code privately. Both players need this version of the game.</p>
      <button id="hostRoom" class="cta sm">CREATE ROOM</button>
@@ -146,26 +142,59 @@
    </div>
  </section>
 
- <!-- LOADOUT -->
- <section id="nav-loadout" class="navsec" hidden>
-   <div class="eyebrow">PREP / CUSTOMISE</div>
-   <h2 class="sectitle">LOADOUT</h2>
-   <p class="intro tagline">PICK YOUR TOOLS.<br>ROTATE. INSPECT.</p>
-   <div class="loadout-stage"><canvas id="loadoutCanvas" width="360" height="240" aria-label="Character and weapon preview"></canvas>
-     <div id="loadoutInfo"><b id="loadoutName">AKM</b><small id="loadoutDesc">Assault rifle</small></div>
+  <!-- LOADOUT — full-viewport presentation. The operator stands center-stage on
+      the shared #game canvas; the categories sit in a right-hand column so the
+      weapon and the character read together. -->
+  <section id="nav-loadout" class="navsec loadout-wide" hidden>
+   <div class="loadout-head">
+     <div class="eyebrow">PREP / CUSTOMISE</div>
+     <h2 class="sectitle">LOADOUT</h2>
    </div>
-   <div class="eyebrow small">PRIMARY</div>
-   <div id="primaryCards"></div>
-   <div class="eyebrow small">SECONDARY</div>
-   <div id="secondaryCards"></div>
-   <div class="eyebrow small">MELEE</div>
-   <div id="meleeCards"></div>
-   <button id="loadoutInspect" class="ghost sm" hidden>INSPECT WEAPON (F)</button>
-   <button id="loadoutClose" class="ghost sm">CONFIRM &amp; CLOSE</button>
+   <div class="loadout-cols">
+     <!-- CENTER: the operator stands on the shared #game canvas behind the menu
+          (visible through the transparent stage frame), with the selected
+          weapon presented beside the picker. The stage frame is hairline so
+          the character reads as part of the scene, not trapped in a box. -->
+     <div class="loadout-stage">
+       <canvas id="loadoutCanvas" width="360" height="240" aria-label="Weapon preview — drag to rotate"></canvas>
+       <div id="loadoutInfo"><b id="loadoutName">AKM</b><small id="loadoutDesc">Assault rifle</small></div>
+     </div>
+     <div class="loadout-picker">
+       <div class="eyebrow small">PRIMARY</div>
+       <div id="primaryCards" class="wcards"></div>
+       <div class="eyebrow small">SECONDARY</div>
+       <div id="secondaryCards" class="wcards"></div>
+       <div class="eyebrow small">MELEE</div>
+       <div id="meleeCards" class="wcards"></div>
+       <div class="loadout-actions">
+         <button id="loadoutInspect" class="ghost sm" hidden>INSPECT WEAPON (F)</button>
+         <button id="loadoutClose" class="cta sm">CONFIRM &amp; CLOSE</button>
+       </div>
+     </div>
+   </div>
+ </section>
+
+ <!-- NEWS / PATCH NOTES — opened from the icon rail. Not a top-nav tab. -->
+ <section id="nav-news" class="navsec news-wide" hidden>
+   <div class="eyebrow">INTEL / PATCH NOTES</div>
+   <h2 class="sectitle">NEWS</h2>
+   <div id="creditsBody">
+     <div class="cr-block">
+       <b class="cr-title">OPERATION Vanguard — v44</b>
+       <p class="cr-line">Five-weapon active roster: AKM, L96 A1, Desert Eagle, Glock-19, FA-03 Bayonet.</p>
+       <p class="cr-line">New armory loadout, retuned HUD, tactical menu stage, smoother online feel.</p>
+     </div>
+     <div class="cr-block">
+       <b class="cr-title">PREVIOUS</b>
+       <p class="cr-line">v43 — menu overhaul, CS2-style navigation, icon rail.</p>
+       <p class="cr-line">v42 — fixed-map radar with LOS gating, muzzle-origin tracers.</p>
+     </div>
+   </div>
+   <button id="newsClose" class="ghost sm">BACK</button>
  </section>
 
  <!-- SETTINGS -->
- <section id="nav-settings" class="navsec" hidden>
+ <section id="nav-settings" class="navsec settings-wide" hidden>
    <div class="eyebrow">TUNE YOUR EXPERIENCE</div>
    <h2 class="sectitle">SETTINGS</h2>
    <p class="intro tagline">TUNE THE RIG.<br>APPLY WHEN READY.</p>
