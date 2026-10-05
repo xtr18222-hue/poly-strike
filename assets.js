@@ -89,9 +89,15 @@
 
   // First-person rigs: arms + weapon + clips already bound. Used for the
   // viewmodel when available; falls back to weapon + separate hands.
+  // The three rigs built in Blender for this pass (fps-l96 / fps-deagle /
+  // fps-knife) reuse the supplied `Rigged Fps Arms.glb` armature, so their
+  // clips drive the same bones as the AKM/Glock rigs.
   const FPS_RIGS = {
     akm: 'fps-Fps Rig AKM.glb',
     glock: 'fps-Fps Rig.glb',
+    l96: 'fps-l96.glb',
+    deagle: 'fps-deagle.glb',
+    knife: 'fps-knife.glb',
   };
 
   // Game balance for the new suite. Firearm identity maps to the old slots so
@@ -791,8 +797,14 @@
   // the gun's own Slide/Trigger/Magazine/Barrel/SlideCatch nodes), so it cannot
   // supply first-person hands. The Desert Eagle keeps its weapon-only viewmodel;
   // the Glock rig with arms is `fps-Fps Rig.glb`.
-  const RIG_MESH = { 'fps-Fps Rig AKM.glb': 'AKM_model', 'fps-Fps Rig.glb': 'Glock19' };
-  const RIG_LEN = { 'fps-Fps Rig AKM.glb': 0.90, 'fps-Fps Rig.glb': 0.20 };
+  // RIG_MESH: the weapon OBJECT inside each rig (game.js frames on the gun's
+  // box, not the arms'). RIG_LEN: the real-world length fitRig normalises the
+  // weapon to, in metres. The three Blender-built rigs size their weapons so
+  // the arms land at the same fitted size as the shipped AKM rig (~2.9 m).
+  const RIG_MESH = { 'fps-Fps Rig AKM.glb': 'AKM_model', 'fps-Fps Rig.glb': 'Glock19',
+                     'fps-l96.glb': 'l96_model', 'fps-deagle.glb': 'deagle_model', 'fps-knife.glb': 'knife_model' };
+  const RIG_LEN = { 'fps-Fps Rig AKM.glb': 0.90, 'fps-Fps Rig.glb': 0.20,
+                    'fps-l96.glb': 1.18, 'fps-deagle.glb': 0.27, 'fps-knife.glb': 0.28 };
 
   function fitRig(g, file) {
     const T = needThree();
@@ -823,10 +835,15 @@
     if (pre.isEmpty()) return null;
     const preSize = new T.Vector3(); pre.getSize(preSize);
     const long = Math.max(preSize.x, preSize.y, preSize.z);
-    const axis = preSize.x >= preSize.y && preSize.x >= preSize.z ? 'x'
-      : (preSize.y >= preSize.z ? 'y' : 'z');
-    const assetFwd = { x: new T.Vector3(1, 0, 0), y: new T.Vector3(0, 1, 0), z: new T.Vector3(0, 0, 1) }[axis];
-    const assetUp = new T.Vector3(0, 1, 0);
+    // A long gun's "up" is the axis its box is TALL on (the stock/sights sit
+    // above the bore), not always +Y: the v45 rigs inherited the source pack's
+    // -90 deg X roll on Armature, which leaves the l96/deagle guns standing on
+    // their SIDE (height on X, thin on Y) and fitRig would otherwise fit them
+    // canted 90 deg about the bore. Derive up from the second-longest extent.
+    const AX = { x: new T.Vector3(1, 0, 0), y: new T.Vector3(0, 1, 0), z: new T.Vector3(0, 0, 1) };
+    const ord = [['x', preSize.x], ['y', preSize.y], ['z', preSize.z]].sort((a, b) => b[1] - a[1]);
+    const assetFwd = AX[ord[0][0]];
+    const assetUp = AX[ord[1][0]];
     const assetRgt = new T.Vector3().crossVectors(assetUp, assetFwd).normalize();
     if (!isFinite(assetRgt.x) || assetRgt.lengthSq() < 1e-6) assetRgt.set(1, 0, 0);
     const assetUp2 = new T.Vector3().crossVectors(assetFwd, assetRgt).normalize();
@@ -882,6 +899,31 @@
     root.userData.gripRel = rel.clone();
     root.userData.rigFile = file;
     root.userData.isRig = true;
+    // The ADS anchor: the same contract as the standalone weapon fit. Scoped
+    // rifles (the AWP) place the eye on the scope glass; everything else uses
+    // the fitted gun box's top-centre, where the sights sit above the bore.
+    // Without this, animateWeapon's ADS branch has nothing to lerp onto and a
+    // scoped rifle's eye lands beside the optic instead of behind it.
+    const sight = scene.getObjectByName('Scope') || scene.getObjectByName('scope')
+      || scene.getObjectByName('Aim') || scene.getObjectByName('aim') || null;
+    const anchor = new T.Object3D();
+    anchor.name = 'adsAnchor';
+    const fc3 = new T.Vector3(); fb.getCenter(fc3);
+    if (sight) {
+      const sb = new T.Box3().setFromObject(sight);
+      if (!sb.isEmpty()) {
+        const sc = new T.Vector3(); sb.getCenter(sc);
+        anchor.position.set(fc3.x, sc.y, sc.z);
+      }
+    }
+    if (anchor.position.lengthSq() === 0) anchor.position.set(fc3.x, fb.max.y, fc3.z);
+    // The fit scales `root` to bring the rig into metres, so a child's local
+    // position is divided by that scale when it goes to world space. The
+    // fitted box was measured THROUGH the scale, so undo it here or the anchor
+    // collapses onto the root and ADS parks the eye at the receiver.
+    anchor.position.multiplyScalar(1 / (scale > 0 ? scale : 1));
+    root.add(anchor);
+    root.userData.adsAnchor = anchor;
     // The weapon mesh: game.js frames on the GUN's box, not the arms', so the
     // caller needs to reach it without re-searching the rig by name.
     root.userData.weaponMesh = wep;
@@ -1039,7 +1081,12 @@
         if (TT.AnimationMixer && c.animations && c.animations.length) {
           c.userData.mixer = new TT.AnimationMixer(c);
           c.userData.acts = {};
-          const ACT = { idle: /idle/i, reload: /reload/i, shoot: /shoot|fire/i };
+          // Clip names are the rig's own (`Armature|Idle`...). The three
+          // Blender-built rigs also ship Inspect/Equip/Unequip (and Attack for
+          // the knife), which game.js drives for the inspect and draw states.
+          const ACT = { idle: /idle/i, reload: /reload/i, shoot: /shoot|fire/i,
+                        inspect: /inspect/i, equip: /equip/i, unequip: /unequip/i,
+                        attack: /attack/i };
           for (const a of c.animations) {
             for (const k of Object.keys(ACT)) {
               if (ACT[k].test(a.name)) { c.userData.acts[k] = c.userData.mixer.clipAction(a); break; }

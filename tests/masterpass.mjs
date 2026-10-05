@@ -67,8 +67,14 @@ for (const key of ['l96', 'hecate']) {
     assert.ok(!box.isEmpty(), `${key} viewmodel has geometry`);
     const size = new THREE.Vector3(); box.getSize(size);
     // Bore along -Z, sights on +Y: the fit's contract, and what ADS relies on.
-    assert.ok(size.z > size.x && size.z > size.y, `${key} bore along -Z after fit`);
-    assert.ok(size.y > size.x, `${key} sights on +Y after fit`);
+    // A rigged viewmodel's box is dominated by the arms (the AWP rig stands
+    // 2.9m tall), so the bore contract is measured on the GUN the way
+    // animateWeapon frames it; the whole-model box still has to fit the frame.
+    const gun = m.userData.weaponMesh || m;
+    const gbox = new THREE.Box3().setFromObject(gun);
+    const gsz = new THREE.Vector3(); gbox.getSize(gsz);
+    assert.ok(gsz.z > gsz.x && gsz.z > gsz.y, `${key} bore along -Z after fit`);
+    assert.ok(gsz.y > gsz.x, `${key} sights on +Y after fit`);
     const { hx, hy, hz, halfW, halfH } = place(box, key);
     let worst = 0;
     for (const [cx, cy, cz] of [[box.min.x,box.min.y,box.min.z],[box.max.x,box.min.y,box.min.z],

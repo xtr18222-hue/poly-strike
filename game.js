@@ -1204,7 +1204,10 @@ document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()
 // rail buttons carry data-nav, so their clicks already route through navTo.
 document.querySelectorAll('#iconRail .ric').forEach(s=>{
   const btn=s.closest('.irail'); if(!btn)return;
-  const name=btn.dataset.nav;
+  // The rail paints the nav glyph for nav buttons; the quit button uses the
+  // power/exit glyph. All four rail icons are pre-normalised onto the same
+  // 24-unit optical box, so they render at a consistent size and centre.
+  const name=btn.dataset.nav||(btn.dataset.quit?'power':null);
   if(name)try{paintIcon(s,name,17,null,0);}catch(_){}
 });
 document.querySelectorAll('[data-quit]').forEach(()=>{});
@@ -1594,12 +1597,16 @@ function animateWeapon(dt){
  // The slash is a DIAGONAL arc, not a pistol-style jab: the blade chops down
  // and out across the body, then returns. On top of the tactical pose above.
  if(swing>0){
-  const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
-  m.rotation.x-=arc*1.15;
-  m.rotation.y-=arc*.5;
-  m.rotation.z+=arc*.45;
-  m.position.x+=arc*.05;
-  m.position.y+=arc*.07;
+  // A rig that ships its own Blender `Attack` clip owns the arm motion, so
+  // skip the procedural arc for it (the mixer plays the authored slash).
+  if(!(u.isRig&&u.acts&&u.acts.attack)){
+   const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
+   m.rotation.x-=arc*1.15;
+   m.rotation.y-=arc*.5;
+   m.rotation.z+=arc*.45;
+   m.position.x+=arc*.05;
+   m.position.y+=arc*.07;
+  }
  }
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
@@ -1641,8 +1648,20 @@ function animateWeapon(dt){
  // never fights the group placement. State is derived from the same timers the
  // weapon-only path uses, so both viewmodels stay in step.
  if(u.isRig&&u.mixer){
+  // The key comes from the same timers the weapon-only path uses, so both
+  // viewmodel kinds stay in step. INSPECT PLAYS THE BLENDER CLIP: the rig's
+  // own `Inspect` action carries the arm/weapon motion (the state machine in
+  // stepInspect() only drives timing, firing lockout and the return to idle),
+  // so the hands visibly move with the weapon instead of the old procedural
+  // tilt. Not every rig ships Inspect (the supplied AKM/Glock rigs don't),
+  // so fall back to the idle key when the clip is absent.
   let key='idle';
-  if(reload>0)key='reload';else if(bolt>0||flashTime>0)key='shoot';
+  // The knife's swing is authored in Blender as an `Attack` clip, so prefer it
+  // over the procedural arc whenever the rig ships one.
+  if(weapon==='knife'&&swing>0&&u.acts&&u.acts.attack)key='attack';
+  else if(inspecting()&&u.acts&&u.acts.inspect)key='inspect';
+  else if(reload>0&&u.acts&&u.acts.reload)key='reload';
+  else if(bolt>0||flashTime>0)key='shoot';
   const acts=u.acts||{};
   if(key!==u.rigKey){
    const na=acts[key],oa=acts[u.rigKey];
@@ -1753,7 +1772,7 @@ select:(k)=>{if(C.WEAPONS[k]){primary=k;weapon=k;equip=.5;}},bot:(id,bx,bz)=>{co
 // Camera forward is -Z at yaw 0. Bearing to target: atan2(dx, -dz) puts a
 // target straight ahead (-Z) at yaw 0, which is what the trainer needs.
 // The Soldier's head box tops at y=1.7; aim at the upper chest/head line for a clean hit.
-aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(BOT_H*0.9-y,Math.hypot(dx,dz));},fixture:(mode,targetHp=100)=>{match.phase=match.modeData.buy?'buy':'live';match.roundClock=match.modeData.clock;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
+aim:(id)=>{const b=match.bots[id];const dx=b.pos.x-x,dz=b.pos.z-z;yaw=Math.atan2(dx,-dz);pitch=Math.atan2(BOT_H*0.9-y,Math.hypot(dx,dz));},rig:(k)=>{const m=models[k];if(!m)return null;const u=m.userData;return {isRig:!!u.isRig,clips:u.acts?Object.keys(u.acts):[],playing:u.rigKey||null,mixer:!!u.mixer,weaponMesh:u.weaponMesh?u.weaponMesh.name:null,swing:(k===weapon)?swing:null,reload:(k===weapon)?reload:null,bolt:(k===weapon)?bolt:null,box:(()=>{m.updateMatrixWorld(true);const b=new T.Box3().setFromObject(m);if(b.isEmpty())return null;return {x:+(b.max.x-b.min.x).toFixed(2),y:+(b.max.y-b.min.y).toFixed(2),z:+(b.max.z-b.min.z).toFixed(2)};})()};},fixture:(mode,targetHp=100)=>{match.phase=match.modeData.buy?'buy':'live';match.roundClock=match.modeData.clock;if(mode==='target'){x=0;z=20;y=1.7;yaw=Math.PI;pitch=0;moving=0;vy=0;held.clear();match.bots.forEach((b,i)=>{b.alive=i===0;b.pos={x:i===0?0:30,z:i===0?26:-30};b.hp=targetHp;b.speed=0;b.cool=999;});syncBots();}if(mode==='loss')match.enemyShot(999);if(mode==='win'){match.bots.forEach(b=>{b.alive=false;});match.endRound('player');}if(mode==='match'){match.score.player=4;match.endRound('player');}}}}:{})});
 if('serviceWorker'in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('./sw.js').catch(()=>{});
 } catch(e){$('error').hidden=false;$('errorText').textContent=e.message;console.error(e);}
 })();

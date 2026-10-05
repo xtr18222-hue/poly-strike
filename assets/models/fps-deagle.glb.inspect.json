@@ -1,0 +1,595 @@
+{
+ "file": "fps-deagle.glb",
+ "objects": [
+  {
+   "name": "Armature",
+   "type": "ARMATURE",
+   "bones": [
+    {
+     "name": "UpperArm.L",
+     "head": [
+      -0.0009,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9926,
+      0.0018,
+      0.1144
+     ],
+     "parent": null
+    },
+    {
+     "name": "LowerArm.L",
+     "head": [
+      -0.0008,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9963,
+      -0.0,
+      -0.0766
+     ],
+     "parent": "UpperArm.L"
+    },
+    {
+     "name": "Hand.L",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9994,
+      -0.0,
+      -0.0062
+     ],
+     "parent": "LowerArm.L"
+    },
+    {
+     "name": "DoubleFingersBeginning",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.5438,
+      0.0906,
+      0.8343
+     ],
+     "parent": "Hand.L"
+    },
+    {
+     "name": "DoubleFingers.L",
+     "head": [
+      -0.0005,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9979,
+      0.0,
+      -0.0548
+     ],
+     "parent": "DoubleFingersBeginning"
+    },
+    {
+     "name": "DoubleFingersTip.L",
+     "head": [
+      -0.0005,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9995,
+      0.0,
+      0.0004
+     ],
+     "parent": "DoubleFingers.L"
+    },
+    {
+     "name": "IndexBeginning.L",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.3049,
+      0.0803,
+      -0.9484
+     ],
+     "parent": "Hand.L"
+    },
+    {
+     "name": "Index.L",
+     "head": [
+      -0.0005,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.999,
+      0.0,
+      0.0291
+     ],
+     "parent": "IndexBeginning.L"
+    },
+    {
+     "name": "IndexTip.L",
+     "head": [
+      -0.0005,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.9995,
+      0.0,
+      0.0004
+     ],
+     "parent": "Index.L"
+    },
+    {
+     "name": "ThumbBeginning.L",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      -0.815,
+      0.0191,
+      -0.5796
+     ],
+     "parent": "Hand.L"
+    },
+    {
+     "name": "Thumb.L",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.5848,
+      0.1616,
+      -0.7941
+     ],
+     "parent": "ThumbBeginning.L"
+    },
+    {
+     "name": "ThumbTip.L",
+     "head": [
+      -0.0006,
+      0.0,
+      0.0004
+     ],
+     "tail": [
+      0.7137,
+      -0.0502,
+      -0.6977
+     ],
+     "parent": "Thumb.L"
+    },
+    {
+     "name": "UpperArm.R.001",
+     "head": [
+      -0.0009,
+      -0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9926,
+      0.0018,
+      -0.1144
+     ],
+     "parent": null
+    },
+    {
+     "name": "LowerArm.R.001",
+     "head": [
+      -0.0008,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9962,
+      0.0,
+      0.0767
+     ],
+     "parent": "UpperArm.R.001"
+    },
+    {
+     "name": "Hand.R.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9994,
+      0.0,
+      0.0062
+     ],
+     "parent": "LowerArm.R.001"
+    },
+    {
+     "name": "DoubleFingersBeginning.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.5438,
+      0.0906,
+      -0.8343
+     ],
+     "parent": "Hand.R.001"
+    },
+    {
+     "name": "DoubleFingers.R.001",
+     "head": [
+      -0.0005,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9979,
+      0.0,
+      0.0548
+     ],
+     "parent": "DoubleFingersBeginning.001"
+    },
+    {
+     "name": "DoubleFingersTip.R.001",
+     "head": [
+      -0.0005,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9995,
+      0.0,
+      -0.0004
+     ],
+     "parent": "DoubleFingers.R.001"
+    },
+    {
+     "name": "IndexBeginning.R.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.305,
+      0.0803,
+      0.9484
+     ],
+     "parent": "Hand.R.001"
+    },
+    {
+     "name": "Index.R.001",
+     "head": [
+      -0.0005,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.999,
+      0.0,
+      -0.0291
+     ],
+     "parent": "IndexBeginning.R.001"
+    },
+    {
+     "name": "IndexTip.R.001",
+     "head": [
+      -0.0005,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.9995,
+      0.0,
+      -0.0004
+     ],
+     "parent": "Index.R.001"
+    },
+    {
+     "name": "ThumbBeginning.R.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      -0.8149,
+      0.0191,
+      0.5796
+     ],
+     "parent": "Hand.R.001"
+    },
+    {
+     "name": "Thumb.R.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.5848,
+      0.1616,
+      0.7941
+     ],
+     "parent": "ThumbBeginning.R.001"
+    },
+    {
+     "name": "ThumbTip.R.001",
+     "head": [
+      -0.0006,
+      0.0,
+      -0.0004
+     ],
+     "tail": [
+      0.7137,
+      -0.0502,
+      0.6977
+     ],
+     "parent": "Thumb.R.001"
+    }
+   ]
+  },
+  {
+   "name": "ArmModel",
+   "type": "MESH",
+   "materials": [
+    "Shirt",
+    "Skin",
+    "Glove"
+   ],
+   "verts": 4278,
+   "bbox": [
+    [
+     -0.32,
+     -0.0004,
+     -8.3738
+    ],
+    [
+     -0.32,
+     -0.0004,
+     -2.7813
+    ],
+    [
+     -0.32,
+     0.0013,
+     -2.7813
+    ],
+    [
+     -0.32,
+     0.0013,
+     -8.3738
+    ],
+    [
+     0.3183,
+     -0.0004,
+     -8.3738
+    ],
+    [
+     0.3183,
+     -0.0004,
+     -2.7813
+    ],
+    [
+     0.3183,
+     0.0013,
+     -2.7813
+    ],
+    [
+     0.3183,
+     0.0013,
+     -8.3738
+    ]
+   ]
+  },
+  {
+   "name": "deagle 7rnd empty mag_2",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle barrel_4",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle frame_7",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle hammer_8",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle safety_6",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle slide release_10",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle slide_5",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle trigga_9",
+   "type": "EMPTY"
+  },
+  {
+   "name": "deagle_model",
+   "type": "MESH",
+   "materials": [
+    "polymer",
+    "h-190.001",
+    "material"
+   ],
+   "verts": 14466,
+   "bbox": [
+    [
+     -9.1958,
+     -1.8942,
+     -6.7727
+    ],
+    [
+     -9.1958,
+     -1.8942,
+     20.2273
+    ],
+    [
+     -9.1958,
+     1.8942,
+     20.2273
+    ],
+    [
+     -9.1958,
+     1.8942,
+     -6.7727
+    ],
+    [
+     6.4666,
+     -1.8942,
+     -6.7727
+    ],
+    [
+     6.4666,
+     -1.8942,
+     20.2273
+    ],
+    [
+     6.4666,
+     1.8942,
+     20.2273
+    ],
+    [
+     6.4666,
+     1.8942,
+     -6.7727
+    ]
+   ]
+  },
+  {
+   "name": "GLTF_SceneRootNode",
+   "type": "EMPTY"
+  },
+  {
+   "name": "Icosphere",
+   "type": "MESH",
+   "materials": [],
+   "verts": 42,
+   "bbox": [
+    [
+     -0.9511,
+     -1.0,
+     -1.0
+    ],
+    [
+     -0.9511,
+     -1.0,
+     1.0
+    ],
+    [
+     -0.9511,
+     1.0,
+     1.0
+    ],
+    [
+     -0.9511,
+     1.0,
+     -1.0
+    ],
+    [
+     0.9511,
+     -1.0,
+     -1.0
+    ],
+    [
+     0.9511,
+     -1.0,
+     1.0
+    ],
+    [
+     0.9511,
+     1.0,
+     1.0
+    ],
+    [
+     0.9511,
+     1.0,
+     -1.0
+    ]
+   ]
+  },
+  {
+   "name": "root",
+   "type": "EMPTY"
+  },
+  {
+   "name": "Sketchfab_model",
+   "type": "EMPTY"
+  }
+ ],
+ "animations": [
+  {
+   "name": "Equip",
+   "frame_range": [
+    1.0,
+    16.0
+   ]
+  },
+  {
+   "name": "Fire",
+   "frame_range": [
+    1.0,
+    12.0
+   ]
+  },
+  {
+   "name": "Idle",
+   "frame_range": [
+    1.0,
+    48.0
+   ]
+  },
+  {
+   "name": "Inspect",
+   "frame_range": [
+    1.0,
+    42.0
+   ]
+  },
+  {
+   "name": "Reload",
+   "frame_range": [
+    1.0,
+    36.0
+   ]
+  },
+  {
+   "name": "Unequip",
+   "frame_range": [
+    1.0,
+    16.0
+   ]
+  }
+ ],
+ "materials": [
+  "Glove",
+  "h-190.001",
+  "material",
+  "polymer",
+  "Shirt",
+  "Skin"
+ ]
+}

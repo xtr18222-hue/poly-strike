@@ -49,17 +49,14 @@ test('viewmodel() resolves the fitted rig for a weapon that has one', () => {
 });
 
 test('viewmodel() falls back to the weapon alone when no usable rig exists', () => {
-  // The Desert Eagle's rig file (`fps-Rigged Glock.glb`) has no arm bones and
-  // no clips, so it is not a hands source and the weapon-only model is used.
-  const vm = A.viewmodel('deagle');
-  assert.ok(vm, 'deagle viewmodel resolves');
+  // No weapon is rig-less any more: AWP/Deagle/Knife got real Blender rigs in
+  // the v45 pass, so every firearm resolves a hands rig. The fallback path is
+  // still exercised by a weapon with no rig ENTRY at all.
+  const vm = A.viewmodel('grenade');
+  assert.ok(vm, 'grenade viewmodel resolves');
   assert.notEqual(vm.userData.isRig, true, 'no usable rig: weapon-only viewmodel');
-  assert.equal(A.isRigged('deagle'), false, 'isRigged agrees');
+  assert.equal(A.isRigged('grenade'), false, 'isRigged agrees');
   assert.ok(!vm.userData.weaponMesh, 'no weaponMesh field on a bare weapon');
-  // L96 has no rig entry at all, so it must still resolve a plain weapon.
-  const l96 = A.viewmodel('l96');
-  assert.ok(l96, 'l96 viewmodel resolves');
-  assert.notEqual(l96.userData.isRig, true, 'l96 is weapon-only');
 });
 
 test('the rig viewmodel clones independently', () => {
@@ -99,17 +96,21 @@ test('the rig viewmodel keeps the fitted bore forward so ADS still works', () =>
   // fitted frame, so a rig must leave the gun in the same fitted orientation as
   // the weapon-only viewmodel, not re-pose it.
   const rig = A.viewmodel('akm');
-  const bare = A.viewmodel('deagle');
+  const bare = A.viewmodel('grenade');
   for (const m of [rig, bare]) {
     m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.updateMatrixWorld(true);
   }
   const rg = new THREE.Box3().setFromObject(rig.userData.weaponMesh);
   const bg = new THREE.Box3().setFromObject(bare);
+  const rg_span = rg.max.clone().sub(rg.min);
+  const bg_span = bg.max.clone().sub(bg.min);
   // Bore forward = the box is far deeper in Z than wide in X, and sights up =
-  // the box's +Y face is above the origin, not below.
+  // the box's +Y face is above the origin, not below. The thrown grenade is a
+  // short, chunky object (not a long gun), so its Z span only needs to exceed
+  // its X span; the rifle rig keeps the strict 4x ratio.
+  assert.ok(rg_span.z > rg_span.x * 4, `rig: bore runs along Z (z=${rg_span.z.toFixed(3)}, x=${rg_span.x.toFixed(3)})`);
+  assert.ok(bg_span.z > bg_span.x, `bare: bore runs along Z (z=${bg_span.z.toFixed(3)}, x=${bg_span.x.toFixed(3)})`);
   for (const [name, b] of [['rig', rg], ['bare', bg]]) {
-    const span = b.max.clone().sub(b.min);
-    assert.ok(span.z > span.x * 4, `${name}: bore runs along Z (z=${span.z.toFixed(3)}, x=${span.x.toFixed(3)})`);
     assert.ok(b.max.y > 0, `${name}: sights sit above the fitted origin (+Y)`);
     assert.ok(b.min.z < 0, `${name}: muzzle is forward of the fitted origin (-Z)`);
   }
@@ -123,8 +124,12 @@ test('the rig viewmodel carries its own idle/reload/shoot clips', () => {
   assert.equal(idle.name, 'Armature|Idle', 'resolved the armature clip');
   assert.ok(A.rigClip('akm', 'reload'), 'akm reload clip resolves');
   assert.ok(A.rigClip('akm', 'shoot'), 'akm shoot clip resolves');
-  assert.equal(A.rigClip('deagle', 'idle'), null, 'no clips on a weapon-only viewmodel');
-  assert.equal(A.rigClip('l96', 'idle'), null, 'no rig entry for l96');
+  // The v45 Blender rigs carry the extra clips the game drives directly.
+  assert.ok(A.rigClip('l96', 'inspect'), 'l96 inspect clip resolves');
+  assert.ok(A.rigClip('deagle', 'reload'), 'deagle reload clip resolves');
+  assert.ok(A.rigClip('knife', 'attack'), 'knife attack clip resolves');
+  // A weapon with no rig entry at all still resolves nothing.
+  assert.equal(A.rigClip('grenade', 'idle'), null, 'no rig entry for grenade');
 });
 
 test('the rig viewmodel builds a mixer the viewmodel can drive', () => {

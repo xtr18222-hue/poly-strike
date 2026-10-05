@@ -74,9 +74,12 @@
      ============================================================================ -->
 <main id="menu" class="screen">
  <div id="menuChrome">
-  <!-- Compact CS2-style icon rail: bare glyphs, no container box. The first
-       item is the home/landing screen; the primary nav sits to its right. -->
+  <!-- Compact CS2-style icon rail: bare glyphs, no container box. All four
+       icons share one 32x32 canvas with a normalised 24-unit optical box, so
+       they line up without per-icon padding hacks. Order: Home, News,
+       Settings, Info (Credits). The last button quits to desktop. -->
   <nav id="iconRail" aria-label="Utility">
+    <button class="irail" data-nav="home" title="Home"><span class="ric"></span></button>
     <button class="irail" data-nav="news" title="Patch Notes"><span class="ric"></span></button>
     <button class="irail" data-nav="settings" title="Settings"><span class="ric"></span></button>
     <button class="irail" data-nav="credits" title="Credits / Attribution"><span class="ric"></span></button>

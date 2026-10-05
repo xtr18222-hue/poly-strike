@@ -40,7 +40,7 @@
   // a weapon cannot drift out of sync with its own file.
   const WEAPONS = {
     akm: { key:'akm', name:'AKM', slot:'primary', auto:true, mag:30, reserve:90, damage:36, headMult:4, legMult:0.75, fireInterval:0.1, reloadTime:1.35, spreadBase:0.0065, spreadScoped:0.0065, zoomFov:null, ads:false, price:2700, killAward:300, falloff:0.004, recoil:1.0 },
-    l96: { key:'l96', name:'L96 A1', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
+    l96: { key:'l96', name:'AWP', slot:'primary', auto:false, mag:5, reserve:40, damage:110, headMult:2.5, legMult:0.75, fireInterval:1.5, reloadTime:3.2, spreadBase:0.0009, spreadScoped:0.0002, zoomFov:12, ads:true, price:4750, killAward:300, falloff:0.001, recoil:1.6 },
     hecate: { key:'hecate', name:'PGM Hecate II', slot:'primary', auto:false, mag:7, reserve:35, damage:130, headMult:2.4, legMult:0.75, fireInterval:1.8, reloadTime:3.6, spreadBase:0.0008, spreadScoped:0.00015, zoomFov:10, ads:true, price:5600, killAward:300, falloff:0.0008, recoil:1.9 },
     deagle: { key:'deagle', name:'Desert Eagle', slot:'secondary', auto:false, mag:7, reserve:35, damage:58, headMult:3.5, legMult:0.75, fireInterval:0.4, reloadTime:1.8, spreadBase:0.0045, spreadScoped:0.003, zoomFov:null, ads:false, price:700, killAward:300, falloff:0.006, recoil:0.85 },
     // The knife is the player's MELEE slot: slot:'melee' (not 'secondary').
@@ -48,7 +48,7 @@
     // always carried alongside the sidearm — the player no longer has to choose
     // between a Deagle and a knife. isFirearm() returns false for it so the
     // firing/reload/ammo paths skip it and the melee swing owns its own attack.
-    knife: { key:'knife', name:'FA-03 Bayonet', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:1.6, legMult:0.7, fireInterval:0.55, reloadTime:0, spreadBase:0.5, spreadScoped:0.5, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, melee:true },
+    knife: { key:'knife', name:'Knife', slot:'melee', auto:false, mag:0, reserve:0, damage:55, headMult:1.6, legMult:0.7, fireInterval:0.55, reloadTime:0, spreadBase:0.5, spreadScoped:0.5, zoomFov:null, ads:false, price:0, killAward:300, falloff:0, recoil:0, melee:true },
     // The Glock 19 is its own secondary pistol, separate from the Desert Eagle:
     // higher capacity, lower per-hit damage, faster handling. Uses the supplied
     // `fps-Fps Rig.glb` (Glock19 + arms) so it has real first-person hands and
