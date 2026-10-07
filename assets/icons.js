@@ -34,8 +34,11 @@ var PS_ICONS = (function () {
   };
 
   // Non-weapon HUD glyphs, all from the same CS2 panorama set.
+  // headshot is the CS2 deathnotice glyph, fetched verbatim from
+  // cs2/panorama/images/hud/deathnotice/icon_headshot.svg and kept as a LOCAL
+  // asset (no runtime GitHub hotlink). Normal kills keep the normal icon.
   var HUD_ICON = {
-    headshot: 'kill_headshot',
+    headshot: 'icon_headshot',
     health: 'health',
     armor: 'armor',
     helmet: 'helmet',

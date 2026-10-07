@@ -2,9 +2,9 @@
 // references: assets/cs2/ ships ~450 glyphs but the registry in assets/icons.js
 // only names the ones the HUD and menus actually draw, so only those are
 // precached (the full directory would bloat the install by megabytes).
-const CACHE = 'poly-strike-v45-rigs';
+const CACHE = 'poly-strike-v46-splice';
 const ICONS = ['ak47','awp','g3sg1','nova','deagle','glock','knife','hegrenade','flashbang',
-  'health','armor','helmet','kevlar','bullet','kill_headshot',
+  'health','armor','helmet','kevlar','bullet','icon_headshot',
   'home','news','settings','power','play','loadout','inventory','bot','back','cancel',
   'pause','resumegame','online','timer','muted','unmuted','warning','crosshair','info'];
 const FILES=['./','./index.html','./style.css','./vendor/three.min.js','./maps.js','./core.js',

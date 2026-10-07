@@ -1145,6 +1145,11 @@ function recordCareer(won){career.matches++;if(won)career.wins++;career.kills+=m
 window.__bots=bots;Object.defineProperty(window,'__match',{get:()=>match});Object.defineProperty(window,'__arena',{get:()=>arena});
 /* DIAGNOSTIC: expose the view scene graph so tests can verify the viewmodel. */
 window.__viewScene=viewScene;window.__models=models;window.__viewCam=viewCam;window.__worldCam=cam;
+// The menu operator is menu-only: it lives in the root `scene`, never in the
+// gameplay arena, carries no botId, and is not a raycast target. Exposed for
+// verification only (bounds/on-screen checks), not for gameplay logic.
+Object.defineProperty(window,'__menuChar',{get:()=>menuChar});
+window.__viewRenderer=renderer;
 /* DIAGNOSTIC: expose the inspection phase so tests can verify the state machine. */
 Object.defineProperty(window,'__inspPhase',{get:()=>inspPhase});
 /* DIAGNOSTIC: expose the shoot() gate values so tests can see why a shot was
