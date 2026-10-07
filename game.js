@@ -102,6 +102,9 @@ const menuRim=new T.DirectionalLight(0xffd9a8,.8);menuRim.position.set(6,5,-8);s
 // Menu stage lighting (toggled by setMenuSetVisible with the stage set).
 const menuKey=new T.DirectionalLight(0xdcecff,1.35);menuKey.position.set(-5,6,6);scene.add(menuKey);
 const menuFill=new T.HemisphereLight(0x9fb4c4,0x20282c,.5);scene.add(menuFill);
+// v47: the menu spots are dimmed while the map preview owns the stage, so each
+// remembers its authored intensity.
+[menuKey,menuRim,menuFill].forEach(l=>l.userData.baseInt=l.intensity);
 // The Soldier rig's gear is authored near-black (0x020202) and the menu set is a
 // dark hangar, so the operator needs its own dedicated illumination to separate
 // from the backdrop: a hot key from camera-left and a strong rim from behind-
@@ -114,6 +117,7 @@ const menuSide=new T.DirectionalLight(0xcfe0ee,1.2);menuSide.position.set(3.0,1.
 // A tight back-top wash so the helmet and shoulders hold their silhouette
 // against the back wall instead of merging with it.
 const menuTop=new T.DirectionalLight(0xbfd4e4,1.0);menuTop.position.set(0,6,2);scene.add(menuTop);
+[menuSpot,menuRim2,menuSide,menuTop].forEach(l=>l.userData.baseInt=l.intensity);
 const cam=new T.PerspectiveCamera(75,1,.06,180);cam.rotation.order='YXZ';
 const viewScene=new T.Scene(),viewCam=new T.PerspectiveCamera(65,1,.02,10);viewScene.add(new T.HemisphereLight(0xffffff,0x697681,1.6));const vl=new T.DirectionalLight(0xffe5cf,1.7);vl.position.set(-2,3,4);viewScene.add(vl);
 // The asset suite loads asynchronously. Everything that depends on it is
@@ -168,7 +172,17 @@ let arena=null,worldNodes=[];
 // THREE.Group so it can be shown/hidden without touching the arena. The menu
 // must never drop the player into a bright desert: it is a dim hangar bay with
 // a lit operator, visible floor, cover and depth behind the character.
+//
+// v47: the menu now shows the SELECTED MAP'S ARENA as its backdrop instead of
+// the hangar — the cinematic "selected map" background from the v42-era menu,
+// restored with a slow camera orbit. The dark hangar set is still built and
+// used as a fallback when the arena is not available yet (boot), so the menu
+// never renders an empty stage. See setMenuSetVisible() for the swap.
 let menuSet=null,menuSetMaterials=null;
+let menuPreviewMap=null;   // mapId the preview was built for
+// The menu stage's own lighting must not fight the arena's authored sun, so the
+// menu key/rim/fill spot pair is dimmed while the map preview owns the stage.
+let menuPreviewActive=false;
 function buildMenuSet(){
   if(menuSet)return menuSet;
   const g=new T.Group();g.name='menuSet';
@@ -216,17 +230,75 @@ function buildMenuSet(){
 }
 function setMenuSetVisible(on){
   if(!menuSet)buildMenuSet();
-  menuSet.visible=on;
+  // v47: the menu backdrop is the SELECTED MAP'S ARENA, not the hangar set.
+  // Rebuild it whenever the map selection changes so the menu always previews
+  // the map the player is about to drop into.
+  refreshMenuPreview();
+  // The map arena owns the stage; the hangar set is only the fallback shown
+  // before the first arena build completes (boot).
+  const usePreview = !!(menuPreview && menuPreview.root);
+  menuSet.visible = on && !usePreview;
+  if(menuPreview && menuPreview.root) menuPreview.root.visible = on;
+  // The operator pass renders the SHARED gameplay scene, which still holds the
+  // boot-time arena (the last map loaded). If it stayed visible it would paint
+  // the wrong map behind the operator and the preview would never be seen, so
+  // hide the gameplay arena while the menu owns the stage and restore it on
+  // deploy(). The gameplay arena's own lights are scene-level and are handled
+  // by the spot dimming below.
+  if(arena&&arena.root)arena.root.visible=!on;
   // The menu gets its own lighting state: dark base + a tight key/rim pair on
-  // the operator, while the gameplay arena keeps its authored sun.
-  menuKey.visible=on;menuRim.visible=on;menuFill.visible=on;
-  menuSpot.visible=on;menuRim2.visible=on;menuTop.visible=on;menuSide.visible=on;
-  scene.background=on?menuBgColor:sceneBackground;
-  scene.fog=on?menuFog:sceneFogBase;
+  // the operator. With the map preview active the arena's authored sun lights
+  // the world, so the menu spots are dimmed to a gentle key on the operator
+  // instead of blowing out the map.
+  const spots=[menuKey,menuRim,menuFill,menuSpot,menuRim2,menuTop,menuSide];
+  const dim=menuPreviewActive?0.45:1.0;
+  spots.forEach(l=>{l.visible=on;l.intensity=l.userData.baseInt*dim;});
+  scene.background=on?(menuPreviewActive?menuPreviewBg:menuBgColor):sceneBackground;
+  scene.fog=on?(menuPreviewActive?menuPreviewFog:menuFog):sceneFogBase;
 }
 // The gameplay look (set by buildArena/loadMap, restored on deploy).
 let sceneBackground=null,sceneFogBase=null;
 const menuBgColor=new T.Color(0x0b1216),menuFog=new T.Fog(0x0b1216,8,34);
+// v47 map-preview backdrop: the arena gets its own LONG-RANGE fog. The map
+// floor is 76m across and the orbit camera sits at R 46, so the gameplay fog
+// (or the short-range menu hangar fog) would wash the whole arena to a flat
+// colour. Fog far is pushed past the farthest possible arena point so only the
+// far horizon is tinted, keeping the map's own palette dominant.
+const menuPreviewBg=new T.Color(0x101820),menuPreviewFog=new T.Fog(0x101820,70,190);
+// ================================================== MENU MAP PREVIEW =======
+// A separate build of the SELECTED MAP'S arena used as the menu backdrop. It
+// shares PolyVisual.buildArena() with gameplay so the preview is the real map,
+// not an approximation. It lives in its own scene root so deploy() can leave it
+// behind untouched and gameplay never touches it.
+let menuPreview=null,menuPreviewScene=null;
+function refreshMenuPreview(){
+  const want=$('mapSelect')?$('mapSelect').value:'desert';
+  if(menuPreview&&menuPreviewMap===want)return;
+  disposeMenuPreview();
+  try{
+    if(!menuPreviewScene){menuPreviewScene=new T.Scene();menuPreviewScene.background=menuPreviewBg.clone();menuPreviewScene.fog=menuPreviewFog.clone();}
+    const C2=POLY_CORE.forMap?POLY_CORE.forMap(want):POLY_CORE;
+    const built=PolyVisual.buildArena(T,menuPreviewScene,C2,preset);
+    if(!built||!built.root)return;
+    // buildArena sets the scene's background/fog from the map's own palette.
+    // That gameplay fog (near 65 / far 125) is tuned for a first-person camera
+    // INSIDE the arena; the orbit camera sits at R 46 looking across the whole
+    // 76m map, so that fog washes nearly every surface to the horizon colour.
+    // Re-assert the long-range preview fog so the map's palette survives.
+    menuPreviewScene.background=menuPreviewBg;
+    menuPreviewScene.fog=menuPreviewFog;
+    menuPreview=built;
+    menuPreviewMap=want;
+    menuPreviewActive=true;
+  }catch(_){menuPreviewActive=false;}
+}
+function disposeMenuPreview(){
+  if(menuPreview&&menuPreview.dispose){try{menuPreview.dispose();}catch(_){}}
+  menuPreview=null;menuPreviewMap=null;menuPreviewActive=false;
+}
+// The menu character must render IN FRONT of the preview arena. Both share the
+// one #game canvas; the operator is drawn from menuCam and the arena from the
+// orbiting menuOrbitCam, and the render loop composites the two passes.
 // Key light: a cool-white tactical spot from camera-left above; rim light:
 // warm edge from camera-right behind, so the operator separates from the set.
 // (menuKey/menuFill/menuRim are declared with the scene lights above and all
@@ -265,6 +337,23 @@ function armMenuBot(rig){
 const menuCam=new T.PerspectiveCamera(42,1,.1,60);
 menuCam.position.set(-0.68,1.45,3.4);
 menuCam.lookAt(-0.58,1.0,0);
+// v47: the selected-map cinematic backdrop is shot from a SLOW ORBIT camera.
+// All POLY-STRIKE maps are a 76x76 floor (bounds hx/hz 38) so the orbit is a
+// fixed-radius ring at a height that clears the tallest cover (13m) while
+// keeping the horizon above centre. The orbit is deliberately slow: a full
+// revolution takes ~75s, so it reads as a cinematic hold, not a spin.
+// The radius sits INSIDE the fog's near plane so the arena renders with its
+// own palette instead of being washed to the fog colour; the shared menu fog
+// is too short-range for a 76m map.
+const menuOrbitCam=new T.PerspectiveCamera(46,1,.5,400);
+let menuOrbitYaw=0;
+function tickMenuOrbit(dt){
+  // 2*PI / 75 seconds ≈ 0.0838 rad/s.
+  menuOrbitYaw+=dt*0.0838;
+  const R=46, h=26, cx=0, cz=-3;
+  menuOrbitCam.position.set(cx+Math.cos(menuOrbitYaw)*R, h, cz+Math.sin(menuOrbitYaw)*R);
+  menuOrbitCam.lookAt(cx,5,cz);
+}
 // The character is built once the asset pipeline resolves; safe to call twice.
 if(window.PolyAsset)PolyAsset.ready().then(()=>{buildMenuCharacter();});
 // Slow idle sway — subtle, never a zoom.
@@ -293,30 +382,55 @@ readyAll().then(()=>{bindModels();
   // pass would stack two Soldier clones in one group, doubling draw cost and
   // giving raycasts two meshes with mismatched botId tags.
   // Put a rifle in the rig's right hand. The Mixamo skeleton names its hand
-  // bone mixamorigRightHand; the weapon is parented there and rotated into a
-  // ready carry, so it follows the hand through every clip.
+  // bone mixamorigRightHand; the weapon is parented there and oriented so the
+  // barrel runs down the FOREARM (a held rifle points where the arm points),
+  // so it follows the hand through every clip.
   const armBot = (g, rig) => {
     if (!PolyAsset.weapon) return;
     const w = PolyAsset.weapon('akm');
     if (!w) return;
-    let hand = null;
-    rig.traverse(n => { if (!hand && n.isBone && /RightHand$/.test(n.name)) hand = n; });
+    let hand = null, foreArm = null;
+    rig.traverse(n => {
+      if (!n.isBone) return;
+      if (!hand && /RightHand$/.test(n.name)) hand = n;
+      if (!foreArm && /RightForeArm$/.test(n.name)) foreArm = n;
+    });
     if (!hand) return;
     // The rig is 0.01 (Mixamo centimetres -> metres) while the fitted weapon
-    // is at weapon scale (~0.1). Parenting it directly into the hand makes it
-    // render 100x too large and swallow the whole view, so carry it in a
-    // pivot that cancels the rig's scale. The fitted subtree is untouched.
-    // The bot rig is human-scale (1.7m) and the fitted weapon is real-world
-    // sized, so the carry is 1:1.
+    // is real-world sized. Parenting it directly into the hand makes it render
+    // 100x too large, so carry it in a pivot that cancels the rig's scale.
+    // The fitted subtree is untouched.
     const rs = Math.max(1e-6, rig.scale.x || 0.01);
     const pivot = new T.Group();
     pivot.scale.setScalar(1 / rs);
-    pivot.add(w);
-    // Compose the hold in the hand's local frame: barrel forward, muzzle down
-    // the -Z of the weapon's own fitting space.
+    // The rotation goes on an inner group: the pivot only cancels scale, so the
+    // orientation is composed in the hand's local frame and offset freely.
+    const inner = new T.Group();
+    pivot.add(inner);
+    inner.add(w);
     hand.add(pivot);
-    pivot.position.set(0, 0, 0.02);
-    pivot.rotation.set(0, Math.PI * -0.06, 0);
+    // Barrel along the forearm. The fitted gun's local -Z is the bore (its
+    // muzzle anchor sits at z = -0.9) and its +Z is the receiver, so pointing
+    // the bore down the arm is: worldDir(gun -Z) = forearm.
+    let fwd;
+    if (foreArm) {
+      const hp = new T.Vector3(), ap = new T.Vector3();
+      hand.getWorldPosition(hp); foreArm.getWorldPosition(ap);
+      fwd = hp.sub(ap).normalize();
+    } else {
+      fwd = new T.Vector3(0, 0, 1);
+    }
+    const upHint = new T.Vector3(0, 1, 0);
+    const zT = fwd.clone();                                   // gun -Z target
+    const yT = upHint.clone().addScaledVector(zT, -upHint.dot(zT)).normalize();
+    const xT = new T.Vector3().crossVectors(yT, zT).normalize();
+    const qWorld = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(xT, yT, zT));
+    const handInv = new T.Quaternion().setFromRotationMatrix(new T.Matrix4().extractRotation(hand.matrixWorld)).invert();
+    inner.quaternion.copy(handInv).multiply(qWorld);
+    // The fitted viewmodel holds the gun with the hands at z = -0.739 in the
+    // gun's own frame (0.827 from the muzzle). Put that point on the hand bone
+    // so the receiver sits at the elbow and the muzzle is forward of the fist.
+    w.position.set(0, 0, 0.739);
     pivot.userData.botWeapon = true;
   };
 
@@ -645,6 +759,9 @@ function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=f
  // Hand the stage to the arena: restore its own background/fog and drop the
  // menu key/rim lights so the match looks like the map, not the lobby.
  setMenuSetVisible(false);
+ // The menu preview arena is a separate build of the same map; free its GPU
+ // memory now that the real arena owns the stage.
+ disposeMenuPreview();
  match=C.MAP.training?C.createTrainingMatch('skirmish'):C.createMatch(C.MAP,'skirmish');rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();A.setPaused(false);lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();A.setPaused(true);$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
 function cancelInspect(){ if(inspPhase===INSP.READY) return; inspectHold=false; if(inspPhase===INSP.HOLD||inspPhase===INSP.IN){ inspPhase=INSP.OUT; inspT=1-Math.max(0,Math.min(1,inspT)); } }
@@ -989,6 +1106,9 @@ function openSettings(){settingsReturn=document.activeElement;settingsFrom=windo
 // v43: HOME's button list is gone; every one of these wirings must tolerate a
 // missing element or the whole IIFE dies at boot and the game never boots.
 const wire=(id,fn)=>{const b=$(id);if(b)b.onclick=fn;};
+// v47: the menu backdrop previews the SELECTED map, so a change in the map
+// dropdown rebuilds the cinematic arena behind the operator.
+$('mapSelect').addEventListener('change',()=>{A.sound('switch');refreshMenuPreview();setMenuSetVisible(true);});
 wire('settingsButton',()=>{A.start();navTo('settings');});
 $('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
@@ -1602,17 +1722,21 @@ function animateWeapon(dt){
  // The slash is a DIAGONAL arc, not a pistol-style jab: the blade chops down
  // and out across the body, then returns. On top of the tactical pose above.
  if(swing>0){
-  // A rig that ships its own Blender `Attack` clip owns the arm motion, so
-  // skip the procedural arc for it (the mixer plays the authored slash).
-  if(!(u.isRig&&u.acts&&u.acts.attack)){
-   const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
-   m.rotation.x-=arc*1.15;
-   m.rotation.y-=arc*.5;
-   m.rotation.z+=arc*.45;
-   m.position.x+=arc*.05;
-   m.position.y+=arc*.07;
+   // v47: the spliced knife `Attack` clip is a re-posed static hold — the arm
+   // motion it carried was a foreign-unit teleport, so it was neutralised and
+   // the slash is the procedural arc below. Only a rig shipping a REAL authored
+   // swing (a clip that actually moves the arms) supersedes this.
+   if(u.isRig&&u.acts&&u.acts.attack&&u.userData.hasRealAttack){
+    // the mixer plays the authored slash
+   }else{
+    const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
+    m.rotation.x-=arc*1.15;
+    m.rotation.y-=arc*.5;
+    m.rotation.z+=arc*.45;
+    m.position.x+=arc*.05;
+    m.position.y+=arc*.07;
+   }
   }
- }
  if(reload>0){const w=C.WEAPONS[weapon],progress=1-reload/w.reloadTime;
   // Three-stage tactical swap: drop the old mag (0-.25), hold open (.25-.55),
   // seat the fresh mag (.55-1). The old mag is thrown as a world effect once.
@@ -1661,9 +1785,10 @@ function animateWeapon(dt){
   // tilt. Not every rig ships Inspect (the supplied AKM/Glock rigs don't),
   // so fall back to the idle key when the clip is absent.
   let key='idle';
-  // The knife's swing is authored in Blender as an `Attack` clip, so prefer it
-  // over the procedural arc whenever the rig ships one.
-  if(weapon==='knife'&&swing>0&&u.acts&&u.acts.attack)key='attack';
+  // The knife's swing was authored in Blender as an `Attack` clip; the spliced
+  // version is a static hold, so only play it if the rig ships a REAL swing
+  // (otherwise the procedural arc in animateWeapon does the work).
+  if(weapon==='knife'&&swing>0&&u.acts&&u.acts.attack&&u.userData.hasRealAttack)key='attack';
   else if(inspecting()&&u.acts&&u.acts.inspect)key='inspect';
   else if(reload>0&&u.acts&&u.acts.reload)key='reload';
   else if(bolt>0||flashTime>0)key='shoot';
@@ -1706,18 +1831,24 @@ function tick(now){
  // above (line ~579); a second decrement here would count the same reload
  // down twice and complete it early, so there is deliberately none.
  if(!started){
-   // MENU STAGE. The operator stands centre-frame on the shared canvas while
-   // the menu is open; gameplay takes the camera back over on deploy().
-   // The tactical set owns the stage while the arena is not live, so the menu
-   // never presents the bright desert map as a backdrop.
-   setMenuSetVisible(true);
-   tickMenu(dt);
-   const r=renderer.domElement;
-   menuCam.aspect=r.clientWidth/Math.max(1,r.clientHeight);
-   menuCam.updateProjectionMatrix();
-   if(!menuChar&&window.PolyAsset&&PolyAsset.progress&&PolyAsset.progress().soldier)buildMenuCharacter();
-   cam.position.copy(menuCam.position);cam.quaternion.copy(menuCam.quaternion);
- }
+    // MENU STAGE. The operator stands centre-frame on the shared canvas while
+    // the menu is open; gameplay takes the camera back over on deploy().
+    // v47: the backdrop is the SELECTED MAP'S ARENA, shot from a slow orbit
+    // camera. The dark hangar set remains the fallback while the arena has not
+    // been built yet, so the stage is never empty.
+    setMenuSetVisible(true);
+    tickMenu(dt);
+    const r=renderer.domElement;
+    menuCam.aspect=r.clientWidth/Math.max(1,r.clientHeight);
+    menuCam.updateProjectionMatrix();
+    if(menuPreview&&menuPreview.root){
+      tickMenuOrbit(dt);
+      menuOrbitCam.aspect=menuCam.aspect;
+      menuOrbitCam.updateProjectionMatrix();
+    }
+    if(!menuChar&&window.PolyAsset&&PolyAsset.progress&&PolyAsset.progress().soldier)buildMenuCharacter();
+    cam.position.copy(menuCam.position);cam.quaternion.copy(menuCam.quaternion);
+  }
  // Full-auto only: semi-auto weapons fire once per trigger pull (shoot() is
  // already called on mousedown), so re-firing here would break their cadence.
  if(trigger&&running&&match.phase==='live'&&cool<=0&&reload<=0&&bolt<=0&&C.WEAPONS[weapon].auto)shoot();
@@ -1747,7 +1878,28 @@ function tick(now){
   }
   mx.update(dt);g.updateMatrixWorld(true);
  }for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.life-=dt;if(e.v){e.o.position.addScaledVector(e.v,dt);if(e.spin){e.v.y-=4*dt;e.o.rotation.x+=dt*8;}if(e.smoke){e.o.scale.multiplyScalar(1+dt*2);e.o.material.opacity=Math.max(0,e.life*.6);}}if(e.decal){e.o.material.opacity=Math.max(0,e.life/6*.9);}if(e.life<=0){const o=e.o;scene.remove(o);if(decalPool.includes(o))o.visible=false;else o.traverse(n=>{n.geometry?.dispose();if(n.material)for(const m of [n.material].flat())m.dispose();});effects.splice(i,1);}}
- renderer.info.reset();renderer.clear();renderer.render(scene,cam);if(started){renderer.clearDepth();renderer.render(viewScene,viewCam);}
+ renderer.info.reset();
+ // v47 menu map preview: the arena pass is drawn FIRST from the slow orbit
+ // camera, then the operator pass is painted over it. Three.js paints
+ // scene.background as a full-screen fill at the start of every render(), so
+ // the operator pass would erase the arena with the shared scene's dark menu
+ // base. The background is swapped out for the operator pass only and restored
+ // right after. clearDepth() between the passes keeps the operator's own depth
+ // test correct without wiping the arena's colour. The preview arena lives in
+ // its own scene so it never shares the gameplay scene's transform state.
+ const previewOn = !!(menuPreview&&menuPreview.root&&menuPreview.root.visible&&!started);
+ if(previewOn){
+   renderer.render(menuPreviewScene,menuOrbitCam);
+   renderer.clearDepth();                       // drop arena depth, keep its colour
+ } else {
+   renderer.clear();
+ }
+ const savedBg = previewOn ? scene.background : null;
+ const savedFog = previewOn ? scene.fog : null;
+ if(previewOn){ scene.background=null; scene.fog=null; }   // geometry-only pass
+ renderer.render(scene,cam);
+ if(previewOn){ scene.background=savedBg; scene.fog=savedFog; }
+ if(started){renderer.clearDepth();renderer.render(viewScene,viewCam);}
  // Loadout hub: the preview renders into its own WebGL context on
  // #loadoutCanvas (see resizeLoadout/loadoutRenderer above), so the main
  // scene's viewport is never touched and the panel cannot paint over it.
