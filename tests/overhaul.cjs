@@ -230,7 +230,11 @@ test('the old inspection framework is fully removed', () => {
   // The new state machine is present: the F keybind starts it and the machine
   // drives the eased blend in animateWeapon.
   assert.ok(/KeyF'\)\{startInspect\(\)/.test(game), 'F inspect keybind starts the machine');
-  assert.ok(/if\(e\.code==='KeyF'\)inspectHold=false/.test(game), 'F release ends inspection');
+  // v48: a single F press arms a fixed-length run, so releasing F must NOT
+  // cancel it (the old hold-to-inspect behaviour is gone). Assert the cancel
+  // clause is absent rather than present.
+  assert.ok(!/if\(e\.code==='KeyF'\)inspectHold=false/.test(game), 'F release no longer ends inspection (v48 timed run)');
+  assert.ok(/INSP_HOLD_SECONDS/.test(game), 'the inspection has a fixed hold duration');
   assert.ok(/function stepInspect\(dt\)/.test(game), 'inspection state machine advances per frame');
   assert.ok(/function inspectBlend\(\)/.test(game), 'inspection blend weight exists');
   assert.ok(/READY.*IN.*HOLD.*OUT/.test(game), 'READY/IN/HOLD/OUT phases documented');

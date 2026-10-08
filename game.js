@@ -147,6 +147,10 @@ function buildMenuCharacter(){
   g.add(rig);
   g.position.set(0,0,0);
   g.rotation.set(0,Math.PI,0);        // face the camera (menuCam sits at +Z looking -Z)
+  // v48: the operator stands where the ORBIT camera can see it. The v47 build
+  // left the character at the world origin facing +Z, which is right for the
+  // static menuCam but not for a camera that revolves around the map; the
+  // character is now re-oriented toward the camera every frame in tickMenu().
   scene.add(g);
   menuChar=g;
   const idle=PolyAsset.clip('idle');
@@ -231,11 +235,13 @@ function buildMenuSet(){
 function setMenuSetVisible(on){
   if(!menuSet)buildMenuSet();
   // v47: the menu backdrop is the SELECTED MAP'S ARENA, not the hangar set.
-  // Rebuild it whenever the map selection changes so the menu always previews
-  // the map the player is about to drop into.
-  refreshMenuPreview();
+  // v48: the arena is only staged on HOME/PLAY — the other sections are flat
+  // panels with their own backgrounds, and the arena behind them is noise.
+  // refreshMenuPreview() is a no-op when the requested map is already built.
+  if(on)refreshMenuPreview();
   // The map arena owns the stage; the hangar set is only the fallback shown
-  // before the first arena build completes (boot).
+  // before the first arena build completes (boot), or on a section that does
+  // not stage the preview.
   const usePreview = !!(menuPreview && menuPreview.root);
   menuSet.visible = on && !usePreview;
   if(menuPreview && menuPreview.root) menuPreview.root.visible = on;
@@ -260,11 +266,63 @@ function setMenuSetVisible(on){
 let sceneBackground=null,sceneFogBase=null;
 const menuBgColor=new T.Color(0x0b1216),menuFog=new T.Fog(0x0b1216,8,34);
 // v47 map-preview backdrop: the arena gets its own LONG-RANGE fog. The map
-// floor is 76m across and the orbit camera sits at R 46, so the gameplay fog
+// floor is 76m across and the orbit camera sits at R 44, so the gameplay fog
 // (or the short-range menu hangar fog) would wash the whole arena to a flat
 // colour. Fog far is pushed past the farthest possible arena point so only the
 // far horizon is tinted, keeping the map's own palette dominant.
+// v48: the preview sky is a real horizon GRADIENT, not a flat fill. The v47
+// backdrop was a single near-black colour (0x101820), so everything above the
+// arena's roofline read as pure black. A gradient dome drawn from the map's own
+// horizon palette gives the map an actual sky without importing any new asset
+// and without painting anything over the canvas: it is a mesh in the preview
+// scene, so the arena geometry still occludes it normally.
 const menuPreviewBg=new T.Color(0x101820),menuPreviewFog=new T.Fog(0x101820,70,190);
+let menuPreviewSky=null;
+// Build (once) the sky the preview composites against. A wide downward-facing
+// bowl above the arena, vertex-coloured from the horizon colour up to a slightly
+// desaturated zenith, so the sky band behind the map's roofline is a real
+// gradient instead of a flat fill. Fog does not reach it (it is at radius 150,
+// past menuPreviewFog.far), so its colours survive.
+function buildMenuPreviewSky(){
+  if(menuPreviewSky)return menuPreviewSky;
+  const geo=new T.SphereGeometry(150,24,12,0,Math.PI*2,0,Math.PI*0.52);
+  const horizon=new T.Color(menuPreviewBg), zenith=new T.Color(menuPreviewBg);
+  // Darken and cool the zenith slightly so the sky has depth without ever
+  // leaving the dark tactical palette the UI scrim is built for.
+  zenith.multiplyScalar(0.55).offsetHSL(0,0,0.02);
+  const colors=new Float32Array(geo.attributes.position.count*3);
+  const pos=geo.attributes.position, up=new T.Vector3(0,1,0), c=new T.Color();
+  for(let i=0;i<pos.count;i++){
+    const y=pos.getY(i)/150;                       // 0 at the horizon, 1 at the top
+    c.copy(horizon).lerp(zenith,Math.max(0,Math.min(1,y)));
+    colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;
+  }
+  geo.setAttribute('color',new T.BufferAttribute(colors,3));
+  const mat=new T.MeshBasicMaterial({vertexColors:true,side:T.BackSide,depthWrite:false,fog:false});
+  menuPreviewSky=new T.Mesh(geo,mat);
+  menuPreviewSky.name='menuPreviewSky';
+  menuPreviewSky.renderOrder=-1;
+  menuPreviewSky.frustumCulled=false;
+  return menuPreviewSky;
+}
+// The sky is re-tinted per map so it matches the arena the player is looking at
+// (a desert map gets a warm horizon, a night-industrial map a cold one) instead
+// of always carrying the same fixed colour.
+function tintMenuPreviewSky(base){
+  if(!menuPreviewSky)return;
+  const b=base||(menuPreviewScene&&menuPreviewScene.background)||menuPreviewBg;
+  const horizon=new T.Color(b), zenith=new T.Color(b);
+  zenith.multiplyScalar(0.55).offsetHSL(0,0,0.02);
+  const geo=menuPreviewSky.geometry, colors=geo.attributes.color.array;
+  const pos=geo.attributes.position;
+  const c=new T.Color();
+  for(let i=0;i<pos.count;i++){
+    const y=Math.max(0,Math.min(1,pos.getY(i)/150));
+    c.copy(horizon).lerp(zenith,y);
+    colors[i*3]=c.r;colors[i*3+1]=c.g;colors[i*3+2]=c.b;
+  }
+  geo.attributes.color.needsUpdate=true;
+}
 // ================================================== MENU MAP PREVIEW =======
 // A separate build of the SELECTED MAP'S arena used as the menu backdrop. It
 // shares PolyVisual.buildArena() with gameplay so the preview is the real map,
@@ -282,9 +340,15 @@ function refreshMenuPreview(){
     if(!built||!built.root)return;
     // buildArena sets the scene's background/fog from the map's own palette.
     // That gameplay fog (near 65 / far 125) is tuned for a first-person camera
-    // INSIDE the arena; the orbit camera sits at R 46 looking across the whole
+    // INSIDE the arena; the orbit camera sits at R 44 looking across the whole
     // 76m map, so that fog washes nearly every surface to the horizon colour.
     // Re-assert the long-range preview fog so the map's palette survives.
+    // v48: a real sky gradient above the roofline, tinted from the MAP's own
+    // horizon colour (buildArena just set it), so the sky matches the arena the
+    // player is looking at instead of always being the same fixed colour.
+    const mapHorizon=menuPreviewScene.background;
+    menuPreviewScene.add(buildMenuPreviewSky());
+    tintMenuPreviewSky(mapHorizon);
     menuPreviewScene.background=menuPreviewBg;
     menuPreviewScene.fog=menuPreviewFog;
     menuPreview=built;
@@ -296,6 +360,17 @@ function disposeMenuPreview(){
   if(menuPreview&&menuPreview.dispose){try{menuPreview.dispose();}catch(_){}}
   menuPreview=null;menuPreviewMap=null;menuPreviewActive=false;
 }
+// v48: the map preview is only staged on HOME/PLAY. disposeMenuPreview() frees
+// the arena; this keeps the map selection so the rebuild on the way back is a
+// no-op when nothing changed. Returns true when the preview is actually on.
+function applyMenuPreview(on){
+  if(on){
+    refreshMenuPreview();
+  }else{
+    disposeMenuPreview();
+  }
+  return menuPreviewActive;
+}
 // The menu character must render IN FRONT of the preview arena. Both share the
 // one #game canvas; the operator is drawn from menuCam and the arena from the
 // orbiting menuOrbitCam, and the render loop composites the two passes.
@@ -306,10 +381,19 @@ function disposeMenuPreview(){
 // Pose the menu operator with the equipped primary, mirroring armBot() above
 // but with no combat wiring (no botId, no firing). Defined AFTER readyAll so
 // the armBot reference it echoes is already in scope; it only uses PolyAsset.
+// v48: the menu character holds the weapon the player currently has EQUIPPED
+// (the viewmodel slot, not just primary) so the presentation matches the
+// loadout the player is about to drop in with.
 function armMenuBot(rig){
   try{
     if(!PolyAsset.weapon)return;
-    const w=PolyAsset.weapon(primary);
+    // The menu shows the weapon the player is currently examining in the
+    // loadout — that is `loadoutSelected`, which every card click updates.
+    // The module-level `weapon` here is the last gun used in a match (or the
+    // default), and `primary` is only written by the two rifle cards, so
+    // reading either would leave the operator holding a stale gun after the
+    // player picks a pistol or the blade.
+    const w=PolyAsset.weapon(loadoutSelected);
     if(!w)return;
     let hand=null;
     rig.traverse(n=>{if(!hand&&n.isBone&&/RightHand$/.test(n.name))hand=n;});
@@ -345,14 +429,22 @@ menuCam.lookAt(-0.58,1.0,0);
 // The radius sits INSIDE the fog's near plane so the arena renders with its
 // own palette instead of being washed to the fog colour; the shared menu fog
 // is too short-range for a 76m map.
+// v48: the orbit is a THIRD of the v47 speed (a ~4-minute revolution) with a
+// gentle vertical drift and a slowly-varying look-at height. It is a separate
+// PerspectiveCamera that is never parented to, or derived from, the gameplay
+// camera: it carries no yaw/pitch, no mouse-look state and no recoil, so the
+// menu can never inherit first-person camera motion.
 const menuOrbitCam=new T.PerspectiveCamera(46,1,.5,400);
 let menuOrbitYaw=0;
 function tickMenuOrbit(dt){
-  // 2*PI / 75 seconds ≈ 0.0838 rad/s.
-  menuOrbitYaw+=dt*0.0838;
-  const R=46, h=26, cx=0, cz=-3;
+  // 2*PI / 240 seconds ≈ 0.0262 rad/s: a full revolution takes 4 minutes, so
+  // the motion reads as a slow crane around the map, not a turntable.
+  menuOrbitYaw+=dt*0.02618;
+  // A gentle 2.4s vertical breath and a slow look-height drift keep the frame
+  // alive without ever panning away from the map.
+  const R=44, h=26+Math.sin(menuOrbitYaw*0.7)*3.5, cx=0, cz=-3;
   menuOrbitCam.position.set(cx+Math.cos(menuOrbitYaw)*R, h, cz+Math.sin(menuOrbitYaw)*R);
-  menuOrbitCam.lookAt(cx,5,cz);
+  menuOrbitCam.lookAt(cx,5+Math.sin(menuOrbitYaw*0.35)*2,cz);
 }
 // The character is built once the asset pipeline resolves; safe to call twice.
 if(window.PolyAsset)PolyAsset.ready().then(()=>{buildMenuCharacter();});
@@ -361,7 +453,21 @@ let menuYaw=0;
 function tickMenu(dt){
   if(menuMixer)menuMixer.update(dt);
   menuYaw+=dt*.18;
-  if(menuChar)menuChar.rotation.set(0,Math.PI+Math.sin(menuYaw*.5)*.12,0);
+  // v48: the operator faces the ORBIT camera, not a fixed direction. The v47
+  // static build faced +Z and the orbit revolves around the map, so from most
+  // angles the player saw the operator's back. Facing the active camera keeps
+  // the presentation reading as "character on display" from every orbit angle.
+  if(menuChar){
+    if(menuPreviewActive&&menuPreview&&menuPreview.root){
+      // The preview is on: the camera revolves, so turn the character toward it.
+      const cp=menuOrbitCam.position;
+      menuChar.rotation.set(0,Math.atan2(cp.x-menuChar.position.x,cp.z-menuChar.position.z)+Math.PI,0);
+    }else{
+      // No preview (a flat section, or before the first arena build): face the
+      // fixed menu camera, as v47 did.
+      menuChar.rotation.set(0,Math.PI+Math.sin(menuYaw*.5)*.12,0);
+    }
+  }
 }
 // The addon shim in index.html is a module and loads asynchronously; wait
 // for both it and the assets before building anything mesh-shaped.
@@ -430,7 +536,10 @@ readyAll().then(()=>{bindModels();
     // The fitted viewmodel holds the gun with the hands at z = -0.739 in the
     // gun's own frame (0.827 from the muzzle). Put that point on the hand bone
     // so the receiver sits at the elbow and the muzzle is forward of the fist.
-    w.position.set(0, 0, 0.739);
+    // v48: measured in a live match that 0.739 left the hand 0.28 in front of
+    // the gun's centre — the rifle floated behind the fist. Shifting the grip
+    // point forward brings the receiver to the hand so the rifle reads as held.
+    w.position.set(0, 0, 0.46);
     pivot.userData.botWeapon = true;
   };
 
@@ -495,6 +604,30 @@ readyAll().then(()=>{bindModels();
 // asynchronously and weapon() returns null before it resolves, which left
 // every viewScene weapon group empty and the in-game weapon invisible.
 let modelsBound=false;
+// v48: is an AnimationClip a real motion or a static hold? The spliced donor
+// clips (`Attack` on the knife rig is one) carry the donor's frame-zero pose
+// on every bone with no keyframe-to-keyframe movement, so playing them changes
+// nothing and a viewmodel driven by them would just freeze. A clip only counts
+// as authored motion when consecutive KEYFRAMES actually differ: the range has
+// to be measured per frame (each track's values are a flat [c0..cN, c0..cN, ...]
+// run, so scanning the whole array would let a single frame's component spread
+// — a quaternion whose x is -0.56 and w is 0.81 — read as motion). False is
+// returned for a degenerate/empty clip so the caller keeps its fallback.
+function clipMovesBones(clip){
+  if(!clip||!clip.tracks||!clip.tracks.length)return false;
+  for(const tr of clip.tracks){
+    const v=tr.values,t=tr.times;
+    if(!v||v.length<2||!t||t.length<2)continue;
+    const c=v.length/t.length;               // components per keyframe
+    let moved=false;
+    for(let f=1;!moved&&f<t.length;f++){
+      const o=f*c;
+      for(let i=0;i<c;i++){if(Math.abs(v[o+i]-v[o-c+i])>0.001){moved=true;break;}}
+    }
+    if(moved)return true;
+  }
+  return false;
+}
 // A weapon whose rig is bound carries its own arms, so the viewmodel is the
 // rig (arms + gun at the authored grip); the rest stay weapon-only. Tracked so
 // animateWeapon can skip the parts the rig already owns (muzzle, ads anchor).
@@ -536,6 +669,17 @@ const bindModels=()=>{
    rigged[key]=!!src.userData.isRig;
 
   src.traverse(o=>{o.userData.basePos=o.position.clone();o.userData.baseRot=o.rotation.clone();});
+  // v48: the knife's `Attack` clip is a real authored swing (72 tracks, 48
+  // moving, the full arm+finger chains) but it was never flagged, so
+  // animateWeapon fell back to the procedural arc. Flag it here, at bind time,
+  // from the clip itself rather than hard-coding a per-weapon list: any rig
+  // whose attack clip actually moves bones gets the authored swing, and any
+  // rig whose is a static hold (the spliced donor clips) keeps the procedural
+  // fallback. Measured on the shipped GLBs, so nothing is round-tripped.
+  if(src.userData.isRig&&src.userData.acts&&src.userData.acts.attack){
+    const a=src.userData.acts.attack;
+    src.userData.hasRealAttack=clipMovesBones(a.getClip());
+  }
   // Per-weapon viewmodel pose: an optional small sight-line pitch on top of the
   // fit. fitWeapon already maps the measured bore onto -Z with sights on
   // +Y, so the weapon arrives level and forward; no -90deg pitch is wanted
@@ -588,18 +732,29 @@ const VIEWMODEL_POSE={
 // right, y<0 is below the crosshair. The right offset places the weapon in the
 // lower-right area of the frame - NOT centred, NOT directly under the crosshair -
 // and the depth keeps enough of it visible that the player can see what they hold.
+// v48: placements re-measured against the LIVE viewmodel box in a running match.
+// The v47 values were tuned on the fitted weapon alone, but a rig's box also
+// spans the ARMS (the AKM rig is 0.9m deep and 0.74m tall with elbows), so the
+// frustum fraction landed the rigs mostly off-frame — the Glock's box reached
+// ±2000px on a 758px screen and the AKM's centre sat at +0.10 NDC, clear over
+// the weapon HUD. These values are read off the projected rig box so the whole
+// presentation (arms included) sits on screen with a real gap to the HUD.
 const READY={
- akm:{fx:.30,fy:-.52,d:.72},
- l96:{fx:.28,fy:-.50,d:.80},
- hecate:{fx:.28,fy:-.50,d:.86},
- deagle:{fx:.34,fy:-.48,d:.50},
+ // Rifles: lower-right, right edge left of the slot HUD (which starts at
+ // ~0.88 NDC), bottom inside the frame, a visible gap to the HUD at all times.
+ akm:{fx:.44,fy:-.26,d:1.53},
+ l96:{fx:.47,fy:-.24,d:1.69},
+ hecate:{fx:.47,fy:-.24,d:1.75},
+ // Pistols: same presentation philosophy as the rifles — the Deagle and Glock
+ // share identical framing; only the gun mesh between the hands changes.
+ deagle:{fx:.45,fy:-.25,d:1.28},
+ glock:{fx:.37,fy:-.24,d:1.40},
+ mossberg:{fx:.44,fy:-.26,d:1.53},
  // The knife is held closer and higher than a sidearm: a short blade needs
  // less depth to frame, and it sits forward of the hip so the swing has room.
- knife:{fx:.34,fy:-.40,d:.40},
- glock:{fx:.34,fy:-.48,d:.50},
- mossberg:{fx:.30,fy:-.52,d:.80},
- grenade:{fx:.32,fy:-.46,d:.44},
- flash:{fx:.32,fy:-.46,d:.44},
+ knife:{fx:.15,fy:-.22,d:1.52},
+ grenade:{fx:.45,fy:-.25,d:1.28},
+ flash:{fx:.45,fy:-.25,d:1.28},
 };
 // Per-weapon INSPECTION target, in the same frustum-fraction units. The weapon
 // tilts (the existing good motion) and then moves toward the RIGHT side of the
@@ -657,13 +812,17 @@ let ads=false,adsBlend=0,slide=0,slideCool=0,slideX=0,slideZ=0;
 //   READY -> INSPECTING_IN -> INSPECTING_HOLD -> INSPECTING_OUT -> READY
 // INSPECTING_IN plays the existing tilt/rotation motion and then carries the
 // weapon toward the RIGHT side of the screen (never the centre). HOLD keeps it
-// there to be examined. OUT eases back to the exact ready transform. While F is
-// held the machine lingers in HOLD; releasing F from any state routes through
-// OUT so the return is always smooth. Firing/reloading/switching/death all
+// there to be examined for a fixed 5s — a single press of F arms the whole run
+// and releasing F does NOT cancel it, so the player can tap F and let go.
+// Pressing F again while already inspecting is ignored (as is key auto-repeat,
+// guarded by the READY gate), so inspections never stack or restart. OUT eases
+// back to the exact ready transform. Firing/reloading/switching/death all
 // cancel by routing to OUT, and no shot is possible while inspPhase !== READY.
 const INSP = { READY: 0, IN: 1, HOLD: 2, OUT: 3 };
+const INSP_HOLD_SECONDS = 5;   // a full inspection lingers this long
 let inspPhase = INSP.READY;
 let inspT = 0;              // 0..1 progress within the IN/OUT phase
+let inspHoldTime = 0;       // seconds left in HOLD
 let inspectHold = false;
 // The exact ready transform captured at the moment inspection began. Returning
 // to this every time guarantees zero drift across repeated inspections.
@@ -764,23 +923,27 @@ function deploy(fresh=true){if(fresh){finished=false;if(onlineMode){onlineMode=f
  disposeMenuPreview();
  match=C.MAP.training?C.createTrainingMatch('skirmish'):C.createMatch(C.MAP,'skirmish');rng=C.mulberry32(4451);spawn();feed=[];weapon=primary;}started=true;running=true;$('rematchControls').hidden=true;clearInput();document.activeElement?.blur();$('menu').hidden=true;$('pause').hidden=true;$('hud').hidden=false;A.start();A.setPaused(false);lock();}
 function pause(){if(!started||!running)return;running=false;clearInput();A.setPaused(true);$('pauseTitle').textContent='PAUSED';$('pauseText').textContent=onlineMode?'Online match continues. Click resume to return.':'Your offline match is frozen. Click resume to return.';$('resume').hidden=false;$('pause').hidden=false;if(document.pointerLockElement)document.exitPointerLock();}
-function cancelInspect(){ if(inspPhase===INSP.READY) return; inspectHold=false; if(inspPhase===INSP.HOLD||inspPhase===INSP.IN){ inspPhase=INSP.OUT; inspT=1-Math.max(0,Math.min(1,inspT)); } }
-function startInspect(){ if(inspPhase!==INSP.READY) return; inspectHold=true; inspPhase=INSP.IN; inspT=0; }
+function cancelInspect(){ if(inspPhase===INSP.READY) return; inspectHold=false; inspHoldTime=0; if(inspPhase===INSP.HOLD||inspPhase===INSP.IN){ inspPhase=INSP.OUT; inspT=1-Math.max(0,Math.min(1,inspT)); } }
+function startInspect(){ if(inspPhase!==INSP.READY) return; inspectHold=true; inspHoldTime=INSP_HOLD_SECONDS; inspPhase=INSP.IN; inspT=0; }
 // Advances the inspection machine. animateWeapon() calls this every frame.
-// IN and OUT use an ease-in-out curve; HOLD has no timer of its own (it lasts
-// as long as F is held) so the examine step cannot be cut short by a clock.
+// IN and OUT use an ease-in-out curve; HOLD counts down its fixed 5s and then
+// routes itself to OUT, so a single tap of F runs the full inspection and
+// returns to idle with no further input.
 function stepInspect(dt) {
- if (inspPhase === INSP.READY) { inspFrom = null; return; }
- if (inspPhase === INSP.HOLD) { if (!inspectHold) { inspPhase = INSP.OUT; inspT = 0; } return; }
- const IN_DUR = 0.42, OUT_DUR = 0.34;
- const dur = inspPhase === INSP.IN ? IN_DUR : OUT_DUR;
- if (inspPhase === INSP.IN) {
-  inspT += dt / IN_DUR;
-  if (inspT >= 1) { inspT = 1; inspPhase = inspectHold ? INSP.HOLD : INSP.OUT; }
- } else {
-  inspT += dt / OUT_DUR;
-  if (inspT >= 1) { inspT = 1; inspPhase = INSP.READY; inspFrom = null; }
- }
+  if (inspPhase === INSP.READY) { inspFrom = null; return; }
+  if (inspPhase === INSP.HOLD) {
+    inspHoldTime -= dt;
+    if (inspHoldTime <= 0) { inspHoldTime = 0; inspPhase = INSP.OUT; inspT = 0; }
+    return;
+  }
+  const IN_DUR = 0.42, OUT_DUR = 0.34;
+  if (inspPhase === INSP.IN) {
+   inspT += dt / IN_DUR;
+   if (inspT >= 1) { inspT = 1; inspPhase = inspectHold ? INSP.HOLD : INSP.OUT; }
+  } else {
+   inspT += dt / OUT_DUR;
+   if (inspT >= 1) { inspT = 1; inspPhase = INSP.READY; inspFrom = null; inspectHold=false; inspHoldTime=0; }
+  }
 }
 // Eased 0..1 used by animateWeapon to blend between the ready and inspection
 // transforms. IN ramps up (with the tilt leading the slide), OUT ramps down.
@@ -951,15 +1114,12 @@ function spawnDecal(hit){if(!hit.face)return;let o=decalPool.find(d=>!d.visible)
  // Fade out over ~6s so walls do not accumulate permanent marks.
  effects.push({o,life:6,decal:true});}
 function syncBots(){match.bots.forEach((b,i)=>{const o=bots[i];
- // v43 netcode: in online mode bot[0] IS the remote player. Render it from the
- // interpolated trail sample instead of b.pos so the opponent moves smoothly
- // between 20 Hz snapshots instead of freezing and teleporting. The footstep
- // timer and game logic still read the authoritative b.pos.
  if(onlineMode&&i===0){const s=sampleEnemyTrail();if(s)b.pos={x:s.x,z:s.z};}
- // Ragdoll/tip-over death removed: bots simply vanish on death and respawn
- // cleanly at their pad. This removes the falling-into-the-ground glitch
- // that could leave a corpse overlapping a spawn point.
- const show=b.alive;
+ // v48: the menu stage is a presentation shot, not a match. The gameplay bots
+ // are hidden on it so the single menu operator owns the frame; during a match
+ // the bot's own alive state decides, as before.
+ const menuShot=!started&&menuChar&&(window.__nav==='home'||window.__nav==='play');
+ const show=menuShot?false:b.alive;
     o.visible=show;o.position.set(b.pos.x,0,b.pos.z);o.rotation.y=Math.atan2(x-b.pos.x,z-b.pos.z);
  // Static training targets are clamped to their pad: no drift, no air gap.
  if(match.training&&match.mode!=='active'){o.position.y=0;o.rotation.x=0;o.rotation.z=0;}
@@ -1107,8 +1267,9 @@ function openSettings(){settingsReturn=document.activeElement;settingsFrom=windo
 // missing element or the whole IIFE dies at boot and the game never boots.
 const wire=(id,fn)=>{const b=$(id);if(b)b.onclick=fn;};
 // v47: the menu backdrop previews the SELECTED map, so a change in the map
-// dropdown rebuilds the cinematic arena behind the operator.
-$('mapSelect').addEventListener('change',()=>{A.sound('switch');refreshMenuPreview();setMenuSetVisible(true);});
+// dropdown rebuilds the cinematic arena behind the operator. v48: only while a
+// section that stages the preview is on screen.
+$('mapSelect').addEventListener('change',()=>{A.sound('switch');if(menuPreviewActive)refreshMenuPreview();});
 wire('settingsButton',()=>{A.start();navTo('settings');});
 $('pauseSettings').onclick=openSettings;
 $('performanceToggle').onchange=()=>{$('graphics').value=$('performanceToggle').checked?'performance':'medium';};
@@ -1319,6 +1480,12 @@ function navTo(id){
  });
  if(id==='loadout'){renderLoadoutCards();setLoadoutPreview(primary);resizeLoadout();}
  if(id==='play')selectMode(modeSel);
+ // v48: the cinematic map preview is a HOME/PLAY backdrop only. Loadout has its
+ // own preview canvas (#loadoutCanvas) and Settings/Credits are flat panels —
+ // the arena behind them would only fight those panels — so the preview is
+ // dropped the moment the player leaves HOME/PLAY. applyMenuPreview() rebuilds
+ // it on the way back, so the round trip never leaves a stale arena showing.
+ applyMenuPreview(id==='home'||id==='play');
  // The operator stays on stage for every section; the stage never goes blank.
  window.__nav=id;
 }
@@ -1424,9 +1591,9 @@ if(typeof PS_ICONS!=='undefined')PS_ICONS.preload().then(()=>{hudIconNode('healt
 document.addEventListener('pointerlockchange',()=>{locked=!!document.pointerLockElement;if(!locked&&running&&!fallback)pause();});document.addEventListener('pointerlockerror',()=>{fallback=true;});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});window.addEventListener('blur',pause);
 document.addEventListener('mousemove',e=>{if(!running||(!locked&&!drag))return;const s=.002*Number($('sensitivity').value)*((scoped||ads)?Number($('adsSensitivity').value):1);yaw-=e.movementX*s;pitch=Math.max(-1.45,Math.min(1.45,pitch-e.movementY*s));});
-$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){ if(inspecting()){cancelInspect();return;} trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;inspectHold=false;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
+$('game').addEventListener('mousedown',e=>{if(!running)return;A.start();if(e.button===0){ if(inspecting()){cancelInspect();return;} trigger=true;shoot();}if(e.button===2){if(isFirearm(weapon)&&reload<=0&&bolt<=0){if(scopedOnly(weapon))scoped=!scoped;else if(C.WEAPONS[weapon].ads)ads=!ads;}if(fallback)drag=true;}});document.addEventListener('mouseup',e=>{if(e.button===0){trigger=false;burst=0;}if(e.button===2)drag=false;});document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='KeyM'){A.toggle();return;}if(e.code==='Escape'){e.preventDefault();pause();return;}if(!running)return;if(['Space','Tab','ControlLeft','ControlRight'].includes(e.code))e.preventDefault();held.add(e.code);if(e.repeat)return;const i=['Digit1','Digit2','Digit3','Digit4'].indexOf(e.code);if(i>=0)select(inventory()[i]);if(e.code==='Digit5'||e.code==='KeyB')cycleEquipment();if(e.code==='KeyG')dropPrimary();if(e.code==='KeyE')pickupPrimary();if(e.code==='KeyQ')select(previous);if(e.code==='KeyR')doReload();if(e.code==='KeyF'){startInspect();ads=false;scoped=false;}if((e.code==='KeyC'||e.code==='ControlLeft')&&held.has('ShiftLeft')&&moving>.3&&slideCool<=0&&vy===0){slide=.75;slideCool=1.35;slideX=-Math.sin(yaw);slideZ=-Math.cos(yaw);ads=false;scoped=false;}if(e.code==='Tab')$('scoreboard').hidden=false;if(e.code==='Space'&&vy===0){vy=6;slide=0;}});
-document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;if(e.code==='KeyF')inspectHold=false;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
+document.addEventListener('keyup',e=>{held.delete(e.code);if(e.code==='Tab')$('scoreboard').hidden=true;});$('game').addEventListener('wheel',e=>{if(running){e.preventDefault();const slots=inventory();select(slots[(slots.indexOf(weapon)+(e.deltaY>0?1:slots.length-1))%slots.length]);}},{passive:false});
 function move(dt){
  const crouch=held.has('ControlLeft')||held.has('ControlRight')||held.has('KeyC');
  const sprint=held.has('ShiftLeft')&&!ads&&!scoped;
@@ -1626,7 +1793,7 @@ function buildSlots(){
  });
 }
 function animateWeapon(dt){
-  if(match.playerDead)inspectHold=false;
+  if(match.playerDead&&inspecting())cancelInspect();
   stepInspect(dt);
   buildSlots();
   for(const k of keys)if(models[k]&&!models[k].userData.botWeapon)models[k].visible=k===weapon&&!scoped;
@@ -1724,10 +1891,16 @@ function animateWeapon(dt){
  if(swing>0){
    // v47: the spliced knife `Attack` clip is a re-posed static hold — the arm
    // motion it carried was a foreign-unit teleport, so it was neutralised and
-   // the slash is the procedural arc below. Only a rig shipping a REAL authored
-   // swing (a clip that actually moves the arms) supersedes this.
-   if(u.isRig&&u.acts&&u.acts.attack&&u.userData.hasRealAttack){
-    // the mixer plays the authored slash
+   // the slash is the procedural arc below. v48: the shipped `Attack` IS a real
+   // authored swing now (flagged by clipMovesBones at bind time), so the arc is
+   // skipped for it — the mixer owns the arms and a second, competing rotation
+   // on top of the clip is what read as a teleport.
+   const realAttack=!!(u.isRig&&u.acts&&u.acts.attack&&u.hasRealAttack);
+   if(realAttack){
+    // the mixer plays the authored slash; only a tiny forward push keeps the
+    // blade travelling toward the target with the clip
+    const k=1-swing/C.WEAPONS[weapon].fireInterval;
+    m.position.z+=Math.sin(k*Math.PI)*.02;
    }else{
     const arc=Math.sin((1-swing/C.WEAPONS[weapon].fireInterval)*Math.PI);
     m.rotation.x-=arc*1.15;
@@ -1785,20 +1958,42 @@ function animateWeapon(dt){
   // tilt. Not every rig ships Inspect (the supplied AKM/Glock rigs don't),
   // so fall back to the idle key when the clip is absent.
   let key='idle';
-  // The knife's swing was authored in Blender as an `Attack` clip; the spliced
-  // version is a static hold, so only play it if the rig ships a REAL swing
-  // (otherwise the procedural arc in animateWeapon does the work).
-  if(weapon==='knife'&&swing>0&&u.acts&&u.acts.attack&&u.userData.hasRealAttack)key='attack';
+  // v48: the knife's authored `Attack` clip is a REAL swing (72 tracks, the
+  // full arm+finger chains). It is played as a ONE-SHOT: the clip is 0.833s
+  // against a 0.55s swing timer, so it outlasts the timer and `swing>0` alone
+  // would leave the arms mid-slash when the next attack starts. Instead the
+  // action is reset and restarted on each swing and `clampWhenFinished` holds
+  // the final frame, then this block falls back to idle the moment `swing`
+  // lapses, so the arms always return to rest. The mixer drives the bones, so
+  // no root transform is ever written and no NaN can enter the matrix chain.
+  // Only a rig whose attack clip actually moves bones gets this (see
+  // clipMovesBones at bind time); a static-hold rig keeps the procedural arc.
+  if(weapon==='knife'&&swing>0&&u.acts&&u.acts.attack&&u.hasRealAttack)key='attack';
   else if(inspecting()&&u.acts&&u.acts.inspect)key='inspect';
   else if(reload>0&&u.acts&&u.acts.reload)key='reload';
-  else if(bolt>0||flashTime>0)key='shoot';
+  // v48: never route a MELEE weapon to the rig's `shoot` clip. The knife rig
+  // ships `Armature|Shoot` but it is degenerate (0.167s, 4 bones, a 159-deg
+  // snap on UpperArmL) — playing it on a melee swing would wrench the arms off
+  // the grip. A knife has no bolt and no muzzle flash, so the shoot key is
+  // unreachable for it in any case; this guard keeps a future melee rig safe.
+  else if(!C.WEAPONS[weapon].melee&&(bolt>0||flashTime>0))key='shoot';
   const acts=u.acts||{};
   if(key!==u.rigKey){
    const na=acts[key],oa=acts[u.rigKey];
-   if(na){na.reset();na.setLoop(T.LoopRepeat,Infinity);na.clampWhenFinished=true;na.play();
+   if(na){
+    na.reset();
+    // An attack is a one-shot slash, not a loop: a repeated loop would restart
+    // the swing mid-motion and re-trigger the whole arc on every keyframe
+    // pass, which is what made repeated knife attacks visibly hang.
+    na.setLoop(key==='attack'?T.LoopOnce:T.LoopRepeat,Infinity);
+    na.clampWhenFinished=true;na.play();
     na.startAt(0).fadeIn(.12);if(oa)oa.fadeOut(.12);}
    u.rigKey=key;
   }
+  // Restart the slash from its start frame on every new swing so repeated
+  // attacks re-hit cleanly instead of continuing a stale playback position.
+  if(key==='attack'&&u._lastSwing!==swing){acts.attack.reset();acts.attack.play();u._lastSwing=swing;}
+  if(key!=='attack'&&u._lastSwing!==undefined)u._lastSwing=undefined;
   u.mixer.update(dt);
  }
 }
@@ -1847,6 +2042,13 @@ function tick(now){
       menuOrbitCam.updateProjectionMatrix();
     }
     if(!menuChar&&window.PolyAsset&&PolyAsset.progress&&PolyAsset.progress().soldier)buildMenuCharacter();
+    // v48: ONE menu presentation character, on HOME/PLAY only. The gameplay
+    // bots are scene-level and would otherwise stand in the menu's backdrop;
+    // they are hidden while the menu owns the stage. syncBots() below also
+    // writes o.visible from b.alive, so the gate has to be read there too —
+    // hiding them here alone is undone a few lines later.
+    const menuCharOn=(window.__nav==='home'||window.__nav==='play')&&!!menuChar;
+    if(menuChar)menuChar.visible=menuCharOn;
     cam.position.copy(menuCam.position);cam.quaternion.copy(menuCam.quaternion);
   }
  // Full-auto only: semi-auto weapons fire once per trigger pull (shoot() is

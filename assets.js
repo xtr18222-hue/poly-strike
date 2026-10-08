@@ -1078,7 +1078,61 @@
         // exists per equipped clone and the animations never leak between
         // weapons. Clip names are the rig's own (`Armature|Idle`...).
         const TT = needThree();
+        // v48: three.js sanitises NODE names (strips `.` `:` `/`) but leaves the
+        // dots in the CLIP track names, so `ThumbBeginning.R.001` never binds to
+        // the node `ThumbBeginningR001` and the clip deforms nothing. Rebuild
+        // each track with the same sanitisation the loader applied to the nodes,
+        // and use the correct KeyframeTrack subclass so quaternion interpolation
+        // is preserved (the base class falls back to Discrete).
+        const sanitizeTrackName = (n) => n.replace(/[\s]/g, '_').replace(/[.[\]:/]/g, '');
+        // v48: the v45 donor clips were exported with both keyframes within a few
+        // ms of each other (Blender wrote the end frame's time as ~0). Three sorts
+        // the times on construction, so the clip ends up a few ms long and the
+        // mixer finishes it instantly — it reads as a static hold. Any clip whose
+        // whole span is under 1/24s cannot be a real motion, so re-time it across
+        // the clip's declared duration.
+        const trackClass = (name) => name.endsWith('.quaternion') ? TT.QuaternionKeyframeTrack
+          : name.endsWith('.vector') ? TT.VectorKeyframeTrack : TT.KeyframeTrack;
+        const rebuildTrack = (t, times, interp) => {
+          const nt = new (trackClass(t.name))(t.name, times, t.values,
+            interp === undefined ? t.getInterpolation() : interp);
+          return nt;
+        };
+        const fixClipTimes = (a) => {
+          if (!a.tracks || a.tracks.length < 2) return a;
+          let changed = false;
+          const tracks = a.tracks.map(t => {
+            if (t.times.length < 2) return t;
+            const span = t.times[t.times.length - 1] - t.times[0];
+            if (span > 0.05) return t;
+            const span2 = Math.max(a.duration || 0, 1 / 24);
+            // A 2-frame clip that holds frame 0 for its entire run only reaches
+            // the end pose at the final instant, so the swing would never
+            // visibly travel — interpolate it instead.
+            const interp = (t.times.length === 2 && t.getInterpolation() === TT.InterpolateDiscrete)
+              ? TT.InterpolateLinear : t.getInterpolation();
+            const nt = rebuildTrack(t, t.times.map((_, i) => t.times[0] + span2 * i / (t.times.length - 1)), interp);
+            changed = true;
+            return nt;
+          });
+          return changed ? new TT.AnimationClip(a.name, Math.max(a.duration, 1 / 24), tracks, a.blendMode) : a;
+        };
+        const fixClip = (a) => {
+          if (!a.tracks || !a.tracks.length) return a;
+          let changed = false;
+          const tracks = a.tracks.map(t => {
+            const dot = t.name.lastIndexOf('.');
+            if (dot <= 0) return t;
+            const node = t.name.slice(0, dot), path = t.name.slice(dot + 1);
+            const sn = sanitizeTrackName(node);
+            if (sn === node) return t;
+            changed = true;
+            return rebuildTrack(t, t.times);
+          });
+          return changed ? new TT.AnimationClip(a.name, a.duration, tracks, a.blendMode) : a;
+        };
         if (TT.AnimationMixer && c.animations && c.animations.length) {
+          c.animations = c.animations.map(fixClip).map(fixClipTimes);
           c.userData.mixer = new TT.AnimationMixer(c);
           c.userData.acts = {};
           // Clip names are the rig's own (`Armature|Idle`...). The three
